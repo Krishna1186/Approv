@@ -206,11 +206,32 @@ Write the surface as a catalogue with, per entry: the attack, the entry point, w
 - "Write the test only. I'll write the implementation."
 
 **Never send, and refuse if I do:**
-- "Build the semantic stage."
+- ~~"Build the semantic stage."~~ **Amended 2026-09-03 — see below.**
 - "Fix this error." → instead: "Explain what this error means. I'll fix it."
 - "Make it work."
 - "Generate 200 labelled examples."
 - "Refactor this."
+
+### Amendment 2026-09-03 — the §8 semantic-stage clause
+
+The original clause banned asking for the semantic stage outright. That was aimed at
+the real failure — being handed a finished component I did not design and cannot
+defend — but it also banned the §7 loop, which is the thing that prevents that failure.
+So the clause is narrowed, not deleted:
+
+**Claude may write the body of a component only when I have written its signature and
+its test first.** No signature and test from me, no body from Claude. That is §7 steps
+4 and 5, unchanged, now binding on `semantic/` as well.
+
+What this amendment does NOT touch:
+
+- **§4.2 stands in full.** The evaluator is mine, by hand, including its tests. Claude
+  never writes evaluator logic. This amendment does not create an exception.
+- **§5 stands in full.** No AI-generated, AI-augmented, or AI-relabelled data. Ever.
+- **§0 "do not build ahead" stands.** One signature, one body. No scaffolding of
+  adjacent files, no anticipating the next component.
+- **§7 steps 6, 7, 8 stand.** Interrogate, retype by hand, log. The body Claude writes
+  is a draft I retype, never a file I keep.
 
 ---
 
