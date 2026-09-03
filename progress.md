@@ -46,7 +46,7 @@ TRL 3 claim as of today: **nothing demonstrated.** No engine, no gold set, no nu
 | This tracker | `progress.md` | Committed |
 | Annotation guideline | `data/guideline.md` | Does not exist. Must be hand-written **before** any label exists (§3 Stage B) |
 | Attack-surface taxonomy | — | Does not exist. §6 says write it now; costs thinking, not build time |
-| Decision records | `docs/decisions/` | **DR 0001** (does the ternary need a fourth value) and **DR 0002** (where comparison operators live) — both OPEN, both block code |
+| Decision records | `docs/decisions/` | **0001** ternary vs reason codes · **0002** where comparison lives · **0003** taxonomy shape + entity linking · **0004** latency budget + failure direction · **0005** request-side provenance. **All five OPEN.** 0001, 0002, 0003 and 0005 block code (§4.8); 0004 constrains it |
 | `learnings.md` | — | Does not exist. §7 step 8 writes into it every session |
 | Gold set | `data/labelled/` | Empty. Founder-labelled only, never AI-generated (§5) |
 
@@ -86,7 +86,13 @@ TRL 3 claim as of today: **nothing demonstrated.** No engine, no gold set, no nu
 - **§8 amended** with founder's approval: Claude writes a body only against a founder-written signature and test. §4.2 (evaluator), §5 (data) and §0 (no build-ahead) untouched.
 - **Category fixed: footwear / apparel** for the first gold set and the first criticality profile.
 - Wrote **DR 0001** and **DR 0002**, both OPEN. §4.8 blocks decision-path code until they close.
-- Still no engine code. Next action is the founder's: close both DRs, then §7 step 4 on the first operator.
+- Still no engine code. Next action is the founder's: close the DRs, then §7 step 4 on the first operator.
+
+**Founder corrections to Claude, same session — these are the December-test entries (§7):**
+- **Taxonomies are DAGs, not trees.** A bulb sits under Lighting, Electronics, Decor and Interiors at once. Claude asserted a tree and claimed cycle-safety followed from it. Both wrong. Subsumption is reachability over a multi-parent DAG, acyclicity must be explicitly validated, and a visited set is still required at read time. → DR 0003.
+- **Fail-open on timeout, because the marketplace will not wait.** Correct, and the constraint most verification layers learn only after a merchant rips them out. Claude added the asymmetry the founder had not separated: fail-open is right for `mark`, and a complete bypass at `gate`, where latency becomes an off-switch. → DR 0004.
+- **Agents fabricate constraints the user never stated, and that is a security surface.** Independently derived the mirror of product-side provenance. Without it, §2.2 cannot attribute fault to the agent, because an invention and an instruction are byte-identical in the record. → DR 0005.
+- Claude's counter, accepted: the "user types shoes but means sneakers" case is **not** a false negative — `subsumes(shoes, sneakers)` is satisfied, breadth in the request is permissive by construction. The real failure is surface terms that do not resolve at all ("joggers", "chappals"), which is entity linking, a different component. → DR 0003 §3.
 
 ### 2026-09-02 — Session 1
 - Committed `CLAUDE.md` to the repo root.

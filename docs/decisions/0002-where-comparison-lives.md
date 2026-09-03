@@ -19,9 +19,12 @@ There is a third thing, and the two-stage split has no home for it.
 Take `"white shoes under 9k"` against a product listing. Three jobs happen:
 
 1. **Translate.** Query → typed constraints. Product metadata → typed attributes.
-   *Needs a model.* This is `semantic/`.
+   This includes **entity linking**: resolving surface text ("joggers", "kicks",
+   "chappals") to a taxonomy node id. *Needs a model.* This is `semantic/`.
 2. **Compare.** Is `Sneakers` subsumed by `Shoes`? Is `₹8,499 ≤ ₹9,000`? Is `250g`
-   comparable to `250ml` at all? Each produces one ternary.
+   comparable to `250ml` at all? Each produces one ternary. Operates on **node ids and
+   typed values only — never on surface text**, which is what keeps untrusted product
+   prose out of this stage entirely.
    ***Needs no model, and makes no decision.*** **This has no home.**
 3. **Decide.** Given all the ternaries plus the category's criticality profile →
    `allow | confirm | refuse`. *Needs no model.* This is `evaluator/`.
@@ -90,7 +93,8 @@ approv/
   semantic/    model -> typed constraints + typed attributes. No comparison, no verdict.
   algebra/     (constraint, attribute) -> ternary. Deterministic. No model, no decision.
   evaluator/   ternaries + criticality profile -> allow|confirm|refuse. Founder, by hand.
-  profiles/    per-category criticality profiles + taxonomies + attribute lattices.
+  profiles/    per-category criticality profiles + taxonomy DAGs + attribute lattices.
+               Versioned, reviewed artifacts. Never mutated from live traffic (DR 0003).
   receipts/    signed, hash-chained record of every decision
   harness/     runs corpora through the decision path, emits metrics
   surfaces/    (Stage E)
@@ -106,6 +110,15 @@ strengthens the enforcement of the central one — at the cost of editing a layo
 diagram. Option 3's extra ownership is real but is bought in the wrong currency: the
 defensible-in-December knowledge lives in the operator *design*, which §7 step 4
 already assigns to the founder regardless of who types the traversal.
+
+## Amendment 2026-09-03 (founder, in session)
+
+The founder's multi-category objection splits job 1 into two measurable sub-steps:
+surface text → node id (**entity linking**, model, fallible, independently scorable)
+and node id → node id (**comparison**, deterministic, in `algebra/`). This strengthens
+the case for Option 2: entity-linking accuracy and comparison correctness are different
+numbers with different failure modes, and folding them together makes both unmeasurable.
+See DR 0003.
 
 ## Decision
 
