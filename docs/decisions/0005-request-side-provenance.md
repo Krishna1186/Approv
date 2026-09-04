@@ -181,6 +181,30 @@ also the only independent check we have on agent attestations, and it gets stron
 with every purchase. The same field again: liability attribution, switching cost, and
 now agent verification.
 
+
+---
+
+## Amendment 2026-09-04 (second) — the attestation channel does not exist yet
+
+The founder's objection, which is correct:
+
+> When GPT queries for results it is not going to mention where it got the data from.
+> This labelling will not be provided to us. We will never get `PRIOR_CONVERSATION` as a
+> tag, neither will we have the prior conversation to validate.
+
+The amendment above assumed a cooperating agent volunteering provenance. **No agent does
+this today.** The design was right about what to do with an attestation and wrong about
+how one arrives, and everything in this DR is therefore **inapplicable at Tier 0**.
+
+What survives: the incentive is not ours to create. The agent operator is the liable
+party for autonomous purchases, so a signed third-party record stating what the user did
+and did not specify is *their* defence, not our imposition. Attestation is a product sold
+to agent operators rather than a field scraped from them.
+
+The tiering, the identity anchor for §2.8, and what may honestly be claimed at each tier
+are moved to **DR 0008**, which supersedes the applicability of this DR. This DR remains
+correct as the specification of Tier 1 behaviour and is dormant until Tier 1 exists.
+
 ## Decision
 
 *(founder — fill in, then set Status to CLOSED and record the date)*

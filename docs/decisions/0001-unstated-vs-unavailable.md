@@ -1,6 +1,6 @@
 # DR 0001 — Does the ternary need a fourth value?
 
-- **Status:** OPEN — founder decides
+- **Status:** OPEN — but see DR 0007, which adopts Option 3 and extends it with a verification floor
 - **Raised:** 2026-09-03
 - **Touches:** the decision path and the record. §4.8 requires this to close before code.
 - **Blocks:** the `ComparisonRecord` schema, therefore every component

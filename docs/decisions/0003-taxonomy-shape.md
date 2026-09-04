@@ -140,6 +140,67 @@ it smuggles a continuous score back into the one place the architecture forbids 
 The sandals boundary is an authoring and guideline problem, and it should be solved
 where authoring problems are solved.
 
+
+---
+
+## Addendum 2026-09-04 — facet ordering, and a second correction from the founder
+
+### The ordering question
+
+> How do we decide if footwear leads to casual/athletic first, or sneakers/sandals
+> first, then each branch to casual/athletic? This ordering alone can decide if a
+> diamond forms.
+
+Correct, and the answer is that **the question reveals a modelling error rather than
+needing an answer.** `{sneaker, sandal, boot}` and `{casual, athletic, formal}` are two
+*independent* ways of dividing footwear — form and use-case. Neither is above the other.
+Forcing orthogonal dimensions into a single hierarchy produces:
+
+- an arbitrary choice of which goes first, which nobody can justify later;
+- combinatorial node explosion (`athletic-sneaker`, `casual-sneaker`, `athletic-sandal`…);
+- and **diamonds that are entirely self-inflicted** — exactly as the founder observed.
+
+The standard fix is **faceted classification**: form and use-case are separate axes.
+A product is `form: sneaker` **and** `use: athletic`, not nested under one or the other.
+Subsumption then runs per facet.
+
+So: most diamonds in a well-modelled catalogue are a symptom, and the cure is fixing the
+model. What remains are the *genuine* ones — a bulb really is reachable from both
+`Lighting` and `Electronics`, which are different roots, not confused facets. Those are
+irreducible, and reachability handles them.
+
+**Consequence:** the taxonomy artifact is not one DAG but one DAG *per facet*, and the
+`CategoryProfile` names which facets are required for a category. This should be
+reflected in the artifact format before the first taxonomy is authored.
+
+### The cycle correction
+
+> Explored node is meaningless unless it forms a cycle, so explored becomes ONE of the
+> requirements for cyclicity, it's not sufficient.
+
+Correct, and this DR's original text was imprecise about it. A visited-set does **not**
+detect cycles. Seeing a node twice means only that two paths reached it — which is a
+diamond, and completely legal.
+
+The two jobs need two structures:
+
+| Job | Structure | Meaning of a repeat |
+|---|---|---|
+| **Termination** | globally visited / finished set | already explored, skip it. A diamond. |
+| **Cycle detection** | nodes on the *current path* (DFS stack) | a back edge. A genuine cycle. |
+
+A node already finished is a diamond. A node **on the path you are currently walking**
+is a cycle. Standard DFS three-colouring: white unvisited, grey on-path, black finished.
+Grey means cycle; black means skip.
+
+Which splits cleanly by where each belongs:
+
+- **Runtime `subsumes` needs termination only.** It does not need to detect cycles, it
+  needs to not hang. A finished-set is sufficient and is the cheaper structure.
+- **Cycle *detection* belongs in the build-time taxonomy validator**, which runs when a
+  pending-queue batch is approved and a new version is cut. That is where a cycle should
+  be caught and refused, not in the payment path.
+
 ## Decision
 
 **2026-09-04 — Option 2 adopted.** Taxonomy is a DAG with multi-assignment; entity
