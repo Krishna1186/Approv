@@ -46,7 +46,7 @@ TRL 3 claim as of today: **nothing demonstrated.** No engine, no gold set, no nu
 | This tracker | `progress.md` | Committed |
 | Annotation guideline | `data/guideline.md` | Does not exist. Must be hand-written **before** any label exists (§3 Stage B) |
 | Attack-surface taxonomy | — | Does not exist. §6 says write it now; costs thinking, not build time |
-| Decision records | `docs/decisions/` | **0003 CLOSED.** Open: **0001** ternary vs reason codes · **0002** where comparison lives · **0004** latency + failure direction (amended) · **0005** request-side provenance (amended) · **0006** one ontology, many lexicons. 0001, 0002, 0005 and 0006 block code (§4.8) |
+| Decision records | `docs/decisions/` | **0003 CLOSED.** Open: **0001** (superseded by 0007) · **0002** where comparison lives · **0004** latency (amended) · **0005** request-side provenance (Tier 1 only, dormant) · **0006** ontology vs lexicons · **0007** verification floor · **0008** what we actually receive · **0009** monotone model use. 0002, 0006, 0007 and 0008 block code (§4.8) |
 | `learnings.md` | — | Does not exist. §7 step 8 writes into it every session |
 | Gold set | `data/labelled/` | Empty. Founder-labelled only, never AI-generated (§5) |
 
@@ -76,6 +76,15 @@ TRL 3 claim as of today: **nothing demonstrated.** No engine, no gold set, no nu
 ---
 
 ## Session log
+
+### 2026-09-04 — Session 4
+- **DR 0007 opened — the verification floor.** Founder's concept: some fields are *preconditions*, not optional attributes. Footwear cannot be verified without a size. A request lacking one was never verifiable rather than uncertain, and that is a different heading from the merchant failing to publish data. Checkable before any model call. Closes DR 0001 toward reason codes and adds `FLOOR_NOT_MET`.
+- **DR 0008 opened — and it invalidates part of DR 0005.** Founder: agents will not label provenance, we will never receive `PRIOR_CONVERSATION`, and we may never see the user's actual words — only the query the agent composed. Correct. Response is to tier what we honestly receive (0: observed query · 1: declared constraints · 2: mandate-anchored) and to fix the claim at each tier. Tier 0 verifies *the product against the stated query*, never "the user's intent". §2.8's preference record needs a human anchor that does not exist below Tier 2.
+- **DR 0009 opened — monotone safety.** Founder asked whether Approv should be a lightweight agent. Rule proposed: a model may participate anywhere its worst case degrades toward `confirm` and can never move an outcome toward `allow`. Permits model-driven check selection; forbids a model resolving `unknown` into `satisfied`. The requested "mini-sandbox" is real and needs no model — per-request metamorphic self-checks are deterministic, cost microseconds, and can only downgrade confidence.
+- **DR 0003 addendum, two more founder corrections.**
+  - *Facet ordering:* asking whether form or use-case sits higher reveals a modelling error, not a missing answer. They are orthogonal facets; forcing them into one hierarchy is what manufactures the diamonds. Taxonomy is one DAG per facet.
+  - *Cycles:* a visited set gives **termination, not cycle detection** — seeing a node twice is a diamond, not a cycle. Cycle detection needs the current DFS path (grey/black), and belongs in the build-time validator, not the payment path.
+- Still no engine code.
 
 ### 2026-09-04 — Session 3
 - **DR 0003 CLOSED.** DAG + multi-assignment + entity linking as a separate scored step. Taxonomy never self-edits: unrecognised terms go to a **pending queue**, approved **manually in batches**, each batch cutting a new taxonomy version.
