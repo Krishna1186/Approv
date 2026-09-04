@@ -1,6 +1,6 @@
 # DR 0006 — One ontology, many lexicons
 
-- **Status:** OPEN — founder decides
+- **Status:** ON HOLD 2026-09-04 — approach accepted, sequenced after the node structure. Lexicons are derived from the ontology, so the ontology is authored first.
 - **Raised:** 2026-09-04, by the founder
 - **Touches:** `profiles/`, entity linking, the record's version pins, internationalisation
 - **Blocks:** the taxonomy artifact's file format

@@ -149,6 +149,73 @@ improving robustness on messy agent-facing surfaces — without the property tha
 make the company's central claim untrue. Option 3 is the one that looks like progress
 and is not.
 
+
+---
+
+## Amendment 2026-09-04 — a correction to the mini-sandbox, and the ingestion role
+
+### The founder's ingestion proposal is already permitted
+
+> If we don't want to allow Approv's agent to make the call on allow/refuse, it can at
+> least be an agent to structurally ingest data from merchant side and agent side, feeding
+> it in a nice format to the engine as it needs, or for intermediate thinking / delegation
+> / calls between different escalation degrees or checks if something is ambiguous,
+> although final call taken on a deterministic number or metrics.
+
+Every part of this satisfies the monotone rule and needs no exception:
+
+- **Structural ingestion and normalisation** is the semantic stage. A model is already
+  permitted there; that is what `semantic/` is for. Ingesting heterogeneous merchant and
+  agent payloads into the typed vocabulary is exactly its job, and doing it well across
+  many payload shapes is real engineering rather than a compromise.
+- **Escalation routing and check selection** is the permitted case argued above: if the
+  router chooses badly, fewer checks run, less evidence exists, more `unknown`, therefore
+  more `confirm`. It cannot manufacture an `allow`.
+- **Final call on deterministic metrics** is `evaluator/`, unchanged.
+
+No amendment to §1 is required. The founder's proposal is the shape of the rule, not an
+exception to it.
+
+### Correction: most metamorphic perturbations are not free
+
+The table above implied four invariants could run live at negligible cost. That is only
+true of perturbations applied **after** extraction. The distinction was missed and it
+matters:
+
+| Perturbation | Applied to | Requires a model call? | Where it runs |
+|---|---|---|---|
+| Tighten a numeric bound | the extracted **constraint** | no | **live** |
+| Flip a product attribute value | the extracted **attribute** | no | **live** |
+| Swap a pack size / unit | the extracted **quantity** | no | **live** |
+| Drop a constraint | the extracted constraint set | no | **live** |
+| **Reorder words in the request** | the **raw text** | **yes — re-extraction** | offline harness only |
+| **Paraphrase the request** | the raw text | **yes** | offline harness only |
+
+Post-extraction perturbations mutate typed objects and re-run `algebra/` only. They are
+genuinely microseconds and belong in the live path. Text-level perturbations require the
+semantic stage to run again, which is the expensive part of the request, and they belong
+in the offline harness where §5 already puts them.
+
+The live sandbox is therefore **narrower than first described but still real**: it tests
+whether the *comparison* is coherent given the extraction, not whether the *extraction*
+is stable given the text.
+
+### What the live sandbox can and cannot detect
+
+**Can:** an attribute the engine is not actually reading (flip the product's value, the
+verdict does not move — the strongest signal available, because it catches right answers
+reached for the wrong reason); bound comparisons that do not respond to tightening; unit
+handling that survives a swap it should not; internal contradictions between constraints.
+
+**Cannot:** systematic error where the invariant holds and both answers are wrong. If the
+taxonomy asserts `shoe_rack ⊂ shoes`, every metamorphic check passes and the engine is
+still wrong.
+
+**This is the same distinction §5 draws between the two corpora, applied at request time:
+the sandbox measures consistency, the gold set measures correctness.** It must never be
+reported as an accuracy figure.
+
+
 ## Decision
 
 *(founder — fill in, then set Status to CLOSED and record the date)*

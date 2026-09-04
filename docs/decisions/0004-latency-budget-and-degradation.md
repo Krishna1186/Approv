@@ -168,6 +168,86 @@ Still to be measured, as the founder said, against real marketplace page loads r
 than guessed. Stage E work. What this amendment fixes is the *shape* of the policy, not
 its constants.
 
+
+---
+
+## Amendment 2026-09-04 (second) — three founder objections to the amendment above
+
+### 1. "If the prompt is vague, nothing gets badged"
+
+> The ambiguity arises when the user's prompt isn't very descriptive. In such cases even
+> products 1-6 would face the same issue, hence I'd have the issue of not having my badge
+> on any products.
+
+Correct, and it breaks mechanism ①. A vague query is vague against *every* product, so
+"no badge when uncertain" produces an empty results page exactly when the shopper most
+needs help. The badge disappears precisely when it would be worth most.
+
+**The fix is that the failure is per-query, not per-product, so the remedy is too.**
+DR 0007's floor check runs once against the query before any product is touched. If the
+query cannot clear the floor, that is knowable in microseconds, and the right response is
+**one clarification at the top of the results** — not forty silent non-badges and not
+forty questions.
+
+> "What size?" — asked once, fixes all forty products.
+
+This also repairs the economics of clarification: one interaction buys a whole result
+page, rather than one product. And a partial badge is available where the floor *is* met
+but some attribute is unresolved: **"✓ white · ✓ under 9k · ? size"** is honest, useful,
+and strictly better than the binary badge this DR originally assumed.
+
+### 2. "Ask once per person is bad — it could be a gift"
+
+Correct. Mechanism ③ was wrong as stated. A stored size is a fact about the *usual*
+purchaser, not about *this* purchase, and gifts, growing children and household shopping
+all break it.
+
+The architecture already has the right answer if the monotone rule (DR 0009) is applied
+consistently: **the preference record pre-fills, it does not authorise.**
+
+| Constraint class | What the preference record may do |
+|---|---|
+| `SOFT` / `COSMETIC` | may authorise — worst case is a narrowed search |
+| `HARD` / floor fields | may **pre-fill the clarification** so it is one tap, never skip it |
+
+So purchase five still asks about size — it just asks with the answer already filled in.
+The friction drops without a stored preference ever silently authorising a purchase.
+
+### 3. "Pre-verifying means I'm building a search engine"
+
+> I don't have active user queries to check against. I'm essentially building a search
+> engine if that's the case. The entire point is to check if a custom request is given its
+> match, and that custom request could be framed in many ways.
+
+Correct, and it kills mechanism ④ **as written**. Precomputing verdicts over top-N queries
+covers the head and misses the tail, and the tail is the entire product. Worse, it makes
+the system a retrieval index, which is a different company.
+
+But the objection points at the wrong half of the computation. Decompose the cost:
+
+| Work | Depends on | Cardinality | Changes |
+|---|---|---|---|
+| **Product attribute extraction** | the product only | ~10^5–10^6 items | slowly, on catalogue edit |
+| **Query constraint extraction** | the query only | unbounded | every request |
+| **Comparison** (`algebra/`) | both | — | microseconds, deterministic |
+
+The expensive part is **not** the pair. It is product extraction, and product extraction
+is *query-independent*. So:
+
+**Cache the product side. Compute the query side live.**
+
+Extract every product's typed attributes once, keyed on `snapshot_hash`, and store them.
+At request time the only model call is on the query — short, cheap, one call — and the
+comparison is microseconds. **No query is ever precomputed, so nothing about the custom
+request is anticipated, and this is not a search index.** It is a feature store over a
+catalogue: cache the finite thing that changes slowly, compute the infinite thing that
+changes constantly.
+
+Snapshot integrity is preserved for the same reason as before: the cache is keyed on the
+product snapshot hash, so a catalogue edit invalidates the entry rather than serving a
+verdict computed against a listing that no longer exists.
+
+
 ## Decision
 
 *(founder — fill in, then set Status to CLOSED and record the date)*
