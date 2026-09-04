@@ -1,6 +1,6 @@
 # DR 0003 — Taxonomy shape, entity linking, and who may edit the taxonomy
 
-- **Status:** OPEN — founder decides
+- **Status:** CLOSED 2026-09-04 — Option 2, with a manually-approved pending queue
 - **Raised:** 2026-09-03, by the founder, correcting a claim of Claude's
 - **Touches:** the category operator, `profiles/`, the record's version pins, §6
 - **Blocks:** the first operator (`subsumes`) and the annotation guideline
@@ -142,4 +142,15 @@ where authoring problems are solved.
 
 ## Decision
 
-*(founder — fill in, then set Status to CLOSED and record the date)*
+**2026-09-04 — Option 2 adopted.** Taxonomy is a DAG with multi-assignment; entity
+linking is a separate scored step.
+
+On §5, the founder's mechanism, adopted verbatim: **the taxonomy is never edited
+directly.** New category findings and unrecognised terms observed in traffic accumulate
+in a **pending queue**. The queue is reviewed and approved **manually, in batches**, and
+each approved batch produces a **new taxonomy version**. Nothing enters the graph
+without a human in the loop, and every comparison pins the version it ran against.
+
+Locale-specific vocabulary is out of scope for this DR and spun out to **DR 0006**.
+
+**Status: CLOSED.**

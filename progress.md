@@ -2,7 +2,7 @@
 
 Tracking document. Reflects actual state, not intended state. Updated at the end of every session.
 
-Last updated: 2026-09-03
+Last updated: 2026-09-04
 
 ---
 
@@ -46,7 +46,7 @@ TRL 3 claim as of today: **nothing demonstrated.** No engine, no gold set, no nu
 | This tracker | `progress.md` | Committed |
 | Annotation guideline | `data/guideline.md` | Does not exist. Must be hand-written **before** any label exists (§3 Stage B) |
 | Attack-surface taxonomy | — | Does not exist. §6 says write it now; costs thinking, not build time |
-| Decision records | `docs/decisions/` | **0001** ternary vs reason codes · **0002** where comparison lives · **0003** taxonomy shape + entity linking · **0004** latency budget + failure direction · **0005** request-side provenance. **All five OPEN.** 0001, 0002, 0003 and 0005 block code (§4.8); 0004 constrains it |
+| Decision records | `docs/decisions/` | **0003 CLOSED.** Open: **0001** ternary vs reason codes · **0002** where comparison lives · **0004** latency + failure direction (amended) · **0005** request-side provenance (amended) · **0006** one ontology, many lexicons. 0001, 0002, 0005 and 0006 block code (§4.8) |
 | `learnings.md` | — | Does not exist. §7 step 8 writes into it every session |
 | Gold set | `data/labelled/` | Empty. Founder-labelled only, never AI-generated (§5) |
 
@@ -76,6 +76,13 @@ TRL 3 claim as of today: **nothing demonstrated.** No engine, no gold set, no nu
 ---
 
 ## Session log
+
+### 2026-09-04 — Session 3
+- **DR 0003 CLOSED.** DAG + multi-assignment + entity linking as a separate scored step. Taxonomy never self-edits: unrecognised terms go to a **pending queue**, approved **manually in batches**, each batch cutting a new taxonomy version.
+- **DR 0004 amended** — the clarification/latency conflict resolved four ways: `mark` never asks (no badge is a valid output); precompute all ambiguity branches and only ask when they disagree; ask once per shopper rather than per purchase (§2.8); precompute merchant top-N offline so we are not in their render path at all. Option 3 upgraded from defer to recommended-for-`mark` once the cache key includes `snapshot_hash`.
+- **DR 0005 amended** — founder raised the agent that legitimately knows more than the query (colour learned in a prior chat we cannot see). Resolved by attestation rather than verification: the agent declares `claimed_source`, we record and sign it, and a false attestation becomes the agent operator's liability. Plus: agents may supply SOFT attributes, never HARD ones, and may narrow a bound but never widen one. The §2.8 preference record doubles as the corroboration check.
+- **DR 0006 opened** — one universal ontology, N per-locale lexicons with per-term readings. Answers the India "shoes means footwear" problem without forking the DAG. Adds `locale` to the §4.6 metadata every accuracy number must carry.
+- Still no engine code.
 
 ### 2026-09-03 — Session 2
 - Founder identified the prior repo (`payment-agent-harness`) and ruled it non-ancestral. Stage A closed.

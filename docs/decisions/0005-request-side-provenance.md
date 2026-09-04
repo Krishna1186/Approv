@@ -108,6 +108,79 @@ but inferred from the shopper's own confirmed history rather than from an agent'
 guess. Arguably it authorises for `SOFT` constraints and only prompts `confirm` for
 `HARD` ones. Not settled here.
 
+
+---
+
+## Amendment 2026-09-04 — the agent that legitimately knows more than the query
+
+**The founder's case.** A shopper spends an hour talking to their agent about shoes and
+mentions liking white. Later they say "find shoes under 3k, size 9." The agent adds
+`colour = white`. That constraint is **true, useful, and ungroundable in the query
+text** — and we will never see the conversation it came from.
+
+Under this DR as originally written the constraint is `AGENT_INFERRED` and cannot
+authorise, which makes the agent's genuine knowledge useless. That is too strict, and
+the fix is not to loosen the rule but to notice what the rule was actually for.
+
+### We do not need to know whether the agent is right
+
+We need the claim to be **attributable**. That is the same move the whole company makes
+— §1 does not promise to detect a bad purchase, it promises to hold the stated request
+and the chosen product together in a record that survives a dispute.
+
+So the agent **attests**. `AGENT_INFERRED` gains a declared source:
+
+| `claimed_source` | Meaning |
+|---|---|
+| `PRIOR_CONVERSATION` | the user told the agent, outside this query |
+| `USER_PROFILE` | standing preference the agent holds |
+| `AGENT_GUESS` | the agent inferred it from nothing the user said |
+
+Optionally with an evidence span — the fragment of prior conversation relied on. **We do
+not verify it.** We record it, and the record is signed.
+
+This converts an unverifiable epistemic problem into a verifiable accountability one.
+If the agent attests `PRIOR_CONVERSATION` and no such conversation happened, the agent
+operator has made a false signed attestation, and §2.2's fault attribution has exactly
+what it needs. Representations and warranties work this way in every commercial
+contract: the counterparty asserts, and bears the consequence of asserting falsely.
+
+### Which constraints an agent may supply at all
+
+The direction of harm is not symmetric across attribute classes, so the permission
+should not be either. Using the criticality classes:
+
+| Class | Example | May the agent supply it? |
+|---|---|---|
+| `SOFT` / `COSMETIC` | colour, style | **Yes.** Worst case is a narrowed search and a lost sale. |
+| `HARD` | size, allergen, variant | **No.** Getting these wrong is the returned-parcel case, and they are precisely the attributes §2.2 needs the *user* on record for. |
+| `BOUND` | price ceiling | **Never in the relaxing direction.** |
+
+That last row is the one that matters. A user says "under 3k" and the agent supplies
+"under 5k" — that is not a hallucination, it is an unauthorised increase in the
+mandate, and it must be `refuse`, not `confirm`. **An agent may narrow a bound. It may
+never widen one.** This is the rule that connects this DR to the mandate-cap work.
+
+The founder's colour case sits in the first row and is therefore permitted, recorded as
+agent-attested, and can contribute to `satisfied`.
+
+### The preference record is the cross-check
+
+§2.8 accrues the shopper's unstated constraints from confirmed purchases. That is
+*our* copy of the knowledge the agent is claiming to have.
+
+- Agent attests `colour = white`, our preference record agrees → **corroborated.**
+  Treat as authorising and stop asking.
+- Agent attests something our record **contradicts** → surface it. The agent may be
+  working from newer information than we have, or it may be fabricating. Either way
+  a human should see it before money moves.
+- Agent attests something we have no view on → record as attested, no corroboration.
+
+This gives §2.8 a second job. It was described as a switching-cost mechanism; it is
+also the only independent check we have on agent attestations, and it gets stronger
+with every purchase. The same field again: liability attribution, switching cost, and
+now agent verification.
+
 ## Decision
 
 *(founder — fill in, then set Status to CLOSED and record the date)*

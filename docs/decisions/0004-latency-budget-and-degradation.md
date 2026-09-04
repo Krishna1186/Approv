@@ -101,6 +101,73 @@ guarantee that makes the receipt meaningful.
 Budgets themselves (the actual millisecond figures) should not be guessed here. They
 come from a measurement against a real marketplace page load, which is Stage E work.
 
+
+---
+
+## Amendment 2026-09-04 — resolving the clarification/latency conflict
+
+The original text flagged that targeted clarification and a sub-500 ms budget cannot
+both be honoured on the same request, and left it open. Four mechanisms resolve it, in
+descending order of how much they buy.
+
+### 1. `mark` never asks. It just does not badge.
+
+The tight budget applies to search-results rendering. But `mark`'s output is a badge,
+and **the absence of a badge is a perfectly good output.** Uncertain → no badge → the
+shopper browses as normal. No question, no latency, no false negative.
+
+Clarification is therefore only ever needed at `verify` and `gate` — where the shopper
+has already clicked and *stopped*, the page is already in a transition, and the budget
+is an order of magnitude looser. The conflict was an artefact of applying one budget to
+three call sites.
+
+### 2. Precompute every branch; ask only when branches disagree.
+
+When entity linking returns 2–3 candidate nodes, or a locale lexicon offers a broadened
+reading (DR 0006), **evaluate all of them.** Comparison is deterministic and cheap;
+three subsumption walks cost microseconds against a model call.
+
+- All branches agree → answer, no clarification. **Ambiguity that does not change the
+  outcome is not ambiguity worth surfacing.**
+- Branches disagree → *now* ask, and the question is precise because we know exactly
+  which distinction flips the verdict.
+
+This removes the large majority of would-be clarifications. Most ambiguity is
+irrelevant to the answer, and the naive design asks about all of it.
+
+### 3. Ask once per shopper, not once per purchase.
+
+The `HARD` unstated attributes in apparel — size, width — are **stable facts about a
+person**, not about a purchase. Asked once and retained via §2.8, the clarification
+burden decays toward zero after the first transaction, which is the same curve §2.8
+already promises for the `unstated` set. Purchase five needs no questions.
+
+### 4. For the merchant: get out of the render path entirely.
+
+Merchant top-N search queries follow a power law and are stable over days.
+`mark` verdicts for them can be **precomputed offline** and served from cache. The live
+path becomes a lookup, well under a millisecond, with zero integration into their
+latency-critical code. Cache miss → no badge → fail open. This is exactly what §3's
+merchant plugin is for, and it is the honest answer to "how do we avoid hampering their
+existing process": we are mostly not in it.
+
+This revises Option 3 above, which was deferred over stale-snapshot risk. Keying the
+cache on `(query, product_id, snapshot_hash, taxonomy_version, lexicon_version,
+model_version, prompt_version)` resolves that: if the merchant edits the product, the
+snapshot hash changes, the key misses, and we fail open rather than serving a verdict
+computed against a listing that no longer exists. The §2 snapshot guarantee is
+preserved because a cache hit *proves* the snapshot is unchanged.
+
+**Option 3 is therefore upgraded from "defer" to "recommended for `mark`, still
+forbidden for `gate`"** — the gate must always compute live, because at the gate the
+thing being authorised is this debit, now.
+
+### The actual millisecond figures
+
+Still to be measured, as the founder said, against real marketplace page loads rather
+than guessed. Stage E work. What this amendment fixes is the *shape* of the policy, not
+its constants.
+
 ## Decision
 
 *(founder — fill in, then set Status to CLOSED and record the date)*
