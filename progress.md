@@ -57,7 +57,20 @@ TRL 3 claim as of today: **nothing demonstrated.** No engine, no gold set, no nu
 1. ~~**Does a previous codebase exist to audit?**~~ **Resolved 2026-09-03** — no. Standing start.
 2. ~~**Which category gets the first gold set?**~~ **Resolved 2026-09-03** — **footwear / apparel** first. Exercises directed taxonomy, colour lattice, price bound and the size-silence rule in a single query. Grocery second, for dimensional quantities. Engine is category-parameterised so the second vertical is data, not a rewrite.
 2a. ~~**How is §8 handled?**~~ **Resolved 2026-09-03** — §8 amended in `CLAUDE.md`. Claude may write a component body only after the founder has written its signature and its test. §4.2, §5 and §0's no-build-ahead rule are untouched.
-3. **Which public catalogue source, and is its ToS clean?** §5 requires ToS checked before any collection, no auth-walled scraping, no personal data. *Blocking the large corpus, i.e. Stage D.*
+3. **Which catalogue source?** Researched 2026-09-05. **Narrowed, not closed — now blocks Stage B, not just Stage D.**
+
+   | Candidate | Licence | Verdict |
+   |---|---|---|
+   | Amazon Berkeley Objects (147k listings, 18 metadata attributes) | **CC BY-NC 4.0** | **Rejected.** Non-commercial. A gold set that prices a commercial indemnity (DR 0010/0012) is commercial use, whatever it is called internally |
+   | Kaggle Myntra / Flipkart product dumps | Kaggle licence field is meaningless here | **Rejected.** Derived from scraping those sites; the upstream ToS was violated before the file reached Kaggle, and that does not launder |
+   | UT-Zappos50K, DeepFashion, like.com Shoes | research/non-commercial | **Rejected**, same reason as ABO |
+   | Clothing16K | CC0 | Possible, but images plus labels — not catalogue listings with attribute metadata, which is what a comparison needs |
+   | **ONDC protocol specs + retail taxonomy** | open source, github.com/ONDC-Official | **Use for the ontology.** India-native, government-backed, publicly published. Directly relevant to DR 0003/0011 node structure. Catalogue *data* over ONDC belongs to sellers and needs network participation |
+   | **One merchant partner's catalogue, with written permission** | negotiated | **Recommended for the gold set** |
+
+   **The reframing that resolves this:** the gold set is 300–500 pairs, not a dataset. It does not need a corpus — it needs 300–500 listings we may legally use. A single merchant partner supplying their own catalogue under a written data-use term is clean, needs no licence archaeology, and is a partner we need anyway for row 1 of DR 0010. The large unlabelled corpus (§5, Stage D) is a separate and later problem.
+
+   *Founder action: secure one merchant catalogue permission, or confirm a CC0/ODbL source carrying real attribute metadata.*
 4. **Who is the second annotator for the 10% kappa sample?** Kappa needs two humans. *Blocking Stage B's definition of done.*
 5. **DR 0052 — confirmation-window timeout default per irreversibility class.** Referenced in §3 Stage E as already resolved, but the decision record is not in this repo. *Needs to be written down or restated.*
 
@@ -112,8 +125,16 @@ the indemnity is second-loss, after the ordinary merchant return recovers what i
 
 **Still no engine code, and correctly so** — §3 gates Stage C behind Stage B.
 
-**Next action is the founder's:** hand-write `data/guideline.md`, and clear a catalogue
-source under §5.
+**Catalogue source researched (Step 4).** Every standard footwear/apparel research
+dataset is non-commercial or scrape-derived and therefore unusable under §5 — ABO is
+CC BY-NC 4.0, and the Indian Kaggle dumps are Myntra/Flipkart scrapes. See open question
+3 for the full table. The resolution is that a 300–500 pair gold set is not a dataset
+problem: one merchant partner's own catalogue under a written data-use term is clean, and
+that partner is needed for DR 0010 row 1 regardless. ONDC's published retail taxonomy is
+separately useful as input to the ontology.
+
+**Next action is the founder's:** hand-write `data/guideline.md`, and secure one merchant
+catalogue permission.
 
 ### 2026-09-04 — Session 4
 - **DR 0007 opened — the verification floor.** Founder's concept: some fields are *preconditions*, not optional attributes. Footwear cannot be verified without a size. A request lacking one was never verifiable rather than uncertain, and that is a different heading from the merchant failing to publish data. Checkable before any model call. Closes DR 0001 toward reason codes and adds `FLOOR_NOT_MET`.
