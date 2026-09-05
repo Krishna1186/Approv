@@ -44,10 +44,10 @@ TRL 3 claim as of today: **nothing demonstrated.** No engine, no gold set, no nu
 |---|---|---|
 | The contract | `CLAUDE.md` | Committed |
 | This tracker | `progress.md` | Committed |
-| Annotation guideline | `data/guideline.md` | **Does not exist — this is the critical path.** Founder hand-writes. Must resolve: the reason-code set, the footwear floor, criticality class per attribute, the `en-IN` sandals case, and facet handling |
+| Annotation guideline | `data/guideline.md` | **Skeleton created 2026-09-05 — 12 open questions, no answers.** Claude wrote the questions and worked examples; every answer is the founder's (§3, §5). Still the critical path |
 | Attack-surface taxonomy | — | Does not exist. §6 says write it now; costs thinking, not build time |
 | Decision records | `docs/decisions/` | **Closed:** 0001, 0002, 0003, 0007, 0010, 0011. **On hold:** 0006. **Open, non-blocking:** 0004, 0005, 0008, 0009, 0012 (holdout caps), 0013 (Stage E). **Nothing now blocks Stage B.** |
-| `learnings.md` | — | Does not exist. §7 step 8 writes into it every session |
+| `learnings.md` | `learnings.md` | **Created 2026-09-05.** Claude writes the factual part of each entry and logs founder corrections; the three reflection lines per session are the founder's and are currently blank |
 | Gold set | `data/labelled/` | Empty. Founder-labelled only, never AI-generated (§5) |
 
 ---
@@ -133,8 +133,18 @@ problem: one merchant partner's own catalogue under a written data-use term is c
 that partner is needed for DR 0010 row 1 regardless. ONDC's published retail taxonomy is
 separately useful as input to the ontology.
 
-**Next action is the founder's:** hand-write `data/guideline.md`, and secure one merchant
-catalogue permission.
+**Next action is the founder's:** answer Q1–Q12 in `data/guideline.md`, and secure one
+merchant catalogue permission.
+
+**Agent-search sourcing (founder question, 2026-09-05):** usable for *discovery* of
+candidate products, not for *ground truth*. A search snippet may paraphrase or omit
+attributes, and a wrong attribute in the gold set poisons the only asset that can produce
+an accuracy number. It also biases the corpus toward products agents pick, which is the
+opposite of the near-miss construction §3 requires, and it circularly contaminates any
+later benchmark of that same agent. Attributes must be verified against the real listing.
+The distinction maps onto §5's two corpora: agent-sourced data is acceptable for the large
+*unlabelled* corpus (behaviour, self-consistency, metamorphic invariants — no ground truth
+needed) and not for the gold set.
 
 ### 2026-09-04 — Session 4
 - **DR 0007 opened — the verification floor.** Founder's concept: some fields are *preconditions*, not optional attributes. Footwear cannot be verified without a size. A request lacking one was never verifiable rather than uncertain, and that is a different heading from the merchant failing to publish data. Checkable before any model call. Closes DR 0001 toward reason codes and adds `FLOOR_NOT_MET`.
