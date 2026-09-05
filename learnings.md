@@ -86,29 +86,6 @@ not a cycle. → DR 0003 addendum, DR 0011.
 
 ---
 
-## Session 6 — 2026-09-05
-
-**Founder correction #9 — "doesn't `confirm` ruin the whole point?"**
-The strongest objection raised so far. If the answer to every ambiguity is *ask the human*,
-the design has reintroduced the human-in-the-loop that agentic purchasing exists to remove.
-Correct as stated, and it exposed a real error: Claude had been treating `confirm` as a
-single destination. It is a *decision state*, not a *recipient* — it can be answered by the
-preference record, by the agent re-picking, or by a human, in ascending order of cost, and
-only the `gate` call site ever reaches a person. → DR 0014, which also fixes the three kill
-thresholds *before* measurement so a bad confirm rate cannot be rationalised afterwards.
-
-**Founder correction #10 — the corpus deadlock.**
-"I need a verified dataset, but I can't get vendor data till I pilot, and I need an MVP to
-pilot." Real, but only under two assumptions Claude had left unexamined: that the catalogue
-must come from a large marketplace, and that the first thing shipped must be the gate.
-→ DR 0015.
-
-- Didn't understand at the start:
-- Understand now:
-- Still cannot explain:
-
----
-
 ## Session 5 — 2026-09-04/05
 
 **Founder correction #7 — ACP carts kill the merchant-side product.**
@@ -127,6 +104,29 @@ a preference record that pre-fills but never authorises, and caching the *produc
 
 **Design freeze.** 2,162 lines of design, zero code, zero labelled pairs. Guarantee
 structure fixed as a capped B2B indemnity to the agent operator, quoted only after Stage C.
+
+- Didn't understand at the start:
+- Understand now:
+- Still cannot explain:
+
+---
+
+## Session 6 — 2026-09-05
+
+**Founder correction #9 — "doesn't `confirm` ruin the whole point?"**
+The strongest objection raised so far. If the answer to every ambiguity is *ask the human*,
+the design has reintroduced the human-in-the-loop that agentic purchasing exists to remove.
+Correct as stated, and it exposed a real error: Claude had been treating `confirm` as a
+single destination. It is a *decision state*, not a *recipient* — it can be answered by the
+preference record, by the agent re-picking, or by a human, in ascending order of cost, and
+only the `gate` call site ever reaches a person. → DR 0014, which also fixes the three kill
+thresholds *before* measurement so a bad confirm rate cannot be rationalised afterwards.
+
+**Founder correction #10 — the corpus deadlock.**
+"I need a verified dataset, but I can't get vendor data till I pilot, and I need an MVP to
+pilot." Real, but only under two assumptions Claude had left unexamined: that the catalogue
+must come from a large marketplace, and that the first thing shipped must be the gate.
+→ DR 0015.
 
 - Didn't understand at the start:
 - Understand now:
