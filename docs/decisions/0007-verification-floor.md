@@ -1,6 +1,6 @@
 # DR 0007 — The verification floor: minimum data per category
 
-- **Status:** OPEN — founder decides
+- **Status:** CLOSED 2026-09-05 — Option 2, floor as a precondition
 - **Raised:** 2026-09-04, by the founder
 - **Touches:** §2.1, §2.2, the record, the criticality profiles, the merchant pitch
 - **Blocks:** the `CategoryProfile` type; closes out DR 0001
@@ -121,4 +121,24 @@ makes the record a defence.
 
 ## Decision
 
-*(founder — fill in, then set Status to CLOSED and record the date)*
+**2026-09-05 — Option 2 adopted.** The verification floor is a **precondition**,
+evaluated against the request before entity linking, before any model call, and before
+any comparison. A request that cannot clear its category floor terminates immediately
+with `FLOOR_NOT_MET`, naming the absent field and the profile that required it.
+
+This closes DR 0001 in favour of reason codes rather than a fourth ternary value. The
+reason set is:
+
+```
+FLOOR_NOT_MET | PRODUCT_SILENT | REQUEST_SILENT | INCOMMENSURABLE
+             | LOW_PROVENANCE | UNRESOLVED_TERM | BRANCH_DISAGREEMENT
+             | FACET_UNASSIGNED
+```
+
+`FACET_UNASSIGNED` is added by DR 0011; `BRANCH_DISAGREEMENT` by DR 0006 and is dormant
+while lexicons are on hold.
+
+Floor membership per category is authored, lives in `CategoryProfile`, and is a strict
+subset of the HARD criticality class. The footwear floor set is proposed as
+`{form facet, size}` and is confirmed or changed by the founder in `data/guideline.md`.
+

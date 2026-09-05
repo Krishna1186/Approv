@@ -1,6 +1,6 @@
 # DR 0002 — Where do the comparison operators live?
 
-- **Status:** OPEN — founder decides
+- **Status:** CLOSED 2026-09-05 — Option 2, three stages plus a shared `types/`
 - **Raised:** 2026-09-03
 - **Touches:** the §2.4 stage boundary, the §2 layout, and the §4.1 import test
 - **Blocks:** the first line of code in any module
@@ -122,4 +122,21 @@ See DR 0003.
 
 ## Decision
 
-*(founder — fill in, then set Status to CLOSED and record the date)*
+**2026-09-05 — Option 2 adopted.** Three stages with a shared vocabulary module:
+
+```
+approv/
+  types/       shared vocabulary. Types and enums only, no logic, imports nothing.
+  semantic/    model -> typed constraints + typed attributes. Includes entity linking.
+  algebra/     (constraint, attribute) -> ternary. Deterministic. No model, no decision.
+  evaluator/   ternaries + criticality profile -> allow|confirm|refuse. Founder, by hand.
+  profiles/    criticality profiles, taxonomy DAGs, attribute lattices. Versioned.
+  receipts/    signed, hash-chained record of every decision
+  harness/     runs corpora through the decision path, emits metrics
+  surfaces/    (Stage E)
+```
+
+The §4.1 invariant becomes two assertions, both stronger than the original: `evaluator/`
+imports only `types/`, and `algebra/` imports nothing from `semantic/`. §2.4 and the §2
+layout diagram in `CLAUDE.md` need updating to match when the first module is created.
+

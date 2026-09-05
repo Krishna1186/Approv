@@ -2,13 +2,13 @@
 
 Tracking document. Reflects actual state, not intended state. Updated at the end of every session.
 
-Last updated: 2026-09-04
+Last updated: 2026-09-05
 
 ---
 
 ## Where we are
 
-**Stage: A — closed. Building from a standing start. No engine code yet.**
+**Stage: B — design frozen 2026-09-05. Blocked on `data/guideline.md`, which the founder hand-writes.**
 
 Stage A is resolved without an audit. The prior repo is
 `Krishna1186/payment-agent-harness` (Python, ~30 KB, last pushed 2026-08-24). Founder's
@@ -30,7 +30,7 @@ TRL 3 claim as of today: **nothing demonstrated.** No engine, no gold set, no nu
 | Stage | Definition of done (§10) | State |
 |---|---|---|
 | A — Audit | Every surviving line explainable; every deletion justified | **Closed 2026-09-03** — no subject to audit; prior repo declared non-ancestral, nothing carried across |
-| B — Category, guideline, gold set | Cohen's kappa computed and > 0.6 | **In progress.** Category fixed: footwear / apparel. `data/guideline.md` not yet written — it must exist before any label does |
+| B — Category, guideline, gold set | Cohen's kappa computed and > 0.6 | **Active, blocked.** Category fixed: footwear / apparel, locale `en-IN`. `data/guideline.md` must be hand-written by the founder before any label exists (§3). Corpus source still uncleared (open question 3) |
 | C — Semantic stage + first number | One number with denominator, category, model version, prompt version, date, Wilson interval | Not started — gated on B |
 | D — Evaluator, receipts, harness, scale | Stranger verifies a receipt with a public key; CI fails on metric drop; behaviour distribution + metamorphic pass rate | Not started — gated on C |
 | E — Surfaces | End-to-end block → check → confirm → debit in sandbox + 60s recording | Not started — gated on D |
@@ -44,9 +44,9 @@ TRL 3 claim as of today: **nothing demonstrated.** No engine, no gold set, no nu
 |---|---|---|
 | The contract | `CLAUDE.md` | Committed |
 | This tracker | `progress.md` | Committed |
-| Annotation guideline | `data/guideline.md` | Does not exist. Must be hand-written **before** any label exists (§3 Stage B) |
+| Annotation guideline | `data/guideline.md` | **Does not exist — this is the critical path.** Founder hand-writes. Must resolve: the reason-code set, the footwear floor, criticality class per attribute, the `en-IN` sandals case, and facet handling |
 | Attack-surface taxonomy | — | Does not exist. §6 says write it now; costs thinking, not build time |
-| Decision records | `docs/decisions/` | **0003 CLOSED.** Open: **0001** (superseded by 0007) · **0002** where comparison lives · **0004** latency (amended) · **0005** request-side provenance (Tier 1 only, dormant) · **0006** ontology vs lexicons · **0007** verification floor · **0008** what we actually receive · **0009** monotone model use. 0002, 0006, 0007 and 0008 block code (§4.8) |
+| Decision records | `docs/decisions/` | **Closed:** 0001, 0002, 0003, 0007, 0010, 0011. **On hold:** 0006. **Open, non-blocking:** 0004, 0005, 0008, 0009, 0012 (holdout caps), 0013 (Stage E). **Nothing now blocks Stage B.** |
 | `learnings.md` | — | Does not exist. §7 step 8 writes into it every session |
 | Gold set | `data/labelled/` | Empty. Founder-labelled only, never AI-generated (§5) |
 
@@ -76,6 +76,44 @@ TRL 3 claim as of today: **nothing demonstrated.** No engine, no gold set, no nu
 ---
 
 ## Session log
+
+### 2026-09-05 — Session 5 — DESIGN FREEZE
+
+Eleven DRs, 2,162 lines of design, zero lines of code and zero labelled pairs. Every
+commercial path now depends on one missing artifact: an accuracy number with a
+denominator and an interval. Design is frozen at its current state.
+
+**Founder decisions:**
+- **Guarantee structure:** receipts and confirmation gate first; **no guarantee quoted,
+  priced or described to anyone until Stage C produces a number.** Then a capped B2B
+  indemnity to the *agent operator*, who makes their own user whole. Approv never faces a
+  consumer, keeping it a commercial warranty rather than a regulated financial promise.
+- **Sequencing:** freeze design, execute Stage B.
+
+**Closed:** 0001 (superseded by 0007) · 0002 (three stages + `types/`) · 0007 (floor as
+precondition) · 0010 (agent operator is the buyer) · 0011 (facets independently optional).
+
+**Opened:** 0012 loss data and underwriting basis · 0013 confirmation surface.
+
+**The point in 0012 that decides whether underwriting is possible at all:** outcomes are
+observable only for transactions we allowed, so the false-allow rate measured naively is
+computed over a sample selected by the mechanism being evaluated. This is the
+selective-labels problem from consumer lending. It requires a **capped random holdout** —
+deliberately releasing a small, value-limited fraction of would-be-refused transactions
+and eating the losses as the price of calibration data. Without it no quoted price is
+defensible.
+
+**On the confirmation surface (0013):** the founder's UPI-invoice concept is the right
+surface, corrected on four points — it must sit *before* the debit or no consent is
+obtained and the liability transfer is given away free; it must show attributes rather
+than a score, because a score invites a rubber stamp and "they were shown 94%" is not a
+defence; a nudged or auto-confirming screen is strictly worse than no screen at all; and
+the indemnity is second-loss, after the ordinary merchant return recovers what it can.
+
+**Still no engine code, and correctly so** — §3 gates Stage C behind Stage B.
+
+**Next action is the founder's:** hand-write `data/guideline.md`, and clear a catalogue
+source under §5.
 
 ### 2026-09-04 — Session 4
 - **DR 0007 opened — the verification floor.** Founder's concept: some fields are *preconditions*, not optional attributes. Footwear cannot be verified without a size. A request lacking one was never verifiable rather than uncertain, and that is a different heading from the merchant failing to publish data. Checkable before any model call. Closes DR 0001 toward reason codes and adds `FLOOR_NOT_MET`.

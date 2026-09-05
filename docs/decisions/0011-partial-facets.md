@@ -1,6 +1,6 @@
 # DR 0011 — Partial facet coverage: a node exists, its other facets do not
 
-- **Status:** OPEN — founder decides
+- **Status:** CLOSED 2026-09-05 — Option 2, facets independently optional
 - **Raised:** 2026-09-04, by the founder
 - **Touches:** DR 0003, DR 0007, the pending queue, the taxonomy artifact format
 - **Blocks:** the taxonomy file format, therefore the first operator
@@ -98,4 +98,15 @@ the taxonomy: it trades a visible gap for an invisible error.
 
 ## Decision
 
-*(founder — fill in, then set Status to CLOSED and record the date)*
+**2026-09-05 — Option 2 adopted.** Facets are independently optional. A node may be
+assigned in `form` and unassigned in `use`; that is a legal published state.
+
+- An unassigned facet compares as `unknown` with reason `FACET_UNASSIGNED`, never as
+  `satisfied` and never as `violated`.
+- The pending queue holds **facet assignments**, not nodes, so an unresolvable facet does
+  not block the rest of a batch from shipping a new taxonomy version.
+- Facet completeness is measured per facet per category and watched as a leading
+  indicator of the `confirm` rate.
+- Option 3 (inferring a missing facet from sibling nodes) is explicitly rejected: it
+  trades a visible gap for an invisible error.
+

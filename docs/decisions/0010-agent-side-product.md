@@ -1,6 +1,6 @@
 # DR 0010 — The agent is the customer, and the badge is an underwriting instrument
 
-- **Status:** OPEN — founder decides
+- **Status:** CLOSED 2026-09-05 — Option 2, agent operator is the buyer
 - **Raised:** 2026-09-04, by the founder
 - **Touches:** §1, §2.2, §2.5, §2.7, §2.8, §3, DR 0008
 - **Supersedes:** the merchant-first reading of DR 0008 Option 2
@@ -154,4 +154,21 @@ exposed.
 
 ## Decision
 
-*(founder — fill in, then set Status to CLOSED and record the date)*
+**2026-09-05 — Option 2 adopted.** Build row 1 (human search on an integrated merchant)
+as the measurement rig that produces Stage C's number. Sell rows 3 and 4 to agent
+operators as capability-plus-indemnity.
+
+Founder decision on the guarantee structure, same date:
+
+- Receipts and the confirmation gate ship first. **No guarantee is quoted, priced, or
+  described to any counterparty until Stage C produces a number with a confidence
+  interval.**
+- The guarantee, when it exists, is a **capped commercial indemnity to the agent
+  operator**, who pays their own user. Approv never faces a consumer. This keeps it a
+  B2B contractual warranty rather than a consumer-facing financial promise, which is the
+  form most likely to attract IRDAI attention.
+- Pricing is per-operator and re-measured, because adverse selection is real: the
+  operators with the weakest agents want the badge most.
+
+Mechanics of loss measurement move to **DR 0012**; the confirmation surface to **DR 0013**.
+

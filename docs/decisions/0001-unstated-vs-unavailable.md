@@ -1,6 +1,6 @@
 # DR 0001 — Does the ternary need a fourth value?
 
-- **Status:** OPEN — but see DR 0007, which adopts Option 3 and extends it with a verification floor
+- **Status:** CLOSED 2026-09-05 — superseded by DR 0007, which adopts Option 3 and extends it
 - **Raised:** 2026-09-03
 - **Touches:** the decision path and the record. §4.8 requires this to close before code.
 - **Blocks:** the `ComparisonRecord` schema, therefore every component
@@ -91,4 +91,8 @@ field to the actual shape of the problem, and leaves §2.1 as written.
 
 ## Decision
 
-*(founder — fill in, then set Status to CLOSED and record the date)*
+**2026-09-05 — Option 3 adopted, via DR 0007.** The ternary in §2.1 stands
+unchanged. A separate reason code records *why* a comparison was not
+`satisfied`/`violated`. DR 0007 supplies the full reason set and adds `FLOOR_NOT_MET`,
+which this DR did not anticipate. No fourth ternary value is introduced.
+
