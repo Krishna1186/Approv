@@ -46,7 +46,7 @@ TRL 3 claim as of today: **nothing demonstrated.** No engine, no gold set, no nu
 | This tracker | `progress.md` | Committed |
 | Annotation guideline | `data/guideline.md` | **Skeleton created 2026-09-05 — 12 open questions, no answers.** Claude wrote the questions and worked examples; every answer is the founder's (§3, §5). Still the critical path |
 | Attack-surface taxonomy | — | Does not exist. §6 says write it now; costs thinking, not build time |
-| Decision records | `docs/decisions/` | **Closed:** 0001, 0002, 0003, 0007, 0010, 0011. **On hold:** 0006. **Open, non-blocking:** 0004, 0005, 0008, 0009, 0012 (holdout caps), 0013 (Stage E). **Nothing now blocks Stage B.** |
+| Decision records | `docs/decisions/` | **Closed:** 0001, 0002, 0003, 0007, 0010, 0011. **On hold:** 0006. **Open:** 0004, 0005, 0008, 0009, 0012 (holdout caps), 0013 (Stage E), **0014 (escalation ladder + kill thresholds)**, **0015 (corpus route)**. 0015 is the critical path |
 | `learnings.md` | `learnings.md` | **Created 2026-09-05.** Claude writes the factual part of each entry and logs founder corrections; the three reflection lines per session are the founder's and are currently blank |
 | Gold set | `data/labelled/` | Empty. Founder-labelled only, never AI-generated (§5) |
 
@@ -89,6 +89,26 @@ TRL 3 claim as of today: **nothing demonstrated.** No engine, no gold set, no nu
 ---
 
 ## Session log
+
+### 2026-09-05 — Session 6
+
+- **DR 0014 opened — the escalation ladder.** Founder challenged whether `confirm` defeats
+  the product: if every ambiguity asks the human, agentic purchasing has gained nothing.
+  Correct, and it exposed a conflation — `confirm` is a decision *state*, not a *recipient*.
+  It resolves at one of four rungs: deterministically in `algebra/` (free), from the
+  preference record (free), by the **agent re-picking** (milliseconds), and only last by a
+  human. Only the `gate` call site ever reaches a person; `mark` means "no badge" and
+  `verify` means "agent, pick again". Every DR written so far exists to widen rung 1.
+  Three separate kill thresholds to be set **before** Stage C measures anything.
+- **DR 0015 opened — the corpus deadlock.** Founder: cannot get vendor data without a
+  pilot, cannot pilot without an MVP, cannot build an MVP without data. The loop holds only
+  if the first partner must be a large marketplace and the first shipped thing must be the
+  gate. Four routes; recommendation is **C in parallel with A** — the DR 0007 coverage
+  report is computable from a merchant's catalogue alone, with no engine and no accuracy
+  number, which converts the ask from "trust my unproven product" into "send me your feed
+  and I'll tell you where your listings are incomplete."
+- Created `learnings.md` and the `data/guideline.md` skeleton (12 questions, no answers).
+- Still no engine code.
 
 ### 2026-09-05 — Session 5 — DESIGN FREEZE
 
@@ -133,8 +153,8 @@ problem: one merchant partner's own catalogue under a written data-use term is c
 that partner is needed for DR 0010 row 1 regardless. ONDC's published retail taxonomy is
 separately useful as input to the ontology.
 
-**Next action is the founder's:** answer Q1–Q12 in `data/guideline.md`, and secure one
-merchant catalogue permission.
+**Next action is the founder's:** answer Q1–Q12 in `data/guideline.md`; pick a route in
+DR 0015; set the three kill thresholds in DR 0014.
 
 **Agent-search sourcing (founder question, 2026-09-05):** usable for *discovery* of
 candidate products, not for *ground truth*. A search snippet may paraphrase or omit
