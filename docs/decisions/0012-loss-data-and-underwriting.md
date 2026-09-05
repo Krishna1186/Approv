@@ -1,6 +1,8 @@
 # DR 0012 — Loss data, and what makes an indemnity priceable
 
-- **Status:** OPEN — founder decides the holdout budget; the rest is settled
+- **Status:** OPEN — **not actionable until there is live transaction volume.** Nothing here
+  blocks Stage B, Stage C or Stage D. Recorded now so it is not discovered late; revisit
+  when a guarantee is about to be quoted
 - **Raised:** 2026-09-05, by the founder
 - **Touches:** §2.2, §2.6, §4.6, DR 0010, DR 0013
 - **Blocks:** nothing in Stage B; blocks any quoted guarantee
