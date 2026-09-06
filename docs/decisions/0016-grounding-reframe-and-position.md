@@ -179,6 +179,67 @@ which means it is the only part of this system that can be demonstrated before S
 finishes. It is also the check that most directly answers "is this agent trustworthy",
 which is what DR 0010's buyer is paying for.
 
+---
+
+## Amendment, 2026-09-06 — the merchant side was never a second product
+
+§6 above framed the choice as agent-side vs merchant-side vs escrow, on the assumption
+that the merchant-side customer is a marketplace defending itself against **external**
+agents calling in. The founder has withdrawn that framing, and a former Zepto senior
+independently rejected it: a marketplace does not want a tool for auditing somebody
+else's agent, because the liability for a bad pick is not theirs. The right answer for
+an external agent calling Blinkit is to sell to **the agent**, not to Blinkit.
+
+**The actual merchant-side customer is a company whose agent and inventory are the same
+company.** Blinkit's own in-app agent buying from Blinkit's own catalogue. District.
+D2C brands adding an assistant. The agentic marketplaces and quick-commerce startups
+now being founded agent-first.
+
+That collapses the whole design into one shape:
+
+> **Approv sits beside any agent that can move money, whatever it is searching.**
+
+External agent across many stores, or in-house agent over one catalogue — same
+integration, same three checks, same record. There is no second product.
+
+### What this deletes
+
+- **The two-sided adoption problem, entirely.** For an in-house agent both halves belong
+  to one company, one contract, one legal review. The signed-halves construction in §6
+  is not wrong, it is simply **not needed for this customer** and moves off the critical
+  path. It stays specified for the external-agent case.
+- **Most of DR 0015.** The corpus deadlock existed because the agent side and the
+  catalogue side sat in different companies. A single in-house-agent partner supplies
+  both in one conversation.
+- **DR 0010's split.** No indemnity to apportion between an agent operator and a
+  merchant. The company is both parties, so it eats its own losses — which is exactly
+  why it has a reason to buy.
+
+### What it makes harder, and the honest answer
+
+If they own the agent, they can also build the verifier. The moat cannot be the code.
+
+**The product is independence, not capability.** A company grading its own agent's
+homework is not credible to its own risk committee, its bank, or NPCI — for the same
+reason a company with excellent internal accountants still buys an external audit. When
+UAP requires an agent to be authorised before it can move money, "our own team says our
+agent is fine" is not an answer anybody can act on. An independent, signed, replayable
+record is.
+
+The durable moat is therefore: independence, the cross-company record of how agents
+actually fail, and the guarantee — in that order. Never the engine.
+
+### Consequence for which check matters
+
+An in-house agent reads its own authoritative inventory database rather than scraped
+prose. So injection risk drops, and GROUNDING catches less because the data is already
+clean. The dominant in-house failure is **silent substitution** — asked for Amul 1L,
+out of stock, shipped Mother Dairy 1L — which is a SATISFACTION failure with structured
+data on both sides and is therefore deterministic to catch.
+
+**For the first customer, order the checks: CONSISTENCY, then SATISFACTION, then
+GROUNDING.** §6's recommendation to ship CONSISTENCY first is unchanged.
+
 ## Decision
 
 *(founder — close this before any decision-path code beyond `types/`)*

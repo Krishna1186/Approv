@@ -129,6 +129,18 @@ text the agent reads, so they are an injection vector; and a server can change a
 description after the agent approved it (rug-pull). A proxy sitting in front of a
 merchant's MCP server is exactly where description hashing would catch this.
 
+**DR 0016 amended, same day — there is no second product.** The merchant-side idea was
+never "help Blinkit audit external agents calling in"; a marketplace has no liability for
+someone else's agent and will not buy that (founder's own call, independently confirmed by
+the ex-Zepto senior). The real merchant customer is a company whose **agent and inventory
+are the same company** — Blinkit's in-app agent over Blinkit's catalogue, District, D2C
+brands, agent-first marketplaces. Same integration as the agent-side product, same three
+checks, same record. This deletes the two-sided adoption problem, most of DR 0015's corpus
+deadlock (one partner supplies both halves), and DR 0010's liability split. What it does
+not delete is the "why not build it yourself" objection, whose answer is that **the product
+is independence, not capability** — a company cannot credibly grade its own agent for its
+own risk committee, its bank, or NPCI.
+
 **DR 0016 pending** — the reframe, the graded score, and the MCP channel all touch the
 decision path, so §4.8 requires one record before any code. One record, not five.
 
