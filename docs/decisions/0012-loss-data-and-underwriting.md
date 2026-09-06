@@ -139,6 +139,45 @@ rate-limited, recorded as such.**
 signal; the production holdout is what makes it trustworthy. Both are needed and they
 measure different things — which is the same two-corpora distinction §5 already draws.
 
+---
+
+## Amendment, 2026-09-06 — the badge is the unit of both revenue and exposure
+
+Founder's commercial model, which is tighter than anything above and should be treated as
+the working structure:
+
+- **We are only ever liable for what we badged.** No badge, no promise, no payout. This is
+  §2.2's named-perils rule expressed commercially, and it bounds exposure by construction.
+- **On a disputed return, the hash-chained receipt is the adjudicator.** Fault is decided
+  by a mapping written into the commercial contract, not negotiated per incident.
+- **If it is our fault, the refund routes through our account.** The partner is not out of
+  pocket. We are standing behind our own output, not covering their business risk.
+- **Pricing is per badge**, discounted in volume. Revenue and exposure therefore move
+  together.
+- **A second revenue line that needs no guarantee:** cross-company QA. Measuring agents
+  against a common corpus, including outside a partner's own catalogue, gives them an
+  independent quality number and gives us the cross-company failure data that is the
+  actual moat. Sells before Stage C produces a guarantee.
+
+### Three things to get right
+
+**1. The wording, not the label.** "Just a refund, not insurance" is the right *structure*
+but the distinction that matters is what the contract says we are standing behind. *"We
+refund when our own badge was wrong"* is a warranty on our own performance, like an SLA
+credit. *"We cover your losses"* is risk transfer and reads as insurance. Same money, very
+different regulatory posture. **Get this reviewed by a lawyer before it appears in a
+contract — not by Claude.**
+
+**2. Per-badge pricing makes the badge rate the whole business, in both directions.** A
+badge that fires on 8% of traffic is perfectly safe and commercially worthless. Being paid
+per badge means we are paid to take risk, so the pressure to badge more is structural
+rather than occasional. The kill thresholds in DR 0014 must be set before this is priced,
+not after.
+
+**3. The fault mapping is the hard part and it is unchanged from §2 above.** Merchant
+return reason codes are "did not fit" and "changed my mind"; neither maps cleanly to our
+fault. That mapping must be authored **before** any return data is ingested.
+
 ## Decision
 
 *(founder — set the holdout value cap and rate cap, then close)*
