@@ -233,6 +233,30 @@ What this amendment does NOT touch:
 - **§7 steps 6, 7, 8 stand.** Interrogate, retype by hand, log. The body Claude writes
   is a draft I retype, never a file I keep.
 
+### Amendment 2026-09-06 — temporary suspension of §7 step 4, for the pitch window
+
+I am handling the technical build of this startup, and I need something real to demo
+before a pitch deck goes out. So for this stretch only:
+
+**Claude writes both the test and the body. In exchange, Claude owes a full teach-back
+on everything it writes: what it built, why, in plain language, and what the alternatives
+were and why they were rejected.** A component delivered without that explanation is not
+delivered.
+
+The point of §7 step 4 was never the typing. It was that I understand what is being built
+in my own company. The explanation carries that load during this window; the authorship
+requirement resumes afterwards, and I will say when.
+
+**Still untouched by this amendment:**
+
+- **§4.2.** The evaluator is mine, by hand, including its tests. `algebra/` is not the
+  evaluator — DR 0002 separates them — so this suspension covers `algebra/` and
+  `semantic/` and stops at `evaluator/`.
+- **§5.** No AI-generated, AI-augmented or AI-relabelled data. The gold set is mine.
+- **§0 "do not build ahead."** One component at a time, still.
+- **The December test.** If I cannot defend a component in front of a committee, the
+  explanation failed, and that is a defect to be fixed rather than a cost of moving fast.
+
 ---
 
 ## 9. Stack
