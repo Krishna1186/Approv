@@ -2,13 +2,21 @@
 
 Tracking document. Reflects actual state, not intended state. Updated at the end of every session.
 
-Last updated: 2026-09-05
+Last updated: 2026-09-06
 
 ---
 
 ## Where we are
 
-**Stage: B — design frozen 2026-09-05. Blocked on `data/guideline.md`, which the founder hand-writes.**
+**Stage: B — reframed 2026-09-06. Blocked on `data/guideline.md`, now being written from
+the founder's answers in session (founder supplies every answer; Claude transcribes).**
+
+**The reframe, 2026-09-06.** The check is no longer "does this product match the user's
+intent." It is **"did the agent read this product page correctly, and from which field."**
+Ground truth moves onto the merchant's own page, so labelling stops being a judgement call
+about whether a sandal is a shoe. Category for v1 changed from footwear to **quick commerce
+(incl. groceries)**, then broader e-commerce. Needs DR 0016 before any decision-path code
+(§4.8).
 
 Stage A is resolved without an audit. The prior repo is
 `Krishna1186/payment-agent-harness` (Python, ~30 KB, last pushed 2026-08-24). Founder's
@@ -30,7 +38,7 @@ TRL 3 claim as of today: **nothing demonstrated.** No engine, no gold set, no nu
 | Stage | Definition of done (§10) | State |
 |---|---|---|
 | A — Audit | Every surviving line explainable; every deletion justified | **Closed 2026-09-03** — no subject to audit; prior repo declared non-ancestral, nothing carried across |
-| B — Category, guideline, gold set | Cohen's kappa computed and > 0.6 | **Active, blocked.** Category fixed: footwear / apparel, locale `en-IN`. `data/guideline.md` must be hand-written by the founder before any label exists (§3). Corpus source still uncleared (open question 3) |
+| B — Category, guideline, gold set | Cohen's kappa computed and > 0.6 | **Active.** Category changed 2026-09-06 to **quick commerce / grocery**, locale `en-IN`. `data/guideline.md` being written from the founder's in-session answers. Corpus source materially easier under the reframe — a pair needs a public product page plus a real agent's claim about it, not a merchant's private catalogue |
 | C — Semantic stage + first number | One number with denominator, category, model version, prompt version, date, Wilson interval | Not started — gated on B |
 | D — Evaluator, receipts, harness, scale | Stranger verifies a receipt with a public key; CI fails on metric drop; behaviour distribution + metamorphic pass rate | Not started — gated on C |
 | E — Surfaces | End-to-end block → check → confirm → debit in sandbox + 60s recording | Not started — gated on D |
@@ -44,7 +52,7 @@ TRL 3 claim as of today: **nothing demonstrated.** No engine, no gold set, no nu
 |---|---|---|
 | The contract | `CLAUDE.md` | Committed |
 | This tracker | `progress.md` | Committed |
-| Annotation guideline | `data/guideline.md` | **Skeleton created 2026-09-05 — 12 open questions, no answers.** Claude wrote the questions and worked examples; every answer is the founder's (§3, §5). Still the critical path |
+| Annotation guideline | `data/guideline.md` | **Being rewritten 2026-09-06 for the reframe.** The 12 intent-matching questions are largely obsolete; the new set is about *which field a claim was read from*. Every answer is still the founder's, given in session; Claude transcribes and invents nothing (§3, §5). Critical path |
 | Attack-surface taxonomy | — | Does not exist. §6 says write it now; costs thinking, not build time |
 | Decision records | `docs/decisions/` | **Closed:** 0001, 0002, 0003, 0007, 0010, 0011. **On hold:** 0006. **Open:** 0004, 0005, 0008, 0009, 0012 (holdout caps), 0013 (Stage E), **0014 (escalation ladder + kill thresholds)**, **0015 (corpus route)**. 0015 is the critical path |
 | `learnings.md` | `learnings.md` | **Created 2026-09-05.** Claude writes the factual part of each entry and logs founder corrections; the three reflection lines per session are the founder's and are currently blank |
@@ -55,7 +63,7 @@ TRL 3 claim as of today: **nothing demonstrated.** No engine, no gold set, no nu
 ## Open questions blocking progress
 
 1. ~~**Does a previous codebase exist to audit?**~~ **Resolved 2026-09-03** — no. Standing start.
-2. ~~**Which category gets the first gold set?**~~ **Resolved 2026-09-03** — **footwear / apparel** first. Exercises directed taxonomy, colour lattice, price bound and the size-silence rule in a single query. Grocery second, for dimensional quantities. Engine is category-parameterised so the second vertical is data, not a rewrite.
+2. ~~**Which category gets the first gold set?**~~ **Resolved 2026-09-03, changed 2026-09-06** — now **quick commerce / grocery** first, per the reframe; footwear deferred. Founder's constraint is speed of onboarding new categories, not depth in one. The answer is that comparison operators are per *type* (quantity, enum, integer count, money, date), not per category, so a new category supplies a schema and a criticality table rather than new logic. Original 2026-09-03 rationale, now superseded: **footwear / apparel** first. Exercises directed taxonomy, colour lattice, price bound and the size-silence rule in a single query. Grocery second, for dimensional quantities. Engine is category-parameterised so the second vertical is data, not a rewrite.
 2a. ~~**How is §8 handled?**~~ **Resolved 2026-09-03** — §8 amended in `CLAUDE.md`. Claude may write a component body only after the founder has written its signature and its test. §4.2, §5 and §0's no-build-ahead rule are untouched.
 3. **Which catalogue source?** Researched 2026-09-05. **Narrowed, not closed — now blocks Stage B, not just Stage D.**
 
@@ -89,6 +97,45 @@ TRL 3 claim as of today: **nothing demonstrated.** No engine, no gold set, no nu
 ---
 
 ## Session log
+
+### 2026-09-06 — Session 7 — REFRAME
+
+**The product changed shape, for the better.** The check is now grounding rather than
+intent matching: *did the agent read this page correctly, and from which field.* This
+moves ground truth onto the merchant's own page, makes labelling objective, raises the
+expected kappa, and demotes the taxonomy/ontology work (DR 0003, 0006, 0011) out of v1.
+The provenance ladder becomes the main event rather than a caveat.
+
+**Merchant-side reframe.** The old merchant pitch (human traffic, one-tap) is dead by the
+founder's own call: on quick commerce people build carts, so per-product one-tap is
+useless and often costlier. The new merchant pitch is *all agentic traffic to you is
+verified*, sold on the returns and trust cost rather than on conversion.
+
+**Channel fact-check (founder asked; verified against sources):**
+
+| Channel | What the merchant actually receives | Verdict |
+|---|---|---|
+| Open-web agent | Identifying user-agent (`ChatGPT-User`, `OAI-SearchBot`, `PerplexityBot`, `ClaudeBot`) + the URL. Site-search query only if the agent used the merchant's own search; a direct product-page fetch carries no query at all. UA is self-declared | Partly true |
+| Session control (agent drives the user's browser) | A normal logged-in session, typically indistinguishable from a human. Site-search box query if used | Query yes, agent-detection no |
+| **UAP (NPCI)** | **Founder's assumption corrected.** UAP registers, verifies and authorises *agents* over UPI Circle delegation. It carries **identity, not intent**. Pending RBI approval | Do not design assuming intent arrives here |
+| **AP2 (Google)** | Better than expected. The Intent Mandate carries a **Prompt Playback** field — *"the Agent's understanding of the User's prompt in natural language"* — signed, shared with the merchant, usable as dispute evidence | This is Tier 2 (DR 0008), and it standardises the *agent's paraphrase* as the record of intent, which makes DR 0005's fabrication problem a rail-level issue |
+| **MCP (the one that matters)** | Typed tool arguments (`search(query, brand, pack_size)`), the exact server response, and the full call sequence | **Best channel.** Constraints arrive already structured, and agent-said-vs-agent-did becomes checkable with no model and no ontology |
+
+Net: no channel ever delivers the user's own words. Tier 0/1 of DR 0008 survives the
+reframe unchanged.
+
+**New attack surface, not in the §6 taxonomy and to be added:** MCP tool descriptions are
+text the agent reads, so they are an injection vector; and a server can change a tool
+description after the agent approved it (rug-pull). A proxy sitting in front of a
+merchant's MCP server is exactly where description hashing would catch this.
+
+**DR 0016 pending** — the reframe, the graded score, and the MCP channel all touch the
+decision path, so §4.8 requires one record before any code. One record, not five.
+
+**Founder corrections #11 and #12** logged in `learnings.md` (two-axis field ladder;
+seller advice may only downgrade).
+
+**Still no engine code.**
 
 ### 2026-09-05 — Session 6
 

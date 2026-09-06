@@ -131,3 +131,64 @@ must come from a large marketplace, and that the first thing shipped must be the
 - Didn't understand at the start:
 - Understand now:
 - Still cannot explain:
+
+---
+
+## Session 7 — 2026-09-06
+
+**Founder correction #11 — the field ladder has two axes, not one.**
+Claude ranked product fields by *extraction certainty*: structured field > title >
+free-text description. The founder's counter: the description is the merchant's own
+published guarantee, so a wrong description obliges them to take the return, which makes
+description-sourced claims **more** valuable than title-sourced ones, not less. Both are
+right about different things. The ladder splits into **liability** (who owes a remedy if
+this text is wrong) and **extraction certainty** (how sure we are we read it correctly).
+Liability decides whether a claim is coverable; certainty decides whether it is confident.
+A variant field is high on both; a description is high liability / low certainty; a review
+is low on both.
+
+Consequence Claude had not seen: because merchant-authored text is merchant-liable,
+**injection into a description is self-incriminating** — whoever plants it inherits the
+liability. The residual injection risk therefore concentrates in text nobody is liable
+for: reviews, Q&A, third-party seller content. That is a structural defence, and it is
+stronger than the technical one Claude had proposed.
+
+**Founder proposal — graded output instead of a hard ternary.**
+Founder asked for every comparison to return a distribution over the outcomes
+(e.g. 0.30 satisfied / 0.65 unsure / 0.05 refuse). The instinct is accepted; the shape was
+corrected. A distribution over `unsure` is a category error — uncertainty is a state of
+our knowledge, not a state of the world, so nothing can be 65% likely to be unsure.
+The correct shape is **one number over the fact** (P(the product really is 5kg)) with the
+allow/confirm/refuse verdict derived from founder-set thresholds plus attribute
+criticality. Score inside, verdict outside. This keeps §4.3 intact. Also flagged: a
+calibrated probability cannot exist at 300-500 pairs, so v1 ships the number as a
+**ranking**, not a probability. Pending DR 0016.
+
+**Founder correction #12 — seller advice must not be able to upgrade a claim.**
+Founder proposed an `others` bucket (seller recommendations, reviews) usable for decisions
+when the source is the seller. Accepted for evidence, corrected on direction: "runs small,
+order a size up" is *advice*, not an attribute claim. It does not change the fact that the
+item is a size 9. Advice may only **lower** confidence or force a `confirm`; if it can
+raise a verdict, planting one line of copy moves the decision, which reopens the injection
+channel the ladder just closed. Monotone rule (DR 0009) applied to advice.
+
+**Reframe accepted — the check is now grounding, not intent matching.**
+The question changes from "does this product match the user's intent" to "did the agent
+read this page correctly, and from which field." Ground truth moves onto the page, which
+makes labelling objective and unblocks Stage B. Demotes DR 0003/0006/0011 (taxonomy,
+ontology, lexicons) out of v1 and promotes the provenance ladder to the main event.
+
+**External input — call with a former Zepto senior (payments side).**
+Not evidence: he left before any agentic work started, so this is an informed prior, not
+an observation. Load-bearing points: quick-commerce platforms are already exposing public
+MCP, which he expects to be their main agentic channel; liability for a bad pick sits with
+the agent, but the *cost* (returns, trust) lands on the platform; and payments teams will
+not change a flow but **will happily outsource a liability**. That last one reframes the
+pitch from "buy our accuracy" to "take this off your books." Pilots: newer or smaller
+marketplaces. Feedback: payments PMs at large platforms. Consistent with DR 0010 and
+DR 0015 Route B, reached independently.
+
+- Didn't understand at the start:
+- Understand now:
+- Still cannot explain:
+
