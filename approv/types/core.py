@@ -157,8 +157,26 @@ class ReasonCode(str, Enum):
     FIELD_CONFLICT = "field_conflict"
     ADVICE_CONTRADICTS = "advice_contradicts"
     UNRESOLVED_TERM = "unresolved_term"
+    WITHIN_TOLERANCE = "within_tolerance"
     AGENT_SELF_CONTRADICTION = "agent_self_contradiction"
     UNATTESTED_COUNTERPARTY = "unattested_counterparty"
+
+
+class Resolution(str, Enum):
+    """What the agent could actually do about a finding.
+
+    A verdict an agent cannot act on is worth very little. Compilers made coding agents
+    good by saying *which line* and *what is wrong*, not by saying "no". This enum is the
+    equivalent: every non-clean outcome names the move that would resolve it, including
+    the honest case where there is no move.
+    """
+
+    NONE_NEEDED = "none_needed"
+    PICK_DIFFERENT_PRODUCT = "pick_different_product"
+    RESTATE_CLAIM = "restate_claim"
+    FIND_BETTER_SOURCE = "find_better_source"
+    STATE_THE_ATTRIBUTE = "state_the_attribute"
+    NOT_RESOLVABLE = "not_resolvable"
 
 
 # --------------------------------------------------------------------------------------
@@ -235,11 +253,20 @@ Value = Annotated[
 
 
 class AttributeSpec(BaseModel):
+    """One attribute of a category, and how strictly it is compared.
+
+    `tolerance` is a *relative* fraction, so 0.005 means half a percent either way. It
+    exists because real feeds publish 4.99 kg for a 5 kg pack and exact equality would
+    call that a violation. It is a tunable — see `docs/tunables.md` — and it must be
+    tightened per attribute where precision actually matters.
+    """
+
     model_config = ConfigDict(frozen=True)
     name: str
     dimension: Dimension
     criticality: Criticality
     feed_aliases: tuple[str, ...] = ()
+    tolerance: Decimal = Decimal("0.005")
 
 
 class FieldProfile(BaseModel):
@@ -304,6 +331,23 @@ class Evidence(BaseModel):
 # --------------------------------------------------------------------------------------
 
 
+class Repair(BaseModel):
+    """What the agent should do about this finding, as fields rather than prose.
+
+    §2.7 requires reasons to be fields. The sentence an agent reads is *rendered* from
+    these at the boundary (`approv.algebra.feedback`), never stored. That keeps the
+    signed record deterministic and keeps the wording changeable without invalidating
+    old receipts.
+    """
+
+    model_config = ConfigDict(frozen=True)
+    resolution: Resolution
+    attribute: str
+    claimed: str | None = None
+    observed: str | None = None
+    observed_field: str | None = None
+
+
 class Finding(BaseModel):
     """One comparison, resolved.
 
@@ -324,6 +368,7 @@ class Finding(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     ceiling: float = Field(ge=0.0, le=1.0)
     reasons: tuple[ReasonCode, ...] = ()
+    repair: Repair | None = None
     constraint: Constraint | None = None
     claim: Claim | None = None
     evidence: tuple[Evidence, ...] = ()

@@ -24,6 +24,8 @@ from approv.types.core import (
     Finding,
     Quantity,
     ReasonCode,
+    Repair,
+    Resolution,
     Support,
 )
 
@@ -69,6 +71,13 @@ _CEILING_BY_CERTAINTY: dict[Certainty, float] = {
 }
 
 
+def _render(quantity: Quantity) -> str:
+    # normalize() strips trailing zeros but returns 5E+3 for 5000, which is unreadable in
+    # a message an agent or a human is meant to act on. The 'f' format forces plain
+    # notation back.
+    return f"{quantity.magnitude.normalize():f} {quantity.unit}"
+
+
 def _to_base(quantity: Quantity) -> Decimal | None:
     entry = _UNITS.get(quantity.unit.lower())
     if entry is None:
@@ -94,8 +103,15 @@ def compare_quantity(claim: Claim, evidence: Evidence, spec: AttributeSpec) -> F
         raise TypeError("compare_quantity requires Quantity values on both sides")
 
     ceiling = _CEILING_BY_CERTAINTY[evidence.certainty]
+    claimed_text = _render(claim.value)
+    observed_text = _render(evidence.value)
 
-    def finding(support: Support, confidence: float, *reasons: ReasonCode) -> Finding:
+    def finding(
+        support: Support,
+        confidence: float,
+        resolution: Resolution,
+        *reasons: ReasonCode,
+    ) -> Finding:
         return Finding(
             check=CheckKind.GROUNDING,
             attribute=spec.name,
@@ -104,6 +120,13 @@ def compare_quantity(claim: Claim, evidence: Evidence, spec: AttributeSpec) -> F
             confidence=confidence,
             ceiling=ceiling,
             reasons=reasons,
+            repair=Repair(
+                resolution=resolution,
+                attribute=spec.name,
+                claimed=claimed_text,
+                observed=observed_text,
+                observed_field=evidence.field_name,
+            ),
             claim=claim,
             evidence=(evidence,),
         )
@@ -112,17 +135,49 @@ def compare_quantity(claim: Claim, evidence: Evidence, spec: AttributeSpec) -> F
     evidence_base = _to_base(evidence.value)
 
     # A unit we have never seen is not a mismatch. "sachet" and "pouch" appear in real
-    # feeds; the honest answer is that no comparison was run.
+    # feeds; the honest answer is that no comparison was run. The agent can act on this —
+    # a listing that publishes a standard unit is comparable.
     if claim_base is None or evidence_base is None:
-        return finding(Support.UNSTATED, 0.0, ReasonCode.UNRESOLVED_TERM)
+        return finding(
+            Support.UNSTATED,
+            0.0,
+            Resolution.PICK_DIFFERENT_PRODUCT,
+            ReasonCode.UNRESOLVED_TERM,
+        )
 
     # Mass against volume needs a density we do not have. Returning False here would be a
     # lie: we are not saying the product is wrong, we are saying we could not look.
     if claim.value.dimension is not evidence.value.dimension:
-        return finding(Support.UNSTATED, 0.0, ReasonCode.INCOMMENSURABLE)
+        return finding(
+            Support.UNSTATED,
+            0.0,
+            Resolution.RESTATE_CLAIM,
+            ReasonCode.INCOMMENSURABLE,
+        )
 
     # Both sides are now in the same base unit, so this is ordinary arithmetic. Whatever
     # doubt exists is doubt about the reading, never about the comparison — which is why
     # confidence is exactly the ceiling and this operator adds no uncertainty of its own.
-    support = Support.SATISFIED if claim_base == evidence_base else Support.VIOLATED
-    return finding(support, ceiling)
+    difference = abs(claim_base - evidence_base)
+    allowed = abs(evidence_base) * spec.tolerance
+
+    if difference > allowed:
+        return finding(
+            Support.VIOLATED,
+            ceiling,
+            Resolution.PICK_DIFFERENT_PRODUCT,
+        )
+
+    # Everything below here matched. Anything still worth telling the agent is about the
+    # *source*, not the number — which is the whole point of separating the two axes.
+    reasons: list[ReasonCode] = []
+    resolution = Resolution.NONE_NEEDED
+
+    if difference != 0:
+        reasons.append(ReasonCode.WITHIN_TOLERANCE)
+
+    if evidence.certainty is not Certainty.EXACT:
+        reasons.append(ReasonCode.LOW_CERTAINTY_SOURCE)
+        resolution = Resolution.FIND_BETTER_SOURCE
+
+    return finding(Support.SATISFIED, ceiling, resolution, *reasons)

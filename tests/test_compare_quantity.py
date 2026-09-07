@@ -17,6 +17,7 @@ from decimal import Decimal
 
 import pytest
 
+from approv.algebra.feedback import explain
 from approv.algebra.quantity import compare_quantity
 from approv.types.core import (
     AttributeSpec,
@@ -29,6 +30,7 @@ from approv.types.core import (
     Liability,
     Quantity,
     ReasonCode,
+    Resolution,
     Support,
 )
 
@@ -200,3 +202,100 @@ def test_pairing_two_different_attributes_raises():
 
     with pytest.raises(ValueError):
         compare_quantity(claim_of("5", "kg", Dimension.MASS), volume_evidence, SPEC)
+
+
+# ----------------------------------------------------------------------------------
+# Tolerance, and the feedback an agent actually receives.
+# ----------------------------------------------------------------------------------
+
+
+def test_rounding_difference_is_satisfied_and_says_so():
+    """A feed publishing 4.99 kg for a 5 kg pack is a rounding artifact, not a defect."""
+    result = compare_quantity(
+        claim_of("5", "kg", Dimension.MASS),
+        evidence_of("4.99", "kg", Dimension.MASS),
+        SPEC,
+    )
+
+    assert result.support is Support.SATISFIED
+    assert ReasonCode.WITHIN_TOLERANCE in result.reasons
+
+
+def test_difference_beyond_tolerance_is_still_violated():
+    """Wiggle room is small. 4.5 kg against a 5 kg claim is a real mismatch."""
+    result = compare_quantity(
+        claim_of("5", "kg", Dimension.MASS),
+        evidence_of("4.5", "kg", Dimension.MASS),
+        SPEC,
+    )
+
+    assert result.support is Support.VIOLATED
+
+
+def test_exact_match_carries_no_reasons():
+    result = compare_quantity(
+        claim_of("5", "kg", Dimension.MASS),
+        evidence_of("5", "kg", Dimension.MASS),
+        SPEC,
+    )
+
+    assert result.reasons == ()
+    assert result.repair.resolution is Resolution.NONE_NEEDED
+
+
+def test_feedback_names_the_problem_and_the_move():
+    result = compare_quantity(
+        claim_of("5", "kg", Dimension.MASS),
+        evidence_of("1", "kg", Dimension.MASS),
+        SPEC,
+    )
+    message = explain(result)
+
+    assert "MISMATCH" in message
+    assert "5 kg" in message
+    assert "1 kg" in message
+    assert "net_weight" in message
+    assert "different product" in message
+
+
+def test_feedback_gives_every_reason_not_just_the_first():
+    """Value is within tolerance AND the source is prose. The agent hears both."""
+    evidence = Evidence(
+        attribute="net_weight",
+        value=Quantity(magnitude=Decimal("4.99"), unit="kg", dimension=Dimension.MASS),
+        field_name="description",
+        liability=Liability.MERCHANT_GUARANTEED,
+        certainty=Certainty.INFERRED,
+    )
+
+    result = compare_quantity(claim_of("5", "kg", Dimension.MASS), evidence, SPEC)
+    message = explain(result)
+
+    assert ReasonCode.WITHIN_TOLERANCE in result.reasons
+    assert ReasonCode.LOW_CERTAINTY_SOURCE in result.reasons
+    assert "allowed margin" in message
+    assert "free text" in message
+
+
+def test_unverified_feedback_explains_why_there_is_no_signal():
+    result = compare_quantity(
+        claim_of("5", "kg", Dimension.MASS),
+        evidence_of("500", "ml", Dimension.VOLUME),
+        SPEC,
+    )
+    message = explain(result)
+
+    assert "UNVERIFIED" in message
+    assert "different things" in message
+
+
+def test_large_values_render_readably_not_in_scientific_notation():
+    """5000 g must print as "5000 g", never "5E+3 g". An agent reads this."""
+    result = compare_quantity(
+        claim_of("5", "kg", Dimension.MASS),
+        evidence_of("5000", "g", Dimension.MASS),
+        SPEC,
+    )
+
+    assert "5000 g" in explain(result)
+    assert "E+" not in explain(result)
