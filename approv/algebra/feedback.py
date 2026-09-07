@@ -74,10 +74,20 @@ def _observed_clause(repair: Repair) -> str:
     return f"the listing says {repair.observed} (field: {repair.observed_field})"
 
 
-def explain(finding: Finding) -> str:
+def explain(finding: Finding, *, reveal: bool = True) -> str:
     """Render one finding as a single line an agent can read and act on.
 
     Shape: `STATUS attribute: claimed X, <observed>. <why>. <action>`
+
+    `reveal=False` is **probe mode**, and it exists for one narrow reason. In production
+    naming the observed value is correct — the agent misread, we point at the
+    authoritative field, the outcome is right. But when *measuring* whether our feedback
+    makes an agent better, the value we would reveal is the same value we score against,
+    so revealing it produces a perfect score that measures nothing. Probe mode says that
+    the claim is wrong and why the source is weak, without handing over the answer.
+
+    Use `reveal=True` in production and `reveal=False` for any published improvement
+    figure. Reporting a benchmark run under `reveal=True` would be dishonest.
     """
     parts = [f"{_HEADLINE[finding.support]} {finding.attribute}:"]
 
@@ -86,7 +96,12 @@ def explain(finding: Finding) -> str:
         detail = []
         if repair.claimed is not None:
             detail.append(f"claimed {repair.claimed}")
-        detail.append(_observed_clause(repair))
+        if reveal:
+            detail.append(_observed_clause(repair))
+        elif repair.observed_field is not None:
+            detail.append(f"this disagrees with the listing's {repair.observed_field}")
+        else:
+            detail.append("the listing does not support this")
         parts.append(", ".join(detail) + ".")
 
     # Every reason, not only the first. An agent that fixes one problem and resubmits
@@ -101,7 +116,7 @@ def explain(finding: Finding) -> str:
     return " ".join(parts)
 
 
-def explain_all(findings: tuple[Finding, ...]) -> str:
+def explain_all(findings: tuple[Finding, ...], *, reveal: bool = True) -> str:
     """Render every finding, worst first, so the agent sees the full picture at once.
 
     Ordering is deliberate: an agent given one problem at a time will fix them one at a
@@ -110,4 +125,4 @@ def explain_all(findings: tuple[Finding, ...]) -> str:
     """
     order = {Support.VIOLATED: 0, Support.UNSTATED: 1, Support.SATISFIED: 2}
     ranked = sorted(findings, key=lambda f: (order[f.support], f.attribute))
-    return "\n".join(explain(f) for f in ranked)
+    return "\n".join(explain(f, reveal=reveal) for f in ranked)
