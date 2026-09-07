@@ -17,7 +17,7 @@ yet in code — listed now so it is designed rather than discovered.
 engineer reads in a log and what an agent conditions on. Changing wording is free and
 breaks nothing (messages are rendered from fields at the boundary, never stored).
 
-Last reviewed: 2026-09-07 — **awaiting founder vet**
+Last reviewed: 2026-09-07 — **awaiting founder vet**. Nine codes now LIVE.
 
 ---
 
@@ -25,7 +25,7 @@ Last reviewed: 2026-09-07 — **awaiting founder vet**
 
 | Code | Fires when | Message to the agent | Resolution | Status |
 |---|---|---|---|---|
-| `NO_CLAIM` | The agent selected a product but asserted nothing about a HARD attribute | "No claim was made about {attribute}, so nothing was checked. State it explicitly." | `STATE_THE_ATTRIBUTE` | PLANNED |
+| `NO_CLAIM` | The agent selected a product but asserted nothing about a HARD attribute | "No claim was made about {attribute}, so nothing was checked. State it explicitly." | `STATE_THE_ATTRIBUTE` | **LIVE** |
 | `UNKNOWN_ATTRIBUTE` | The agent asserted an attribute this category does not define | "{attribute} is not an attribute of {category}. It was recorded but not checked." | `NONE_NEEDED` | PLANNED |
 | `MALFORMED_CLAIM` | The claim value cannot be parsed into a typed value | "The claimed value for {attribute} could not be read as a {dimension}. Restate it with a number and a unit." | `RESTATE_CLAIM` | PLANNED |
 | `AGENT_SELF_CONTRADICTION` | The agent searched for one value and claims another | "You searched for {constraint} but claim {claimed}. These disagree." | `RESTATE_CLAIM` | PLANNED |
@@ -38,9 +38,9 @@ Last reviewed: 2026-09-07 — **awaiting founder vet**
 
 | Code | Fires when | Message to the agent | Resolution | Status |
 |---|---|---|---|---|
-| `PRODUCT_SILENT` | The listing publishes nothing for this attribute | "The listing does not publish {attribute}. This cannot be verified from the catalogue." | `NOT_RESOLVABLE` | PLANNED |
+| `PRODUCT_SILENT` | The listing publishes nothing for this attribute | "The listing does not publish {attribute}. This cannot be verified from the catalogue." | `NOT_RESOLVABLE` | **LIVE** |
 | `UNRESOLVED_TERM` | The unit or term is not in our vocabulary | "The listing uses a unit we cannot compare ({unit})." | `PICK_DIFFERENT_PRODUCT` | **LIVE** |
-| `FIELD_CONFLICT` | Two fields on the same listing disagree | "Two fields disagree: {field_a} says {a}, {field_b} says {b}. The higher-certainty field was used." | `FIND_BETTER_SOURCE` | PLANNED |
+| `FIELD_CONFLICT` | Two fields on the same listing disagree | "Two fields disagree: {field_a} says {a}, {field_b} says {b}. The higher-certainty field was used." | `FIND_BETTER_SOURCE` | **LIVE** |
 | `ADVICE_CONTRADICTS` | Seller guidance contradicts a structured field | "Seller guidance says {advice}, the {field} field says {value}. Advice cannot override a fact — it lowers confidence only." | `FIND_BETTER_SOURCE` | PLANNED |
 | `MALFORMED_EVIDENCE` | The field exists but cannot be parsed | "The listing's {field} could not be read as a {dimension}." | `NOT_RESOLVABLE` | PLANNED |
 | `SNAPSHOT_SKEW` | The listing changed between selection and checkout | "The listing changed after it was checked. The comparison was run against the earlier version." | `PICK_DIFFERENT_PRODUCT` | PLANNED |
@@ -53,13 +53,14 @@ Last reviewed: 2026-09-07 — **awaiting founder vet**
 | `WITHIN_TOLERANCE` | Values differ but inside the allowed margin | "The values differ slightly but within the allowed margin." | `NONE_NEEDED` | **LIVE** |
 | `LOW_CERTAINTY_SOURCE` | The value was read from prose rather than a field | "The value was read from free text rather than a dedicated field, so it cannot clear a hard constraint on its own." | `FIND_BETTER_SOURCE` | **LIVE** |
 | `LOW_LIABILITY_SOURCE` | The value came from text nobody is answerable for (a review) | "The value came from text nobody is answerable for. It cannot support a coverable claim." | `FIND_BETTER_SOURCE` | PLANNED |
+| `CLAIM_MORE_SPECIFIC` | The agent asserted more than the listing says ("Amul Gold" against a listing saying "Amul") | "The claim says more than the listing does, so the listing neither confirms nor contradicts it." | `FIND_BETTER_SOURCE` | **LIVE** |
 | `AMBIGUOUS_MATCH` | A term matches several catalogue entries equally | "{term} matches {n} entries equally. Narrow it." | `RESTATE_CLAIM` | PLANNED |
 
 ## D. Preconditions — nothing to check
 
 | Code | Fires when | Message to the agent | Resolution | Status |
 |---|---|---|---|---|
-| `FLOOR_NOT_MET` | The category cannot be verified without an attribute that is absent | "{category} cannot be verified without {attribute}. No comparison was run." | `STATE_THE_ATTRIBUTE` | PLANNED |
+| `FLOOR_NOT_MET` | The category cannot be verified without an attribute that is absent | "{category} cannot be verified without {attribute}. No comparison was run." | `STATE_THE_ATTRIBUTE` | **LIVE** |
 | `UNKNOWN_CATEGORY` | No schema exists for this category | "No verification schema exists for {category}. Nothing was checked." | `NOT_RESOLVABLE` | PLANNED |
 | `UNSUPPORTED_LOCALE` | The locale has no lexicon | "Locale {locale} is not supported. Nothing was checked." | `NOT_RESOLVABLE` | PLANNED |
 

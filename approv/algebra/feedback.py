@@ -26,6 +26,10 @@ _WHY: dict[ReasonCode, str] = {
         "so it cannot clear a hard constraint on its own"
     ),
     ReasonCode.WITHIN_TOLERANCE: "the values differ slightly but within the allowed margin",
+    ReasonCode.CLAIM_MORE_SPECIFIC: (
+        "the claim says more than the listing does, so the listing neither confirms "
+        "nor contradicts it"
+    ),
     ReasonCode.PRODUCT_SILENT: "the listing does not publish this attribute",
     ReasonCode.NO_CLAIM: "no claim was made about this attribute, so nothing was checked",
     ReasonCode.FIELD_CONFLICT: "two fields on the listing disagree with each other",
