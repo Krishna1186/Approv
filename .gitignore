@@ -1,4 +1,6 @@
-data/cache/
-__pycache__/
 *.pyc
+.playwright-cli/
 .pytest_cache/
+__pycache__/
+data/cache/
+output/
