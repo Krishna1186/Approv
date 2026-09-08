@@ -1,3 +1,12 @@
+> **Superseded for product-improvement claims (2026-09-08).** Use
+> [the shopping harness](shopping-harness.md) and DR 0017. The historical reasoning below
+> is retained for review, not endorsed: sharing a reference can bias C minus B;
+> correlated source fields do not themselves make an extraction task invalid;
+> title-only abstention instructions conflicted with the old success metric.
+> The legacy script now measures exact brand-field agreement, preserves the first
+> answer in both retries, versions its cache configuration, and rejects failed responses.
+> It still has no independent gold and must not be published as accuracy.
+
 # Benchmark design — including three designs that were tested and rejected
 
 Written 2026-09-08, against 599 real Open Food Facts records from the India market

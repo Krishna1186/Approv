@@ -1,25 +1,8 @@
-"""Run the Approv benchmark against a real agent.
+"""Legacy brand-field agreement diagnostic.
 
-Gemini (free tier available):
-
-    export GEMINI_API_KEY=...
-    python scripts/run_benchmark.py --list-models        # find a model you can call
-    python scripts/run_benchmark.py --limit 20 --model gemini-2.0-flash
-
-Anthropic:
-
-    pip install anthropic
-    export ANTHROPIC_API_KEY=sk-...
-    python scripts/run_benchmark.py --provider anthropic --limit 20
-
-Nothing here is simulated. Without a key the script refuses to run rather than
-substituting a mock, because a mock produces a number that looks like a measurement and
-is not one.
-
-Every call is cached to disk by (model, title, feedback). Re-running costs no quota and
-returns identical results, which also means a published number is reproducible.
+Use run_shopping.py for audited shopping-task experiments with independent labels.
+Cache identity includes the prompt, provider endpoint and generation settings.
 """
-
 from __future__ import annotations
 
 import argparse
@@ -40,18 +23,37 @@ PROMPT = (
     "You are a shopping assistant reading a product listing.\n"
     "Listing title: {title}\n\n"
     "State the brand of this product. Reply with the brand name only, nothing else.\n"
-    "If the title does not tell you the brand, reply exactly: UNKNOWN"
+    "Use the title and your knowledge. If you cannot identify one brand, reply exactly: UNKNOWN"
 )
 
 GEMINI = "https://generativelanguage.googleapis.com/v1beta"
 
 
-def _cache_path(root: pathlib.Path, model: str, title: str, feedback: str | None) -> pathlib.Path:
-    key = hashlib.sha256(f"{model}\x00{title}\x00{feedback or ''}".encode()).hexdigest()
+def _cache_path(root: pathlib.Path, model: str, title: str, feedback: str | None,
+                *, provider: str = "legacy", settings: dict | None = None) -> pathlib.Path:
+    # Invalidate on the full prompt, provider endpoint or generation-policy change.
+    request = {"version": "brand-diagnostic-v2", "model": model, "title": title,
+               "feedback": feedback, "prompt": PROMPT, "provider": provider,
+               "settings": settings or {}}
+    key = hashlib.sha256(json.dumps(request, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
     return root / f"{key}.json"
 
 
+def _cached_text(path: pathlib.Path) -> str:
+    text = json.loads(path.read_text(encoding="utf-8"))["text"]
+    if not isinstance(text, str) or not text.strip():
+        raise RuntimeError("cached response is empty or malformed; not an abstention")
+    return text
+
+
+# Cloudflare in front of some providers rejects urllib's default "Python-urllib/3.x"
+# user agent with error 1010, which surfaces as a 403 and reads exactly like a bad API
+# key. Sending a real one is not evasion; it is identifying ourselves at all.
+UA = "Approv-benchmark/0.1 (research)"
+
+
 def _post(url: str, payload: dict, headers: dict, retries: int = 5) -> dict:
+    headers = {"User-Agent": UA, **headers}
     body = json.dumps(payload).encode()
     for attempt in range(retries):
         try:
@@ -70,7 +72,7 @@ def _post(url: str, payload: dict, headers: dict, retries: int = 5) -> dict:
 
 
 def list_gemini_models(key: str) -> None:
-    request = urllib.request.Request(f"{GEMINI}/models", headers={"x-goog-api-key": key})
+    request = urllib.request.Request(f"{GEMINI}/models", headers={"x-goog-api-key": key, "User-Agent": UA})
     data = json.load(urllib.request.urlopen(request, timeout=60))
     print("models available to this key that support generateContent:\n")
     for model in data.get("models", []):
@@ -80,9 +82,9 @@ def list_gemini_models(key: str) -> None:
 
 def gemini_agent(model: str, key: str, cache: pathlib.Path, delay: float):
     def agent(title: str, feedback: str | None = None) -> str:
-        path = _cache_path(cache, model, title, feedback)
+        path = _cache_path(cache, model, title, feedback, provider=GEMINI, settings={"maxOutputTokens": 64, "temperature": 0})
         if path.exists():
-            return json.loads(path.read_text(encoding="utf-8"))["text"]
+            return _cached_text(path)
 
         parts = [PROMPT.format(title=title)]
         if feedback is not None:
@@ -98,8 +100,10 @@ def gemini_agent(model: str, key: str, cache: pathlib.Path, delay: float):
         )
         try:
             text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-        except (KeyError, IndexError):
-            text = "UNKNOWN"
+        except (KeyError, IndexError, TypeError):
+            raise RuntimeError("malformed Gemini response; not an abstention") from None
+        if not text or data["candidates"][0].get("finishReason") != "STOP":
+            raise RuntimeError("empty or incomplete Gemini response; not an abstention")
 
         path.write_text(json.dumps({"text": text}), encoding="utf-8")
         time.sleep(delay)
@@ -123,30 +127,45 @@ OPENAI_COMPATIBLE = {
 }
 
 
-def openai_agent(model: str, key: str, base_url: str, cache: pathlib.Path, delay: float):
+def openai_agent(model: str, key: str, base_url: str, cache: pathlib.Path, delay: float,
+                 max_tokens: int = 512):
     def agent(title: str, feedback: str | None = None) -> str:
-        path = _cache_path(cache, model, title, feedback)
+        path = _cache_path(cache, model, title, feedback, provider=base_url, settings={"budgets": [max_tokens, max_tokens * 4], "temperature": 0})
         if path.exists():
-            return json.loads(path.read_text(encoding="utf-8"))["text"]
+            return _cached_text(path)
 
         content = PROMPT.format(title=title)
         if feedback is not None:
             content += f"\n\n{feedback}\n\nGive your final answer, brand name only."
 
-        data = _post(
-            f"{base_url}/chat/completions",
-            {
-                "model": model,
-                "messages": [{"role": "user", "content": content}],
-                "max_tokens": 64,
-                "temperature": 0,
-            },
-            {"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-        )
-        try:
-            text = (data["choices"][0]["message"]["content"] or "").strip()
-        except (KeyError, IndexError):
-            text = "UNKNOWN"
+        # Reasoning models spend most of a small budget on hidden reasoning tokens and
+        # return empty content with finish_reason="length". At max_tokens=64,
+        # gpt-oss-20b used 54 on reasoning and emitted nothing, which the harness then
+        # recorded as an abstention. Budget generously and escalate before giving up.
+        text = ""
+        for budget in (max_tokens, max_tokens * 4):
+            data = _post(
+                f"{base_url}/chat/completions",
+                {
+                    "model": model,
+                    "messages": [{"role": "user", "content": content}],
+                    "max_tokens": budget,
+                    "temperature": 0,
+                },
+                {"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+            )
+            try:
+                text = (data["choices"][0]["message"]["content"] or "").strip()
+            except (KeyError, IndexError):
+                text = ""
+            if text and data["choices"][0].get("finish_reason") == "stop":
+                break
+            text = ""
+        if not text:
+            raise RuntimeError(
+                f"{model} returned empty content twice for {title!r}. Refusing to record "
+                "this as an abstention - it is a failed call."
+            )
 
         path.write_text(json.dumps({"text": text}), encoding="utf-8")
         time.sleep(delay)
@@ -161,9 +180,9 @@ def anthropic_agent(model: str, cache: pathlib.Path, delay: float):
     client = anthropic.Anthropic()
 
     def agent(title: str, feedback: str | None = None) -> str:
-        path = _cache_path(cache, model, title, feedback)
+        path = _cache_path(cache, model, title, feedback, provider="anthropic-messages", settings={"max_tokens": 64})
         if path.exists():
-            return json.loads(path.read_text(encoding="utf-8"))["text"]
+            return _cached_text(path)
 
         content = PROMPT.format(title=title)
         if feedback is not None:
@@ -171,7 +190,9 @@ def anthropic_agent(model: str, cache: pathlib.Path, delay: float):
         response = client.messages.create(
             model=model, max_tokens=64, messages=[{"role": "user", "content": content}]
         )
-        text = response.content[0].text.strip()
+        text = "".join(block.text for block in response.content if getattr(block, "type", None) == "text").strip()
+        if not text or response.stop_reason != "end_turn":
+            raise RuntimeError("empty or incomplete Anthropic response; not an abstention")
         path.write_text(json.dumps({"text": text}), encoding="utf-8")
         time.sleep(delay)
         return text
@@ -195,13 +216,14 @@ def _print_arms(title: str, arms: dict) -> None:
     control, treatment = arms.get("B_blind_retry"), arms.get("C_approv_feedback")
     if control and treatment:
         print(
-            f"  improvement C - B: {treatment.accuracy - control.accuracy:+.1%} overall, "
+            f"  field-agreement difference C - B: {treatment.accuracy - control.accuracy:+.1%} overall, "
             f"{treatment.accuracy_when_answered - control.accuracy_when_answered:+.1%} "
             f"when answered"
         )
 
 
 def main() -> int:
+    print("LEGACY DIAGNOSTIC: OFF brand-field agreement, not independent accuracy. Use run_shopping.py for shopping experiments.")
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--provider",
@@ -214,6 +236,7 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=20)
     parser.add_argument("--model", default="gemini-2.0-flash")
     parser.add_argument("--delay", type=float, default=4.5, help="seconds between calls")
+    parser.add_argument("--max-tokens", type=int, default=512)
     parser.add_argument("--out", default="data/cache/benchmark_result.json")
     parser.add_argument("--list-models", action="store_true")
     args = parser.parse_args()
@@ -242,7 +265,7 @@ def main() -> int:
             print(f"{env} is not set. Refusing to run with a simulated agent.")
             return 1
         base = args.base_url or OPENAI_COMPATIBLE[args.provider]
-        agent = openai_agent(args.model, key, base, cache, args.delay)
+        agent = openai_agent(args.model, key, base, cache, args.delay, args.max_tokens)
 
     # Spend one call proving the model answers before committing the whole run.
     # Gemini's --list-models advertised gemini-2.5-flash, which returns 404 with "no

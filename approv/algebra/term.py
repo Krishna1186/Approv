@@ -1,28 +1,7 @@
-"""Term comparison — brands, variants, flavours, anything nominal.
+"""Nominal identity from whole normalized names, explicit aliases or trusted IDs.
 
-Harder than quantity, because "the same brand" is not a well-defined relation. The
-listing says "Aashirvaad Select Sharbati Atta 5kg" and the agent says "Aashirvaad".
-Those agree. The agent says "Amul Gold" and the listing says "Amul" — those do *not*
-disagree, but the listing does not support the claim either, and collapsing that into
-either SATISFIED or VIOLATED loses the distinction §2.2 is built on.
-
-So comparison is over token sets, in one direction:
-
-    claim tokens are a subset of evidence tokens  -> SATISFIED
-    claim has tokens the evidence does not        -> UNSTATED, claim is more specific
-    no tokens shared at all                       -> VIOLATED
-
-Direction matters. Evidence may carry more words than the claim (a title always does)
-and the claim is still supported. The reverse is not true: the agent asserting a word
-the listing never uses is an unsupported assertion, not a confirmed one.
-
-Known gap, deliberately not fixed here: spelling variants. "Ashirvad" against
-"Aashirvaad" shares no tokens and comes back VIOLATED. Fixing that needs the lexicon
-from DR 0006, not a fuzzy-match hack — a similarity threshold in this module would be a
-tunable that silently decides brand identity, which is exactly the kind of guess §1
-forbids on the decision path. Logged in docs/tunables.md as a known limitation.
+Token containment is useful for search but cannot establish product identity.
 """
-
 from __future__ import annotations
 
 import re
@@ -34,6 +13,7 @@ from approv.types.core import (
     CheckKind,
     Claim,
     Evidence,
+    Dimension,
     Finding,
     ReasonCode,
     Repair,
@@ -42,21 +22,22 @@ from approv.types.core import (
     Term,
 )
 
-_SPLIT = re.compile(r"[^\w]+", re.UNICODE)
-
-# Words that carry no identity. Kept deliberately tiny: every entry is a decision that
-# two different strings mean the same thing, and a long list here quietly becomes a
-# semantic model nobody reviewed.
-_NOISE = frozenset({"the", "a", "an", "of", "and", "with", "pack", "packet"})
+def normalize_term(text: str) -> str:
+    """Conservative ordered identity key. Preserve negation and non-Latin marks."""
+    folded = unicodedata.normalize("NFKC", text).casefold()
+    chars = []
+    for char in folded:
+        if "LATIN" in unicodedata.name(char, ""):
+            chars.extend(c for c in unicodedata.normalize("NFKD", char)
+                         if not unicodedata.combining(c))
+        else:
+            chars.append(char)
+    return " ".join("".join(c if c.isalnum() or c.isspace() or unicodedata.category(c).startswith("M") else " " for c in chars).split())
 
 
 def _tokens(text: str) -> frozenset[str]:
-    # NFKD then ASCII-fold so "Nestlé" and "Nestle" agree. This is normalisation, not
-    # similarity: it removes an encoding difference rather than guessing at meaning.
-    folded = unicodedata.normalize("NFKD", text)
-    folded = "".join(c for c in folded if not unicodedata.combining(c))
-    parts = (p for p in _SPLIT.split(folded.lower()) if p)
-    return frozenset(p for p in parts if p not in _NOISE)
+    # Search/diagnostic helper only. Token sets never establish entity identity.
+    return frozenset(normalize_term(text).split())
 
 
 def compare_term(claim: Claim, evidence: Evidence, spec: AttributeSpec) -> Finding:
@@ -69,6 +50,9 @@ def compare_term(claim: Claim, evidence: Evidence, spec: AttributeSpec) -> Findi
 
     if not isinstance(claim.value, Term) or not isinstance(evidence.value, Term):
         raise TypeError("compare_term requires Term values on both sides")
+
+    if spec.name != claim.attribute or spec.dimension is not Dimension.NOMINAL:
+        raise ValueError("claim does not match attribute specification")
 
     from approv.algebra.quantity import _CEILING_BY_CERTAINTY
 
@@ -99,30 +83,26 @@ def compare_term(claim: Claim, evidence: Evidence, spec: AttributeSpec) -> Findi
             evidence=(evidence,),
         )
 
-    claim_tokens = _tokens(claim.value.surface)
-    evidence_tokens = _tokens(evidence.value.surface)
+    claimed = normalize_term(claim.value.surface)
+    observed = normalize_term(evidence.value.surface)
+    if not claimed or not observed:
+        return finding(Support.UNSTATED, 0.0, Resolution.RESTATE_CLAIM,
+                       ReasonCode.UNRESOLVED_TERM)
 
-    if not claim_tokens or not evidence_tokens:
-        return finding(
-            Support.UNSTATED, 0.0, Resolution.RESTATE_CLAIM, ReasonCode.UNRESOLVED_TERM
-        )
-
-    if claim_tokens <= evidence_tokens:
-        reasons: list[ReasonCode] = []
-        resolution = Resolution.NONE_NEEDED
-        if evidence.certainty is not Certainty.EXACT:
-            reasons.append(ReasonCode.LOW_CERTAINTY_SOURCE)
-            resolution = Resolution.FIND_BETTER_SOURCE
+    # IDs/aliases must come from a trusted, versioned adapter. Never infer aliases by
+    # combining words across a list of brands or by accepting a substring of prose.
+    if claim.value.node_id and evidence.value.node_id:
+        matched = claim.value.node_id == evidence.value.node_id
+    else:
+        matched = claimed in {observed, *(normalize_term(a) for a in evidence.value.aliases)}
+    if matched:
+        reasons = () if evidence.certainty is Certainty.EXACT else (ReasonCode.LOW_CERTAINTY_SOURCE,)
+        resolution = Resolution.NONE_NEEDED if not reasons else Resolution.FIND_BETTER_SOURCE
         return finding(Support.SATISFIED, ceiling, resolution, *reasons)
-
-    if claim_tokens & evidence_tokens:
-        # Overlap, but the agent said something the listing does not say. Not a
-        # contradiction — an assertion the catalogue cannot back up.
-        return finding(
-            Support.UNSTATED,
-            0.0,
-            Resolution.FIND_BETTER_SOURCE,
-            ReasonCode.CLAIM_MORE_SPECIFIC,
-        )
-
-    return finding(Support.VIOLATED, ceiling, Resolution.PICK_DIFFERENT_PRODUCT)
+    if evidence.certainty is not Certainty.EXACT:
+        return finding(Support.UNSTATED, 0.0, Resolution.FIND_BETTER_SOURCE,
+                       ReasonCode.UNRESOLVED_TERM, ReasonCode.LOW_CERTAINTY_SOURCE)
+    if claimed.startswith(observed + " "):
+        return finding(Support.UNSTATED, 0.0, Resolution.FIND_BETTER_SOURCE,
+                       ReasonCode.CLAIM_MORE_SPECIFIC)
+    return finding(Support.VIOLATED, ceiling, Resolution.RESTATE_CLAIM)

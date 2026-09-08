@@ -17,6 +17,10 @@ from __future__ import annotations
 from approv.types.core import Finding, ReasonCode, Repair, Resolution, Support
 
 _WHY: dict[ReasonCode, str] = {
+    ReasonCode.DUPLICATE_CLAIM: "multiple claims for this attribute need disambiguation",
+    ReasonCode.UNKNOWN_ATTRIBUTE: "this attribute is outside the configured schema",
+    ReasonCode.UNTRUSTED_SOURCE: "this field has no trusted source profile",
+    ReasonCode.ADVICE_ONLY: "advice is not admissible as a supporting product fact",
     ReasonCode.INCOMMENSURABLE: (
         "the claim and the listing measure different things, so no comparison is possible"
     ),
@@ -55,7 +59,7 @@ _ACTION: dict[Resolution, str] = {
     ),
     Resolution.STATE_THE_ATTRIBUTE: "State this attribute explicitly so it can be checked.",
     Resolution.NOT_RESOLVABLE: (
-        "Nothing can fix this — the listing does not carry the data. Do not retry."
+        "This source has no usable value. Seek another admissible source or mark unverified."
     ),
 }
 
@@ -68,7 +72,7 @@ _HEADLINE: dict[Support, str] = {
 
 def _observed_clause(repair: Repair) -> str:
     if repair.observed is None:
-        return "the listing is silent"
+        return "no single admissible observed value is available"
     if repair.observed_field is None:
         return f"the listing says {repair.observed}"
     return f"the listing says {repair.observed} (field: {repair.observed_field})"

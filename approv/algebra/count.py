@@ -22,6 +22,7 @@ from approv.types.core import (
     CheckKind,
     Claim,
     Count,
+    Dimension,
     Evidence,
     Finding,
     ReasonCode,
@@ -41,6 +42,8 @@ def compare_count(claim: Claim, evidence: Evidence, spec: AttributeSpec) -> Find
 
     if not isinstance(claim.value, Count) or not isinstance(evidence.value, Count):
         raise TypeError("compare_count requires Count values on both sides")
+    if spec.name != claim.attribute or spec.dimension is not Dimension.COUNT:
+        raise ValueError("claim does not match attribute specification")
 
     from approv.algebra.quantity import _CEILING_BY_CERTAINTY
 

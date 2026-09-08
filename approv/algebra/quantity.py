@@ -13,7 +13,7 @@ deterministic and §1's central claim stops being true.
 
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import Decimal, localcontext
 
 from approv.types.core import (
     AttributeSpec,
@@ -47,7 +47,8 @@ _UNITS: dict[str, tuple[str, Decimal]] = {
     "ml": ("volume", Decimal("1")),
     "cl": ("volume", Decimal("10")),
     "l": ("volume", Decimal("1000")),
-    "fl_oz": ("volume", Decimal("29.5735295625")),
+    "us_fl_oz": ("volume", Decimal("29.5735295625")),
+    "imperial_fl_oz": ("volume", Decimal("28.4130625")),
     "mm": ("length", Decimal("1")),
     "cm": ("length", Decimal("10")),
     "m": ("length", Decimal("1000")),
@@ -75,15 +76,22 @@ def _render(quantity: Quantity) -> str:
     # normalize() strips trailing zeros but returns 5E+3 for 5000, which is unreadable in
     # a message an agent or a human is meant to act on. The 'f' format forces plain
     # notation back.
-    return f"{quantity.magnitude.normalize():f} {quantity.unit}"
+    number = format(quantity.magnitude, "f")
+    if "." in number:
+        number = number.rstrip("0").rstrip(".")
+    return f"{number} {quantity.unit}"
 
 
 def _to_base(quantity: Quantity) -> Decimal | None:
     entry = _UNITS.get(quantity.unit.lower())
     if entry is None:
         return None
-    _, factor = entry
-    return quantity.magnitude * factor
+    dimension, factor = entry
+    if dimension != quantity.dimension.value:
+        raise ValueError("unit contradicts declared dimension")
+    with localcontext() as context:
+        context.prec = 80
+        return quantity.magnitude * factor
 
 
 def compare_quantity(claim: Claim, evidence: Evidence, spec: AttributeSpec) -> Finding:
@@ -101,6 +109,8 @@ def compare_quantity(claim: Claim, evidence: Evidence, spec: AttributeSpec) -> F
 
     if not isinstance(claim.value, Quantity) or not isinstance(evidence.value, Quantity):
         raise TypeError("compare_quantity requires Quantity values on both sides")
+    if spec.name != claim.attribute or spec.dimension != claim.value.dimension:
+        raise ValueError("claim does not match attribute specification")
 
     ceiling = _CEILING_BY_CERTAINTY[evidence.certainty]
     claimed_text = _render(claim.value)
@@ -158,8 +168,10 @@ def compare_quantity(claim: Claim, evidence: Evidence, spec: AttributeSpec) -> F
     # Both sides are now in the same base unit, so this is ordinary arithmetic. Whatever
     # doubt exists is doubt about the reading, never about the comparison — which is why
     # confidence is exactly the ceiling and this operator adds no uncertainty of its own.
-    difference = abs(claim_base - evidence_base)
-    allowed = abs(evidence_base) * spec.tolerance
+    with localcontext() as context:
+        context.prec = 80
+        difference = abs(claim_base - evidence_base)
+        allowed = abs(evidence_base) * spec.tolerance
 
     if difference > allowed:
         return finding(

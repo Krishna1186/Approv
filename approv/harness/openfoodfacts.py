@@ -1,7 +1,6 @@
 """Open Food Facts records into typed Evidence.
 
-OFF is ODbL: commercial use is permitted with attribution, and share-alike binds only if
-a *derived database* is republished. §5's "publish the number, never the corpus" keeps us
+OFF is ODbL: commercial use is permitted with attribution, and public use can trigger attribution and derivative-database obligations. §5's "publish the number, never the corpus" keeps us
 clear of that, but the position should be confirmed by a lawyer before any public claim
 rests on it.
 
@@ -28,6 +27,8 @@ from decimal import Decimal, InvalidOperation
 
 from approv.types.core import (
     Certainty,
+    Count,
+    FieldProfile,
     Dimension,
     Evidence,
     Liability,
@@ -109,6 +110,8 @@ def parse_quantity(text: str | None) -> tuple[Quantity | None, int | None]:
     if number is None:
         return None, count
 
+    if number <= 0 or count == 0:
+        return None, None
     if count is not None:
         number = number * count
 
@@ -136,7 +139,7 @@ def evidence_from(record: dict) -> tuple[Evidence, ...]:
         out.append(
             Evidence(
                 attribute="brand",
-                value=Term(surface=" ".join(aliases)),
+                value=Term(surface=aliases[0], aliases=tuple(aliases)),
                 field_name="brands",
                 liability=Liability.PLATFORM_DERIVED,
                 certainty=Certainty.EXACT,
@@ -171,4 +174,19 @@ def evidence_from(record: dict) -> tuple[Evidence, ...]:
             )
         )
 
+        if count is not None:
+            out.append(Evidence(attribute="pack_count", value=Count(n=count),
+                field_name="quantity", liability=Liability.PLATFORM_DERIVED,
+                certainty=Certainty.EXACT, raw_text=str(record.get("quantity"))))
+            per_unit = quantity.model_copy(update={"magnitude": quantity.magnitude / count})
+            out.append(Evidence(attribute="unit_weight" if quantity.dimension is Dimension.MASS else "unit_volume",
+                value=per_unit, field_name="quantity", liability=Liability.PLATFORM_DERIVED,
+                certainty=Certainty.EXACT, raw_text=str(record.get("quantity"))))
     return tuple(out)
+
+
+OFF_FIELD_PROFILES = (
+    FieldProfile(field_name="brands", attributes=("brand",), liability=Liability.PLATFORM_DERIVED, certainty=Certainty.EXACT),
+    FieldProfile(field_name="quantity", attributes=("net_weight", "net_volume", "unit_weight", "unit_volume", "pack_count"), liability=Liability.PLATFORM_DERIVED, certainty=Certainty.EXACT),
+    FieldProfile(field_name="product_name", attributes=("brand",), liability=Liability.PLATFORM_DERIVED, certainty=Certainty.PARSED),
+)

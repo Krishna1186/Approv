@@ -46,9 +46,8 @@ class Dimension(str, Enum):
 class Liability(str, Enum):
     """Who owes a remedy if this text turns out to be wrong. DR 0016 §3, axis one.
 
-    Ordered strongest to weakest. This axis decides whether a claim is *coverable*, and
-    it is why an injected instruction inside a merchant's own description is
-    self-incriminating: the party that planted it inherits liability for it.
+    Legacy source-attribution labels. These do not establish legal liability,
+    enforceability, collectability or insurance coverage; contracts must do that.
     """
 
     MERCHANT_GUARANTEED = "merchant_guaranteed"
@@ -161,6 +160,10 @@ class ReasonCode(str, Enum):
     CLAIM_MORE_SPECIFIC = "claim_more_specific"
     AGENT_SELF_CONTRADICTION = "agent_self_contradiction"
     UNATTESTED_COUNTERPARTY = "unattested_counterparty"
+    DUPLICATE_CLAIM = "duplicate_claim"
+    UNKNOWN_ATTRIBUTE = "unknown_attribute"
+    UNTRUSTED_SOURCE = "untrusted_source"
+    ADVICE_ONLY = "advice_only"
 
 
 class Resolution(str, Enum):
@@ -191,24 +194,24 @@ class Resolution(str, Enum):
 
 
 class Quantity(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
     kind: Literal["quantity"] = "quantity"
-    magnitude: Decimal
+    magnitude: Decimal = Field(ge=0, max_digits=28, decimal_places=12)
     unit: str
     dimension: Dimension
 
 
 class Money(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
     kind: Literal["money"] = "money"
-    amount: Decimal
-    currency: str = Field(min_length=3, max_length=3)
+    amount: Decimal = Field(ge=0, max_digits=28, decimal_places=12)
+    currency: str = Field(pattern=r"^[A-Z]{3}$")
 
 
 class Count(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
     kind: Literal["count"] = "count"
-    n: int = Field(ge=0)
+    n: int = Field(ge=0, strict=True)
 
 
 class Term(BaseModel):
@@ -218,10 +221,11 @@ class Term(BaseModel):
     mismatch, and the two must never be collapsed.
     """
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
     kind: Literal["term"] = "term"
     surface: str
     node_id: str | None = None
+    aliases: tuple[str, ...] = ()
 
 
 class BoundOp(str, Enum):
@@ -232,7 +236,7 @@ class BoundOp(str, Enum):
 
 
 class Bound(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
     kind: Literal["bound"] = "bound"
     op: BoundOp
     limit: Union[Quantity, Money, Count]
@@ -262,26 +266,27 @@ class AttributeSpec(BaseModel):
     tightened per attribute where precision actually matters.
     """
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
     name: str
     dimension: Dimension
     criticality: Criticality
     feed_aliases: tuple[str, ...] = ()
-    tolerance: Decimal = Decimal("0.005")
+    tolerance: Decimal = Field(default=Decimal("0.005"), ge=0, lt=1)
 
 
 class FieldProfile(BaseModel):
     """A named source of product data, scored on both DR 0016 axes."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
     field_name: str
+    attributes: tuple[str, ...] = ()
     liability: Liability
     certainty: Certainty
     is_advice: bool = False
 
 
 class CategorySchema(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
     category_id: str
     version: str
     attributes: tuple[AttributeSpec, ...]
@@ -297,7 +302,7 @@ class CategorySchema(BaseModel):
 class Constraint(BaseModel):
     """What the agent said it wanted."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
     attribute: str
     value: Value
     channel: Channel
@@ -307,7 +312,7 @@ class Constraint(BaseModel):
 class Claim(BaseModel):
     """What the agent said is true of the product it picked."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
     attribute: str
     value: Value
     channel: Channel
@@ -317,7 +322,7 @@ class Claim(BaseModel):
 class Evidence(BaseModel):
     """What the merchant's own data says, and which field it came from."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
     attribute: str
     value: Value
     field_name: str
@@ -341,7 +346,7 @@ class Repair(BaseModel):
     old receipts.
     """
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
     resolution: Resolution
     attribute: str
     claimed: str | None = None
@@ -352,16 +357,13 @@ class Repair(BaseModel):
 class Finding(BaseModel):
     """One comparison, resolved.
 
-    `confidence` is a number over the *fact* — P(the product really is 5 kg) — never over
-    our uncertainty, which is not a state of the world (DR 0016 §4).
-
-    `ceiling` is the highest confidence this evidence's provenance permits. Source beats
-    confidence: a claim read only from prose caps below the allow threshold for a HARD
-    attribute regardless of how sure the extractor sounds. At v1 both numbers are a
-    *ranking*, not a calibrated probability.
+    `confidence` and `ceiling` are uncalibrated extraction-assurance rankings.
+    They are not probabilities that a physical product has the stated property.
+    Certainty describes the reading; source truth, SKU binding and freshness remain
+    separate obligations. No authorization decision is made by this object.
     """
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
     check: CheckKind
     attribute: str
     criticality: Criticality
@@ -383,7 +385,7 @@ class AgentTurn(BaseModel):
     Storing only the interpretation would make the record unfalsifiable.
     """
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
     tool: str
     raw_arguments: dict[str, object]
     constraints: tuple[Constraint, ...] = ()
@@ -397,7 +399,7 @@ class ComparisonRecord(BaseModel):
     attached to someone else's session (DR 0016 §7).
     """
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     correlation_id: str
     agent_id: str | None = None

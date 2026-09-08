@@ -1,3 +1,13 @@
+[project]
+name = "approv"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["pydantic>=2.0,<3"]
+
+[project.optional-dependencies]
+test = ["pytest>=8,<10"]
+study = ["pyarrow>=18"]
+
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]

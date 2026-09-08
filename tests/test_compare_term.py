@@ -47,7 +47,7 @@ def test_exact_brand_is_satisfied():
     assert result.support is Support.SATISFIED
 
 
-def test_brand_inside_a_longer_title_is_satisfied():
+def test_brand_mention_in_a_longer_title_requires_entity_resolution():
     """The listing carries more words than the claim. The claim is still supported."""
     result = compare_term(
         claim_of("Aashirvaad"),
@@ -55,7 +55,7 @@ def test_brand_inside_a_longer_title_is_satisfied():
         SPEC,
     )
 
-    assert result.support is Support.SATISFIED
+    assert result.support is Support.UNSTATED
 
 
 def test_claim_more_specific_than_listing_is_unstated_not_violated():

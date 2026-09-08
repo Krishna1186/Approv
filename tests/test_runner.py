@@ -14,6 +14,7 @@ from approv.types.core import (
     Criticality,
     Dimension,
     Evidence,
+    FieldProfile,
     Liability,
     Quantity,
     ReasonCode,
@@ -29,7 +30,9 @@ SCHEMA = CategorySchema(
         AttributeSpec(name="net_weight", dimension=Dimension.MASS, criticality=Criticality.HARD),
         AttributeSpec(name="pack_count", dimension=Dimension.COUNT, criticality=Criticality.SOFT),
     ),
-    field_profiles=(),
+    field_profiles=tuple(FieldProfile(field_name=name, liability=Liability.MERCHANT_GUARANTEED,
+        certainty=Certainty.INFERRED if name == "description" else Certainty.EXACT)
+        for name in ("brands", "quantity", "packaging", "description")),
     floor=frozenset({"net_weight"}),
 )
 
@@ -120,7 +123,7 @@ def test_claim_with_no_evidence_says_the_listing_is_silent():
     assert ReasonCode.PRODUCT_SILENT in result["net_weight"].reasons
 
 
-def test_structured_field_wins_over_description():
+def test_conflicting_fields_require_resolution():
     """Both fields exist. The dedicated field decides; the description does not."""
     findings = run_checks(
         claims=(mass_claim("5", "kg"),),
@@ -132,7 +135,7 @@ def test_structured_field_wins_over_description():
     )
     result = by_attribute(findings)
 
-    assert result["net_weight"].support is Support.SATISFIED
+    assert result["net_weight"].support is Support.UNSTATED
     assert ReasonCode.FIELD_CONFLICT in result["net_weight"].reasons
 
 

@@ -19,6 +19,7 @@ from approv.types.core import (
     Criticality,
     Dimension,
     Evidence,
+    FieldProfile,
     Liability,
     Quantity,
     Term,
@@ -73,7 +74,7 @@ def test_explain_all_honours_probe_mode():
         category_id="grocery.staples",
         version="v1",
         attributes=(SPEC,),
-        field_profiles=(),
+        field_profiles=(FieldProfile(field_name="quantity", liability=Liability.MERCHANT_GUARANTEED, certainty=Certainty.EXACT),),
     )
     claim, evidence = _pair("5", "1")
     findings = run_checks((claim,), (evidence,), schema)
@@ -131,10 +132,16 @@ def test_abstention_is_not_scored_as_a_wrong_answer():
     """
     from approv.harness.benchmark import is_abstention
 
+    import pytest as _pytest
+
     assert is_abstention("UNKNOWN")
     assert is_abstention("unknown")
-    assert is_abstention("")
     assert not is_abstention("Britannia")
+
+    # An empty response is a failed call, not a refusal. Treating it as an abstention
+    # recorded 29 broken API responses as honest declines in the first full run.
+    with _pytest.raises(ValueError):
+        is_abstention("")
 
 
 def test_hard_and_trivial_subsets_are_separated():

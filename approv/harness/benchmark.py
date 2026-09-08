@@ -1,32 +1,7 @@
-"""Measuring whether Approv actually makes an agent better.
+"""Legacy title-to-brand diagnostic. OFF field agreement is not accuracy.
 
-The task, chosen after three candidate designs were tested against real data and
-rejected (see `docs/benchmark-design.md`):
-
-    Show the agent only a product title. Ask it to state the brand.
-    Score against Open Food Facts' `brands` field.
-
-It is a real task: on 599 real records, the brand is **not** in the title 63.6% of the
-time. "Good Day - Cashew Cookies" is Britannia; "bourbon" is Britannia. Answering those
-requires world knowledge, not reading — which is precisely the ungrounded claim Approv
-exists to catch.
-
-## Three arms, and why the middle one decides everything
-
-    A  baseline          the agent's first answer
-    B  blind retry       "some answers may be wrong, try again" — no specifics
-    C  Approv feedback   probe-mode findings, which never reveal the answer
-
-**The improvement figure is C − B, not C − A.** Asking a model to try again makes it
-better on its own; a benchmark without arm B cannot tell our signal apart from the mere
-act of retrying, and would credit us with an effect we did not cause. Any published
-number that omits arm B should be disbelieved, including ours.
-
-Arm C runs in probe mode (`reveal=False`). The value we would otherwise reveal is the
-same value we score against, so revealing it would produce a perfect score that measures
-nothing.
+Use the shopping harness and separate human labels for task improvement experiments.
 """
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -35,7 +10,7 @@ from typing import Callable, Protocol
 from approv.algebra.feedback import explain_all
 from approv.algebra.runner import run_checks
 from approv.harness.coverage import wilson
-from approv.harness.openfoodfacts import evidence_from
+from approv.harness.openfoodfacts import evidence_from, OFF_FIELD_PROFILES
 from approv.types.core import (
     AttributeSpec,
     CategorySchema,
@@ -56,7 +31,7 @@ BRAND_SCHEMA = CategorySchema(
             name="brand", dimension=Dimension.NOMINAL, criticality=Criticality.HARD
         ),
     ),
-    field_profiles=(),
+    field_profiles=OFF_FIELD_PROFILES,
 )
 
 
@@ -110,7 +85,7 @@ class BenchmarkResult:
     transcript: list[dict] = field(default_factory=list)
 
     def improvement(self) -> tuple[float, str]:
-        """C minus B: the effect attributable to our feedback rather than to retrying."""
+        """C minus B field agreement diagnostic; not an independent accuracy estimate."""
         control = self.arms.get("B_blind_retry")
         treatment = self.arms.get("C_approv_feedback")
         if not control or not treatment:
@@ -134,37 +109,29 @@ _ABSTENTIONS = frozenset({"unknown", "unsure", "unclear", "none", "na"})
 
 
 def is_abstention(answer: str) -> bool:
-    """Did the agent decline to name a brand rather than guess one?"""
-    from approv.algebra.term import _tokens
+    """Did the agent decline to name a brand rather than guess one?
 
-    tokens = _tokens(answer)
-    return not tokens or bool(tokens & _ABSTENTIONS)
-
-
-def _is_correct(answer: str, truth: str) -> bool:
-    """Scored by token containment, the same relation `compare_term` uses.
-
-    **Any** of the comma-separated brands counts. Open Food Facts routinely lists several
-    for one product — `"COCA-COLA SERVICES SA/NV, Coca-Cola"` — where the first entry is
-    the legal entity and the later one is the name a shopper would actually say. Scoring
-    only against the first marked "Coca-Cola" wrong, which understated every arm equally
-    and made the whole measurement look worse than it is.
-
-    Using our own comparison to score is a real limitation, stated rather than hidden: it
-    means the *level* of every arm reflects our leniency. It does not contaminate the
-    C - B difference, because both arms are scored identically.
+    An **empty** answer is not an abstention. It is a broken call, and treating it as
+    one let 29 failed API responses be recorded as "the agent honestly declined" in the
+    first full run — a measurement reporting model behaviour that never happened. The
+    caller must raise on empty rather than pass it here.
     """
     from approv.algebra.term import _tokens
 
+    if not answer.strip():
+        raise ValueError("empty agent response is a failed call, not an abstention")
+    return answer.strip().casefold() in _ABSTENTIONS
+
+
+def _is_correct(answer: str, truth: str) -> bool:
+    """Exact normalized field agreement, not independent accuracy or grounding gold."""
+    import re
+    import unicodedata
+    def key(value):
+        return " ".join(re.sub(r"[^\w\s]", " ", unicodedata.normalize("NFKC", value).casefold()).split())
     if is_abstention(answer):
         return False
-
-    given = _tokens(answer)
-    for candidate in truth.split(","):
-        expected = _tokens(candidate)
-        if expected and expected <= given:
-            return True
-    return False
+    return any(key(answer) == key(candidate) for candidate in truth.split(",") if candidate.strip())
 
 
 def brand_in_title(record: dict) -> bool:
@@ -243,8 +210,8 @@ def run_benchmark(
         first = agent(title)
         findings = _findings_for(first, record)
 
-        blind = agent(title, "Some of your answer may be wrong. Answer again.")
-        guided = agent(title, explain_all(findings, reveal=False))
+        blind = agent(title, f"Your first answer was: {first!r}. Some of your answer may be wrong. Answer again.")
+        guided = agent(title, f"Your first answer was: {first!r}. " + explain_all(findings, reveal=False))
 
         for arm, answer in (
             ("A_baseline", first),
