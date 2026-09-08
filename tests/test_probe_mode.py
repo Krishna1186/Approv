@@ -103,3 +103,42 @@ def test_probe_mode_hides_an_unsupported_brand_too():
 
     assert "Good Day" not in probed
     assert "Britannia" in probed
+
+
+# ----------------------------------------------------------------------------------
+# Scoring bugs found by re-auditing the accepted benchmark design, 2026-09-08.
+# ----------------------------------------------------------------------------------
+
+
+def test_any_listed_brand_counts_as_correct():
+    """OFF lists several brands per product; the first is often the legal entity.
+
+    Scoring only against the first marked "Coca-Cola" wrong for a product whose
+    brands field is "COCA-COLA SERVICES SA/NV, Coca-Cola".
+    """
+    from approv.harness.benchmark import _is_correct
+
+    assert _is_correct("Coca-Cola", "COCA-COLA SERVICES SA/NV, Coca-Cola")
+    assert _is_correct("COCA-COLA SERVICES SA/NV", "COCA-COLA SERVICES SA/NV, Coca-Cola")
+    assert not _is_correct("Pepsi", "COCA-COLA SERVICES SA/NV, Coca-Cola")
+
+
+def test_abstention_is_not_scored_as_a_wrong_answer():
+    """Approv's signal is "unsupported", so an honest UNKNOWN is the right response.
+
+    Counting it as an error would systematically punish arm C for making the agent
+    more honest, which is the most likely way this benchmark produces a false negative.
+    """
+    from approv.harness.benchmark import is_abstention
+
+    assert is_abstention("UNKNOWN")
+    assert is_abstention("unknown")
+    assert is_abstention("")
+    assert not is_abstention("Britannia")
+
+
+def test_hard_and_trivial_subsets_are_separated():
+    from approv.harness.benchmark import brand_in_title
+
+    assert brand_in_title({"product_name": "Aashirvaad Atta 5kg", "brands": "Aashirvaad"})
+    assert not brand_in_title({"product_name": "Good Day - Cashew Cookies", "brands": "Britannia"})

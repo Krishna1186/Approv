@@ -76,11 +76,28 @@ class ArmResult:
     name: str
     correct: int = 0
     total: int = 0
-    unsupported_flagged: int = 0
+    abstained: int = 0
 
     @property
     def accuracy(self) -> float:
         return self.correct / self.total if self.total else 0.0
+
+    @property
+    def abstention_rate(self) -> float:
+        return self.abstained / self.total if self.total else 0.0
+
+    @property
+    def accuracy_when_answered(self) -> float:
+        """Accuracy over attempts where the agent actually committed to a brand.
+
+        Reported separately because an abstention is not an error. Approv's signal is
+        "the listing does not support this", so an agent that responds by admitting it
+        does not know has done the *right* thing — and scoring that as a failure would
+        systematically punish arm C for making the agent more honest. Judging the two
+        together would have produced a misleading negative result.
+        """
+        answered = self.total - self.abstained
+        return self.correct / answered if answered else 0.0
 
     @property
     def interval(self) -> tuple[float, float]:
@@ -113,18 +130,75 @@ def _claim_from(answer: str) -> Claim:
     )
 
 
+_ABSTENTIONS = frozenset({"unknown", "unsure", "unclear", "none", "na"})
+
+
+def is_abstention(answer: str) -> bool:
+    """Did the agent decline to name a brand rather than guess one?"""
+    from approv.algebra.term import _tokens
+
+    tokens = _tokens(answer)
+    return not tokens or bool(tokens & _ABSTENTIONS)
+
+
 def _is_correct(answer: str, truth: str) -> bool:
     """Scored by token containment, the same relation `compare_term` uses.
 
-    Using our own comparison to score is a real limitation and it is stated rather than
-    hidden: it means the *level* of every arm reflects our leniency. It does not
-    contaminate the C − B difference, because both arms are scored identically — which
-    is the second reason the headline number is a difference and not a level.
+    **Any** of the comma-separated brands counts. Open Food Facts routinely lists several
+    for one product — `"COCA-COLA SERVICES SA/NV, Coca-Cola"` — where the first entry is
+    the legal entity and the later one is the name a shopper would actually say. Scoring
+    only against the first marked "Coca-Cola" wrong, which understated every arm equally
+    and made the whole measurement look worse than it is.
+
+    Using our own comparison to score is a real limitation, stated rather than hidden: it
+    means the *level* of every arm reflects our leniency. It does not contaminate the
+    C - B difference, because both arms are scored identically.
     """
     from approv.algebra.term import _tokens
 
-    given, expected = _tokens(answer), _tokens(truth.split(",")[0])
-    return bool(expected) and expected <= given
+    if is_abstention(answer):
+        return False
+
+    given = _tokens(answer)
+    for candidate in truth.split(","):
+        expected = _tokens(candidate)
+        if expected and expected <= given:
+            return True
+    return False
+
+
+def brand_in_title(record: dict) -> bool:
+    """Is the brand literally present in the product title?
+
+    Splits the corpus into a trivial subset (the agent need only copy) and a real one
+    (the agent must know that Good Day is a Britannia product). Reporting only the
+    combined number would hide the effect inside a pile of copy jobs.
+    """
+    from approv.algebra.term import _tokens
+
+    title = _tokens(record.get("product_name") or "")
+    for candidate in (record.get("brands") or "").split(","):
+        expected = _tokens(candidate)
+        if expected and expected <= title:
+            return True
+    return False
+
+
+def subset(result: "BenchmarkResult", *, brand_in_title_value: bool) -> dict[str, ArmResult]:
+    """Recompute arm results over only the rows matching the subset flag."""
+    arms = {name: ArmResult(name) for name in result.arms}
+    for row in result.transcript:
+        if row["brand_in_title"] is not brand_in_title_value:
+            continue
+        for key, name in (("A", "A_baseline"), ("B", "B_blind_retry"),
+                          ("C", "C_approv_feedback")):
+            entry = arms[name]
+            entry.total += 1
+            if row["abstained"][key]:
+                entry.abstained += 1
+            elif row["correct"][key]:
+                entry.correct += 1
+    return arms
 
 
 def _findings_for(answer: str, record: dict) -> tuple[Finding, ...]:
@@ -174,7 +248,9 @@ def run_benchmark(
         ):
             entry = result.arms[arm]
             entry.total += 1
-            if _is_correct(answer, truth):
+            if is_abstention(answer):
+                entry.abstained += 1
+            elif _is_correct(answer, truth):
                 entry.correct += 1
 
         result.transcript.append(
@@ -187,9 +263,14 @@ def run_benchmark(
                 "C": guided,
                 "approv_said": explain_all(findings, reveal=False),
                 "approv_support": [f.support.value for f in findings],
-                "brand_in_title": any(
-                    f.support is Support.SATISFIED for f in findings
-                ),
+                "correct": {k: _is_correct(v, truth) for k, v in
+                            (("A", first), ("B", blind), ("C", guided))},
+                "abstained": {k: is_abstention(v) for k, v in
+                              (("A", first), ("B", blind), ("C", guided))},
+                # The interesting subset. Where the brand is already sitting in the
+                # title, all three arms are doing a copy job and will converge, diluting
+                # any real effect. Tagged here so results can be split.
+                "brand_in_title": brand_in_title(record),
             }
         )
 
