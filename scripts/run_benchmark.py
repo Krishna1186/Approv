@@ -108,6 +108,53 @@ def gemini_agent(model: str, key: str, cache: pathlib.Path, delay: float):
     return agent
 
 
+# Any provider speaking the OpenAI chat-completions shape works through one code path:
+# Groq, OpenRouter, Cerebras, Together, Mistral, DeepInfra, OpenAI itself. This matters
+# more than it looks — Gemini's free tier is 20 requests per day per model, which cannot
+# support a benchmark, and locking the harness to one vendor would make the number a
+# statement about that vendor.
+OPENAI_COMPATIBLE = {
+    "groq": "https://api.groq.com/openai/v1",
+    "openrouter": "https://openrouter.ai/api/v1",
+    "cerebras": "https://api.cerebras.ai/v1",
+    "together": "https://api.together.xyz/v1",
+    "mistral": "https://api.mistral.ai/v1",
+    "openai": "https://api.openai.com/v1",
+}
+
+
+def openai_agent(model: str, key: str, base_url: str, cache: pathlib.Path, delay: float):
+    def agent(title: str, feedback: str | None = None) -> str:
+        path = _cache_path(cache, model, title, feedback)
+        if path.exists():
+            return json.loads(path.read_text(encoding="utf-8"))["text"]
+
+        content = PROMPT.format(title=title)
+        if feedback is not None:
+            content += f"\n\n{feedback}\n\nGive your final answer, brand name only."
+
+        data = _post(
+            f"{base_url}/chat/completions",
+            {
+                "model": model,
+                "messages": [{"role": "user", "content": content}],
+                "max_tokens": 64,
+                "temperature": 0,
+            },
+            {"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+        )
+        try:
+            text = (data["choices"][0]["message"]["content"] or "").strip()
+        except (KeyError, IndexError):
+            text = "UNKNOWN"
+
+        path.write_text(json.dumps({"text": text}), encoding="utf-8")
+        time.sleep(delay)
+        return text
+
+    return agent
+
+
 def anthropic_agent(model: str, cache: pathlib.Path, delay: float):
     import anthropic
 
@@ -156,7 +203,13 @@ def _print_arms(title: str, arms: dict) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--provider", default="gemini", choices=("gemini", "anthropic"))
+    parser.add_argument(
+        "--provider",
+        default="gemini",
+        choices=("gemini", "anthropic", *OPENAI_COMPATIBLE),
+    )
+    parser.add_argument("--base-url", default=None, help="override the provider endpoint")
+    parser.add_argument("--api-key-env", default=None, help="env var holding the key")
     parser.add_argument("--corpus", default="data/cache/off_india_raw.json")
     parser.add_argument("--limit", type=int, default=20)
     parser.add_argument("--model", default="gemini-2.0-flash")
@@ -177,11 +230,31 @@ def main() -> int:
             list_gemini_models(key)
             return 0
         agent = gemini_agent(args.model, key, cache, args.delay)
-    else:
+    elif args.provider == "anthropic":
         if not os.environ.get("ANTHROPIC_API_KEY"):
             print("ANTHROPIC_API_KEY is not set. Refusing to run with a simulated agent.")
             return 1
         agent = anthropic_agent(args.model, cache, args.delay)
+    else:
+        env = args.api_key_env or f"{args.provider.upper()}_API_KEY"
+        key = os.environ.get(env)
+        if not key:
+            print(f"{env} is not set. Refusing to run with a simulated agent.")
+            return 1
+        base = args.base_url or OPENAI_COMPATIBLE[args.provider]
+        agent = openai_agent(args.model, key, base, cache, args.delay)
+
+    # Spend one call proving the model answers before committing the whole run.
+    # Gemini's --list-models advertised gemini-2.5-flash, which returns 404 with "no
+    # longer available to new users" — so a listing is not proof a model is callable,
+    # and finding that out 40 calls into a quota-limited run wastes the quota.
+    try:
+        probe = agent("Preflight check: Amul Butter 500g")
+        print(f"preflight: model answered {probe[:40]!r}\n")
+    except Exception as error:  # noqa: BLE001 - surfacing the provider's own message
+        print(f"preflight FAILED: {type(error).__name__}: {error}")
+        print("The model is not callable with this key. Nothing was spent on the run.")
+        return 1
 
     records = json.load(open(args.corpus, encoding="utf-8"))[: args.limit]
     print(f"corpus: {len(records)} records from {args.corpus}")

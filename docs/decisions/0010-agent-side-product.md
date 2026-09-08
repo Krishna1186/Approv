@@ -152,6 +152,64 @@ the same code either way; what it is *for* is producing the number that prices a
 guarantee to an agent operator, rather than a badge sold to a merchant who is not
 exposed.
 
+## Amendment, 2026-09-08 — nobody may be liable, so stop selling liability
+
+Founder's observation, and it undercuts the pitch this DR was built on: **the agent
+operator probably does not carry the loss.** Their terms disclaim it, the payment
+provider authorised a valid transaction, and neither is the party out of pocket.
+
+Follow the money on a wrong agentic purchase and it lands in two places: the **consumer**
+(hassle, and time), and the **merchant** (return logistics, restocking, refund cost). The
+agent operator's exposure is churn, which is real but soft, deferred, and not something a
+procurement team writes a cheque against.
+
+So an indemnity sold to the agent operator is an insurance policy against a risk they do
+not hold. That is not a hard sell; it is an incoherent one.
+
+### Where revenue can actually come from, ranked by how soon it works
+
+**1. Observability — the strongest near-term product.**
+An agent operator cannot see *why* its agent picked the wrong item. Approv can: which
+attribute, which field, whether the agent read it or invented it. That is error
+monitoring, and error monitoring is bought by engineering teams with existing budget for
+exactly one reason — you cannot debug what you cannot see. Nobody buys Sentry for
+liability reasons.
+- Buyer: the team that owns the agent. Budget line already exists.
+- Needs: the engine and a dashboard. **No liability, no guarantee, no regulator.**
+- This is the pitch that survives the founder's observation intact.
+
+**2. Conversion uplift — the strongest once there is a number.**
+If verification raises the completed-purchase rate, the benefit is revenue rather than
+avoided loss, and it accrues to *both* sides. "We make you money" outsells "we protect
+you from a risk you did not think you had." Blocked on the benchmark producing a real
+delta, which is precisely what `docs/benchmark-design.md` measures.
+
+**3. Merchant-side return reduction.** The merchant *is* the party with the loss, so the
+merchant is a coherent buyer even for traffic from external agents. This is narrower than
+the withdrawn "audit someone else's agent" pitch: it is "cut your return rate on agentic
+traffic, and get proof of fault when it was not you."
+
+**4. Trust registry — the long game.** Merchants will eventually decide which agents may
+transact on their platform. Whoever scores agents sits in the middle of that. Real
+network position, needs scale first, cannot be sold today.
+
+**5. Indemnity — last, and conditional.** Only coherent where agent and inventory sit in
+one company (DR 0016 amendment), because there the loss is internal and genuinely theirs.
+Keep it for that customer; stop leading with it everywhere else.
+
+### Consequences
+
+- **Geography opens up.** Sitting at the agent layer rather than the payment rail means
+  nothing here is India-specific. UAP is a reason to be *ready* in India, not a
+  constraint on where this sells. The regulatory posture also softens: an observability
+  product touches no financial regulation at all.
+- **DR 0012's badge-priced refund does not disappear**, but it stops being the wedge and
+  becomes an upsell for customers who want it.
+- **Benchmark targets widen** — browser agents and agentic browsers (Comet, Atlas,
+  browser-use, Claude in Chrome) are a growing surface and belong in the corpus. They are
+  also the channel where the merchant sees an ordinary session and cannot tell an agent
+  from a human, which makes independent verification more valuable rather than less.
+
 ## Decision
 
 **2026-09-05 — Option 2 adopted.** Build row 1 (human search on an integrated merchant)
