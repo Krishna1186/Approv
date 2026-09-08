@@ -127,10 +127,16 @@ def evidence_from(record: dict) -> tuple[Evidence, ...]:
 
     brands = (record.get("brands") or "").strip()
     if brands:
+        # The field is a *set* of names for one product — "Nestlé, Nestlé Waters,
+        # Perrier" — where the first entry is often the legal entity and a later one is
+        # the name a shopper would actually say. Taking only the first made Approv report
+        # MISMATCH against an agent that correctly answered "Perrier". The right question
+        # is whether the claimed brand is among those listed, so the surface is the union.
+        aliases = [part.strip() for part in brands.split(",") if part.strip()]
         out.append(
             Evidence(
                 attribute="brand",
-                value=Term(surface=brands.split(",")[0].strip()),
+                value=Term(surface=" ".join(aliases)),
                 field_name="brands",
                 liability=Liability.PLATFORM_DERIVED,
                 certainty=Certainty.EXACT,

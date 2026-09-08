@@ -203,7 +203,12 @@ def subset(result: "BenchmarkResult", *, brand_in_title_value: bool) -> dict[str
 
 def _findings_for(answer: str, record: dict) -> tuple[Finding, ...]:
     evidence = tuple(e for e in evidence_from(record) if e.attribute == "brand")
-    return run_checks((_claim_from(answer),), evidence, BRAND_SCHEMA)
+    # An abstention is not a claim. Passing "UNKNOWN" through as a brand produced
+    # `MISMATCH brand: claimed UNKNOWN`, which compares the word "UNKNOWN" against the
+    # catalogue as though the agent had asserted it. Withholding an answer should yield
+    # NO_CLAIM, which is what the runner emits when there is nothing to check.
+    claims = () if is_abstention(answer) else (_claim_from(answer),)
+    return run_checks(claims, evidence, BRAND_SCHEMA)
 
 
 def run_benchmark(

@@ -142,3 +142,73 @@ def test_hard_and_trivial_subsets_are_separated():
 
     assert brand_in_title({"product_name": "Aashirvaad Atta 5kg", "brands": "Aashirvaad"})
     assert not brand_in_title({"product_name": "Good Day - Cashew Cookies", "brands": "Britannia"})
+
+
+# ----------------------------------------------------------------------------------
+# Bugs found by reading the transcript of the first live run, 2026-09-08.
+# ----------------------------------------------------------------------------------
+
+
+def test_probe_mode_does_not_call_a_correct_answer_wrong():
+    """Regression: probe mode said "disagrees" regardless of the verdict.
+
+    A SATISFIED finding rendered as "OK brand: claimed Nutella, this disagrees with
+    the listing's brands" — telling an agent its correct answer was wrong, which is
+    worse than silence and silently corrupted the treatment arm.
+    """
+    from approv.algebra.term import compare_term
+
+    spec = AttributeSpec(
+        name="brand", dimension=Dimension.NOMINAL, criticality=Criticality.HARD
+    )
+    claim = Claim(
+        attribute="brand", value=Term(surface="Nutella"), channel=Channel.AGENT_MESSAGE
+    )
+    evidence = Evidence(
+        attribute="brand",
+        value=Term(surface="Nutella"),
+        field_name="brands",
+        liability=Liability.PLATFORM_DERIVED,
+        certainty=Certainty.EXACT,
+    )
+
+    message = explain(compare_term(claim, evidence, spec), reveal=False)
+
+    assert message.startswith("OK")
+    assert "disagrees" not in message
+    assert "matches" in message
+
+
+def test_all_listed_brands_are_evidence_not_just_the_first():
+    """Regression: Approv reported MISMATCH against an agent that answered "Perrier"
+    for a product whose brands field is "Nestle, Nestle Waters, Perrier"."""
+    from approv.algebra.term import compare_term
+    from approv.harness.openfoodfacts import evidence_from
+
+    spec = AttributeSpec(
+        name="brand", dimension=Dimension.NOMINAL, criticality=Criticality.HARD
+    )
+    evidence = [
+        e for e in evidence_from(
+            {"product_name": "Perrier", "brands": "Nestle, Nestle Waters, Perrier"}
+        )
+        if e.field_name == "brands"
+    ][0]
+    claim = Claim(
+        attribute="brand", value=Term(surface="Perrier"), channel=Channel.AGENT_MESSAGE
+    )
+
+    from approv.types.core import Support as S
+
+    assert compare_term(claim, evidence, spec).support is S.SATISFIED
+
+
+def test_an_abstention_is_not_treated_as_a_brand_claim():
+    """Regression: "UNKNOWN" was compared against the catalogue as if it were a brand."""
+    from approv.harness.benchmark import _findings_for
+    from approv.types.core import ReasonCode, Support as S
+
+    findings = _findings_for("UNKNOWN", {"product_name": "Perly", "brands": "Jaouda"})
+
+    assert all(f.support is not S.VIOLATED for f in findings)
+    assert any(ReasonCode.NO_CLAIM in f.reasons for f in findings)

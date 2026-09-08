@@ -74,6 +74,25 @@ def _observed_clause(repair: Repair) -> str:
     return f"the listing says {repair.observed} (field: {repair.observed_field})"
 
 
+def _probe_clause(finding: Finding, repair: Repair) -> str:
+    """The observed-value clause with the value withheld.
+
+    This must respect the verdict. An earlier version said "this disagrees with the
+    listing" unconditionally, so a SATISFIED finding rendered as
+    `OK brand: claimed Nutella, this disagrees with the listing's brands` — telling an
+    agent that its correct answer was wrong. That is worse than no feedback: it pushes a
+    right answer toward a wrong one, and it silently corrupted the treatment arm of the
+    benchmark it was written for.
+    """
+    if repair.observed_field is None:
+        return "the listing does not publish this"
+    if finding.support is Support.SATISFIED:
+        return f"this matches the listing's {repair.observed_field}"
+    if finding.support is Support.VIOLATED:
+        return f"this disagrees with the listing's {repair.observed_field}"
+    return f"the listing's {repair.observed_field} field does not support this"
+
+
 def explain(finding: Finding, *, reveal: bool = True) -> str:
     """Render one finding as a single line an agent can read and act on.
 
@@ -98,10 +117,8 @@ def explain(finding: Finding, *, reveal: bool = True) -> str:
             detail.append(f"claimed {repair.claimed}")
         if reveal:
             detail.append(_observed_clause(repair))
-        elif repair.observed_field is not None:
-            detail.append(f"this disagrees with the listing's {repair.observed_field}")
         else:
-            detail.append("the listing does not support this")
+            detail.append(_probe_clause(finding, repair))
         parts.append(", ".join(detail) + ".")
 
     # Every reason, not only the first. An agent that fixes one problem and resubmits
