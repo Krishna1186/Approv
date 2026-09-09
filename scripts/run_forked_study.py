@@ -177,7 +177,10 @@ def pick_stage(work, stage, model, key, endpoint, interval, limit=0, flat=False,
         try:
             answers[cid] = str(json.loads(data["choices"][0]["message"]["content"])["id"])
         except (KeyError, ValueError, TypeError):
-            answers[cid] = "ABSTAIN"
+            # A response we could not parse is a failure, not a decision. Recording it as
+            # ABSTAIN lets a broken call score as a correct refusal on exactly the cases
+            # where declining is right, which flatters the arm that produced it.
+            answers[cid] = "ERROR"
         out.write_text(json.dumps(answers, indent=1), encoding="utf-8")
     print(json.dumps({"stage": stage, "answered": len(answers), "tokens": spent,
                       "tokens_per_case": round(spent / max(len(answers), 1))}))
@@ -238,7 +241,9 @@ def search_stage(work, pack_path, model, key, endpoint, interval, split, top, li
         try:
             queries[cid] = str(json.loads(data["choices"][0]["message"]["content"])["query"])
         except (KeyError, ValueError, TypeError):
-            queries[cid] = task["case"]["request"]
+            # Falling back to the raw request would quietly hand the agent a query it
+            # never wrote, and the request quotes details a real query might not.
+            queries[cid] = ""
         out.write_text(json.dumps(queries, indent=1), encoding="utf-8")
 
     # Retrieve with the agent's own query, and keep every case whatever comes back.
@@ -375,6 +380,13 @@ def main():
     picks = json.loads((work / "answers-baseline.json").read_text(encoding="utf-8-sig"))
     if args.stage == "followup":
         extracted = json.loads((work / "constraints.json").read_text(encoding="utf-8"))
+        # Continue from the shelf the baseline actually saw. Recomputing retrieval here
+        # would hand the review arms a different candidate set from the one the proposal
+        # was made against, so any difference between arms would partly be a difference
+        # in what they were shown.
+        seen = {c["case_id"]: [x["id"] for x in c["candidates"]]
+                for c in json.loads((work / "stage1-baseline.json").read_text(encoding="utf-8-sig"))}
+        pools = {**pools, **{k: v for k, v in seen.items() if k in pools or True}}
         blind, approv = [], []
         for t in tasks:
             cid = t["case"]["id"]

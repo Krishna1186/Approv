@@ -531,3 +531,37 @@ def test_a_narrower_listing_value_is_unknown_but_a_negated_one_is_a_contradictio
     # the substitution case this project keeps meeting: a compatible part is not the brand
     assert verdict("Brother", "Brother Compatible") is Support.VIOLATED
     assert verdict("leather", "leather faux") is Support.VIOLATED
+
+
+def test_an_unparseable_agent_reply_is_a_failure_not_a_refusal():
+    """Recording a broken response as ABSTAIN lets it score as a correct refusal.
+
+    On any case where declining is the right answer, a malformed reply would be counted
+    as the agent wisely walking away. This project has already been burned by exactly this
+    shape once, when 29 failed provider calls were recorded as 29 honest declines.
+    """
+    import scripts.run_forked_study as study
+
+    replies = iter([
+        {"choices": [{"message": {"content": "not json at all"}}], "usage": {}},
+        {"choices": [{"message": {"content": '{"id":"P1"}'}}], "usage": {}},
+    ])
+    original = study.post_json if hasattr(study, "post_json") else None
+
+    import approv.harness.adapters as adapters
+    saved = adapters.post_json
+    adapters.post_json = lambda *a, **k: next(replies)
+    try:
+        import tempfile, pathlib
+        work = pathlib.Path(tempfile.mkdtemp())
+        (work / "stage1-x.json").write_text(json.dumps([
+            {"case_id": "a", "request": "r", "candidates": [{"id": "P1", "title": "t"}]},
+            {"case_id": "b", "request": "r", "candidates": [{"id": "P1", "title": "t"}]}]),
+            encoding="utf-8")
+        study.pick_stage(work, "1-x", "m", "k", "https://example.invalid/v1", 0)
+        answers = json.loads((work / "answers-x.json").read_text(encoding="utf-8"))
+    finally:
+        adapters.post_json = saved
+
+    assert answers["a"] == "ERROR"
+    assert answers["b"] == "P1"
