@@ -1,3 +1,10 @@
+> **Superseded and partly retracted, 10 September 2026.** The baselines here came from
+> a task that quoted the product's exact catalogue title in 94% of requests and placed
+> the answer in the candidate list every time. "A cheap agent does not make mistakes"
+> does not survive: on a task where the agent had to find the product itself, two model
+> families both scored 50-54%. The presentation and model-family tests below remain
+> valid and are the reason the pack, not the model, was identified as the variable.
+
 # What the agent gets right without us — 10 September 2026
 
 Three agents, two presentations, 40 identical held-out Shopify cases, one answer key
