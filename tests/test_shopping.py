@@ -504,3 +504,30 @@ def test_a_report_spends_words_only_where_an_action_is_wanted():
     # nothing is concealed: every attribute still appears
     for name in ("size", "color", "availability"):
         assert name in compact
+
+
+def test_a_narrower_listing_value_is_unknown_but_a_negated_one_is_a_contradiction():
+    """A trailing qualifier can narrow or negate, and the two are opposites.
+
+    "Black Multi" is a kind of black, so calling it a contradiction refuses a sale on a
+    fact we do not have. "Sugar free" is the absence of sugar, so calling it unknown
+    clears something we can see is wrong. The same shape, opposite answers, which is why
+    the negation set exists and why it stays short.
+    """
+    from approv.algebra.term import compare_term
+    from approv.types.core import (AttributeSpec, Certainty, Channel, Claim, Criticality,
+                                   Dimension, Evidence, Liability, Support, Term)
+
+    def verdict(asked, listed):
+        spec = AttributeSpec(name="x", dimension=Dimension.NOMINAL, criticality=Criticality.HARD)
+        claim = Claim(attribute="x", value=Term(surface=asked), channel=Channel.AGENT_MESSAGE)
+        evidence = Evidence(attribute="x", value=Term(surface=listed), field_name="f",
+                            certainty=Certainty.EXACT, liability=Liability.MERCHANT_GUARANTEED)
+        return compare_term(claim, evidence, spec).support
+
+    assert verdict("Black", "Black Multi") is Support.UNSTATED
+    assert verdict("sugar", "sugar free") is Support.VIOLATED
+    assert verdict("Navy", "Black") is Support.VIOLATED
+    # the substitution case this project keeps meeting: a compatible part is not the brand
+    assert verdict("Brother", "Brother Compatible") is Support.VIOLATED
+    assert verdict("leather", "leather faux") is Support.VIOLATED

@@ -34,6 +34,10 @@ _WHY: dict[ReasonCode, str] = {
         "the claim says more than the listing does, so the listing neither confirms "
         "nor contradicts it"
     ),
+    ReasonCode.LISTING_MORE_SPECIFIC: (
+        "the listing names a narrower variant of what was asked for, which neither "
+        "confirms nor contradicts it"
+    ),
     ReasonCode.PRODUCT_SILENT: "the listing does not publish this attribute",
     ReasonCode.NO_CLAIM: "no claim was made about this attribute, so nothing was checked",
     ReasonCode.FIELD_CONFLICT: "two fields on the listing disagree with each other",

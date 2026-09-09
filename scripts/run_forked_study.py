@@ -77,7 +77,7 @@ def listing(product):
     text = " | ".join(filter(None, [detail.get("variant", ""), stock, detail.get("description", "")]))
     return {"id": product.id, "title": detail.get("title", product.title),
             "brand": detail.get("brand", ""), "price": detail.get("price", ""),
-            "listing": text[:600]}
+            "listing": text[:220]}  # the fold: variant, stock, and the opening blurb
 
 
 def load(pack_path):
@@ -89,9 +89,107 @@ def load(pack_path):
     return pack, inventory, blobs
 
 
+PICK_SYSTEM = ("You are a shopping agent buying on a customer's behalf. Choose the one "
+               "candidate id that best serves the request. Reply with JSON only: "
+               '{"id":"<candidate id>"} or {"id":"ABSTAIN"} if nothing available is '
+               "suitable. The customer expects you to buy something unless it truly "
+               "cannot be filled. No other keys, no explanation.")
+
+
+def pick_stage(work, stage, model, key, endpoint, interval, limit=0, flat=False, suffix=""):
+    """Answer a prepared stage with one model call per case.
+
+    One call, one selection, no tool loop. The agent under test is meant to be cheap and
+    swappable, and a multi-turn session spends most of its tokens re-sending history that
+    tells us nothing about whether the check helped.
+    """
+    import time
+    from approv.harness.adapters import AdapterError, post_json
+    source = json.loads((work / ("stage%s.json" % stage)).read_text(encoding="utf-8-sig"))
+    if limit: source = source[:limit]
+    name = stage.split("-", 1)[1] if "-" in stage else stage
+    out = work / ("answers-%s%s.json" % (name, suffix))
+    answers = json.loads(out.read_text(encoding="utf-8-sig")) if out.exists() else {}
+    spent = 0
+    for case in source:
+        cid = case["case_id"]
+        if cid in answers: continue
+        # Variants of one product share a description. Sending it once per product
+        # instead of once per variant cut the prompt by two thirds, and the agent reads
+        # a product page rather than the same paragraph twenty-five times.
+        if flat:
+            # The presentation this harness used before descriptions were grouped:
+            # every variant carrying its own copy of the product blurb.
+            lines = [f'{c["id"]} | {c["title"]} | {c.get("price","")} | {c.get("listing","")}'
+                     for c in case["candidates"]]
+        else:
+            lines, seen = [], set()
+            for c in case["candidates"]:
+                variant, _, blurb = c.get("listing", "").partition(" | In stock | ")
+                if not blurb:
+                    variant, _, blurb = c.get("listing", "").partition(" | Sold out | ")
+                stock = "In stock" if " | In stock | " in c.get("listing", "") else "Sold out"
+                if c["title"] not in seen:
+                    seen.add(c["title"])
+                    lines.append("")
+                    lines.append(f'{c["title"]} - {blurb[:200]}')
+                lines.append(f'  {c["id"]} | {variant} | {c.get("price","")} | {stock}')
+        user = ["REQUEST: " + case["request"], "", "CANDIDATES:", *lines]
+        if case.get("your_previous_answer"):
+            user += ["", "YOUR EARLIER ANSWER: " + case["your_previous_answer"], case.get("note", "")]
+        if case.get("approv_report"):
+            user += ["", "AUTOMATED CHECK OF YOUR EARLIER ANSWER:", case["approv_report"]]
+        payload = {"model": model, "temperature": 0, "max_tokens": 512,
+                   "response_format": {"type": "json_object"},
+                   "messages": [{"role": "system", "content": PICK_SYSTEM},
+                                {"role": "user", "content": "\n".join(user)}]}
+        if model.startswith("openai/gpt-oss-"):
+            # Left to itself this model spends the whole budget reasoning and returns
+            # an empty string, which the provider rejects as json_validate_failed.
+            # Choosing one id from a list does not need deep reasoning and a production
+            # agent would not pay for it. The same setting is used in every arm.
+            payload["reasoning_effort"] = "low"
+        delays = []
+        for attempt in range(4):
+            time.sleep(interval if not delays else delays[-1])
+            try:
+                data = post_json(endpoint + "/chat/completions", payload,
+                                 {"Authorization": "Bearer " + key}, 60)
+                break
+            except AdapterError as error:
+                wait = error.metadata.get("retry_after_seconds", 0)
+                if error.code == "http_429" and 0 < wait <= 90 and attempt < 3:
+                    delays.append(wait + 1); continue
+                if error.code == "http_429" or attempt == 3:
+                    out.write_text(json.dumps(answers, indent=1), encoding="utf-8")
+                    print(json.dumps({"blocked": error.code, "case": cid,
+                                      "done": len(answers), "tokens": spent}))
+                    return 2
+                # A provider failure is a failure, never a quiet abstention. Recording one
+                # as an abstention is how 29 dead calls once became 29 honest declines.
+                data = None
+                break
+        if data is None:
+            answers[cid] = "ERROR"
+            out.write_text(json.dumps(answers, indent=1), encoding="utf-8")
+            continue
+        spent += data.get("usage", {}).get("total_tokens", 0)
+        try:
+            answers[cid] = str(json.loads(data["choices"][0]["message"]["content"])["id"])
+        except (KeyError, ValueError, TypeError):
+            answers[cid] = "ABSTAIN"
+        out.write_text(json.dumps(answers, indent=1), encoding="utf-8")
+    print(json.dumps({"stage": stage, "answered": len(answers), "tokens": spent,
+                      "tokens_per_case": round(spent / max(len(answers), 1))}))
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("stage", choices=["baseline", "interpret", "followup", "score"])
+    parser.add_argument("stage", choices=["baseline", "interpret", "followup", "pick", "score"])
+    parser.add_argument("--file", help="pick: stage file suffix, e.g. 1-baseline or 2-approv")
+    parser.add_argument("--flat", action="store_true", help="pick: repeat the product blurb per variant")
+    parser.add_argument("--suffix", default="", help="pick: suffix for the answers file")
     parser.add_argument("--pack", required=True); parser.add_argument("--work", required=True)
     parser.add_argument("--split", default="heldout"); parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--top", type=int, default=16)
@@ -131,6 +229,12 @@ def main():
         print(json.dumps({"cases_written": len(out), "excluded_unanswerable": len(dropped),
                           "top": args.top}))
         return 0
+
+    if args.stage == "pick":
+        from scripts.run_study import get_key
+        return pick_stage(work, args.file, args.model, get_key(),
+                          "https://api.groq.com/openai/v1", args.interval, args.limit,
+                          args.flat, args.suffix)
 
     if args.stage == "interpret":
         from approv.harness.adapters import AdapterError

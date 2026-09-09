@@ -158,6 +158,7 @@ class ReasonCode(str, Enum):
     UNRESOLVED_TERM = "unresolved_term"
     WITHIN_TOLERANCE = "within_tolerance"
     CLAIM_MORE_SPECIFIC = "claim_more_specific"
+    LISTING_MORE_SPECIFIC = "listing_more_specific"
     AGENT_SELF_CONTRADICTION = "agent_self_contradiction"
     UNATTESTED_COUNTERPARTY = "unattested_counterparty"
     DUPLICATE_CLAIM = "duplicate_claim"

@@ -40,6 +40,16 @@ def _tokens(text: str) -> frozenset[str]:
     return frozenset(normalize_term(text).split())
 
 
+# A trailing qualifier can narrow or it can negate, and the two are opposites. "Black
+# Multi" is a kind of black; "sugar free" is the absence of sugar. Treating both as
+# contradiction false-flags the first; treating both as unknown clears the second. This
+# is the smallest closed set that separates them, and it is deliberately short: anything
+# not listed here is treated as a narrowing, which routes to confirm rather than to allow.
+_NEGATIONS = frozenset({"free", "less", "without", "non", "no", "zero", "anti", "sub",
+                        "alternative", "substitute", "replacement", "compatible", "style",
+                        "inspired", "imitation", "faux", "dupe"})
+
+
 def compare_term(claim: Claim, evidence: Evidence, spec: AttributeSpec) -> Finding:
     """Compare one nominal claim against one piece of product evidence."""
     if claim.attribute != evidence.attribute:
@@ -105,6 +115,16 @@ def compare_term(claim: Claim, evidence: Evidence, spec: AttributeSpec) -> Findi
     if claimed.startswith(observed + " "):
         return finding(Support.UNSTATED, 0.0, Resolution.FIND_BETTER_SOURCE,
                        ReasonCode.CLAIM_MORE_SPECIFIC)
+    # "Black" against a listing that says "Black Multi" is not the same kind of answer as
+    # "Navy" against "Black", and returning VIOLATED for both asserts a contradiction we
+    # cannot support. The listing names something narrower than the request; whether it
+    # satisfies the shopper is exactly what we do not know. Per §2.3 an unknown routes to
+    # confirm rather than to allow, so the safe direction is to say we could not tell.
+    if observed.startswith(claimed + " "):
+        extra = set(observed[len(claimed):].split())
+        if not extra & _NEGATIONS:
+            return finding(Support.UNSTATED, 0.0, Resolution.FIND_BETTER_SOURCE,
+                           ReasonCode.LISTING_MORE_SPECIFIC)
     # The listing contradicts the request, so the listing is the thing to change.
     # RESTATE_CLAIM renders as "restate the claim in terms the listing publishes", which
     # asks the agent to rewrite what the customer wanted until it matches the wrong
