@@ -446,3 +446,28 @@ def test_a_spending_limit_reads_as_money_not_as_a_python_repr():
     assert "at most 68.00 USD" in text and "98.00 USD" in text
     for leaked in ("kind=", "BoundOp", "Decimal(", "Money("):
         assert leaked not in text
+
+
+def test_a_contradicted_name_says_change_the_product_not_the_request():
+    """A mismatch is resolved by picking a different product, never by rewriting the ask.
+
+    term.py alone answered a contradiction with RESTATE_CLAIM, which renders as "restate
+    the claim in terms the listing publishes" — advice to change what the customer wanted
+    until it matched the wrong item. Size is nominal, so this was the guidance a size
+    mismatch produced, and size mismatches were the most common error in the 9 September
+    study: 38 of 40 wrong picks were correctly flagged and 20 stayed wrong anyway.
+    """
+    from approv.algebra.feedback import explain_all
+    from approv.algebra.term import compare_term
+    from approv.types.core import (AttributeSpec, Certainty, Channel, Claim, Criticality,
+                                   Dimension, Evidence, Liability, Resolution, Support, Term)
+
+    spec = AttributeSpec(name="size", dimension=Dimension.NOMINAL, criticality=Criticality.HARD)
+    claim = Claim(attribute="size", value=Term(surface="7"), channel=Channel.AGENT_MESSAGE)
+    evidence = Evidence(attribute="size", value=Term(surface="6"), field_name="variant.option_size",
+                        certainty=Certainty.EXACT, liability=Liability.MERCHANT_GUARANTEED)
+
+    finding = compare_term(claim, evidence, spec)
+    assert finding.support is Support.VIOLATED
+    assert finding.repair.resolution is Resolution.PICK_DIFFERENT_PRODUCT
+    assert "Restate the claim" not in explain_all((finding,))

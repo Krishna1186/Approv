@@ -105,4 +105,11 @@ def compare_term(claim: Claim, evidence: Evidence, spec: AttributeSpec) -> Findi
     if claimed.startswith(observed + " "):
         return finding(Support.UNSTATED, 0.0, Resolution.FIND_BETTER_SOURCE,
                        ReasonCode.CLAIM_MORE_SPECIFIC)
-    return finding(Support.VIOLATED, ceiling, Resolution.RESTATE_CLAIM)
+    # The listing contradicts the request, so the listing is the thing to change.
+    # RESTATE_CLAIM renders as "restate the claim in terms the listing publishes", which
+    # asks the agent to rewrite what the customer wanted until it matches the wrong
+    # product. Quantity, count and numeric all say PICK_DIFFERENT_PRODUCT here; nominal
+    # was the outlier, and it is the advice a size mismatch emits, so it was the advice
+    # given most often. Measured 9 September: the report caught 38 of 40 wrong picks and
+    # the agent still ended up wrong in 20 of them.
+    return finding(Support.VIOLATED, ceiling, Resolution.PICK_DIFFERENT_PRODUCT)
