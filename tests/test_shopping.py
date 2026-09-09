@@ -301,7 +301,10 @@ def test_local_http_storefront_completes_and_exports(inventory, cases, tmp_path)
             if selected["observation"]["status"] == "running":
                 post("/action", {"token": token, "action": {"type": "select", "product_id": "a"}})
         assert post("/task", {})["done"]
-        report(json.loads(output.read_text()), inventory, cases[:1])
+        # Records are written UTF-8. Reading them back with the platform default
+        # silently mangles any accented product name, and the manifest hash then
+        # reports a mismatch that is really an encoding bug.
+        report(json.loads(output.read_text(encoding="utf-8")), inventory, cases[:1])
         assert len(list(tmp_path.glob("*.session-*.json"))) == 3
     finally:
         server.shutdown()

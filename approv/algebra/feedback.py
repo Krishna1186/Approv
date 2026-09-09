@@ -14,7 +14,7 @@ Rendering never invents. Every value in the output came from the Finding.
 
 from __future__ import annotations
 
-from approv.types.core import Finding, ReasonCode, Repair, Resolution, Support
+from approv.types.core import CheckKind, Finding, ReasonCode, Repair, Resolution, Support
 
 _WHY: dict[ReasonCode, str] = {
     ReasonCode.DUPLICATE_CLAIM: "multiple claims for this attribute need disambiguation",
@@ -52,7 +52,7 @@ _WHY: dict[ReasonCode, str] = {
 
 _ACTION: dict[Resolution, str] = {
     Resolution.NONE_NEEDED: "No action needed.",
-    Resolution.PICK_DIFFERENT_PRODUCT: "Choose a different product.",
+    Resolution.PICK_DIFFERENT_PRODUCT: "Choose an item that satisfies this attribute.",
     Resolution.RESTATE_CLAIM: "Restate the claim in terms the listing publishes.",
     Resolution.FIND_BETTER_SOURCE: (
         "Confirm this from a structured field, or mark it unverified."
@@ -97,6 +97,32 @@ def _probe_clause(finding: Finding, repair: Repair) -> str:
     return f"the listing's {repair.observed_field} field does not support this"
 
 
+def _demand_word(finding: Finding) -> str:
+    """Whose statement the claimed value is.
+
+    A SATISFACTION finding compares the shopper's own requirement to the listing; a
+    GROUNDING finding compares what the agent asserted. Rendering both as "claimed" made
+    a customer's stated size read like something the agent had invented, which is exactly
+    the confusion that lets an agent decide the requirement was the negotiable half.
+    """
+    return "the request needs" if finding.check is CheckKind.SATISFACTION else "claimed"
+
+
+def _action_text(finding: Finding, repair: Repair, reveal: bool = True) -> str:
+    """The move that resolves this finding, named in terms of the attribute.
+
+    "Choose a different product" was measured against a control on 9 September and cost
+    26 points. It is wrong twice over: in 17 of the 33 corrections the control actually
+    made, the fix was to keep the product and take a different variant of it, and the
+    sentence never says which value would satisfy the request. Naming the target turns
+    the advice into something the agent can search for.
+    """
+    if repair.resolution is Resolution.PICK_DIFFERENT_PRODUCT and repair.claimed and reveal:
+        return (f"Select an item whose {repair.attribute} is {repair.claimed}. That may be "
+                f"another variant of the same product, or a different product.")
+    return _ACTION[repair.resolution]
+
+
 def explain(finding: Finding, *, reveal: bool = True) -> str:
     """Render one finding as a single line an agent can read and act on.
 
@@ -118,7 +144,7 @@ def explain(finding: Finding, *, reveal: bool = True) -> str:
     if repair is not None:
         detail = []
         if repair.claimed is not None:
-            detail.append(f"claimed {repair.claimed}")
+            detail.append(f"{_demand_word(finding)} {repair.claimed}")
         if reveal:
             detail.append(_observed_clause(repair))
         else:
@@ -132,7 +158,7 @@ def explain(finding: Finding, *, reveal: bool = True) -> str:
             parts.append(_WHY[reason].capitalize() + ".")
 
     if repair is not None:
-        parts.append(_ACTION[repair.resolution])
+        parts.append(_action_text(finding, repair, reveal))
 
     return " ".join(parts)
 

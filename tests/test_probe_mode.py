@@ -64,7 +64,7 @@ def test_probe_mode_still_says_something_actionable():
     assert "MISMATCH" in probed
     assert "5 kg" in probed
     assert "quantity" in probed
-    assert "different product" in probed
+    assert "satisfies this attribute" in probed
 
 
 def test_explain_all_honours_probe_mode():
