@@ -59,6 +59,9 @@ wrote beige. State every attribute the request does say, using the shopper's own
 mapped to an admissible value; a request naming a gender, colour or size has stated it,
 and recording it is not inference. Do not add constraints the request does not state.
 Preserve the final corrected request and omit superseded values.
+A spending limit is money, not a count: write it as
+{"kind":"bound","op":"lte","limit":{"kind":"money","amount":"68.00","currency":"USD"}}
+with amount as a decimal string and currency as a three-letter code.
 '''
 
 
@@ -109,7 +112,15 @@ class RequestInterpreter:
                 quote=r['quote']
                 if not isinstance(quote,str) or not quote or quote not in case.request:
                     notes.append('Ungrounded interpretation discarded: '+r['attribute']);continue
-                candidate=Constraint(attribute=r['attribute'],value=r['value'],raw_text=quote,channel=Channel.AGENT_MESSAGE)
+                try:
+                    candidate=Constraint(attribute=r['attribute'],value=r['value'],raw_text=quote,channel=Channel.AGENT_MESSAGE)
+                except (TypeError,ValueError):
+                    # One unusable value must not discard the requirements beside it. Seven
+                    # of nine failed interpretations on 9 September were budget requests
+                    # whose money bound did not validate, and each took every other
+                    # requirement in the same request down with it.
+                    if self.version=='v1':raise
+                    notes.append('Malformed requirement value discarded: '+str(r['attribute']));continue
                 from approv.algebra.runner import _operator_for
                 actual=candidate.value.limit if isinstance(candidate.value,Bound) else candidate.value
                 try:

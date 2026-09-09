@@ -383,3 +383,39 @@ def test_a_reviewed_session_still_accepts_the_select_tool_it_was_given():
     offered = {t["function"]["name"] for t in captured["tools"]}
     assert {"select", "confirm_selection"} <= offered
     assert reply.action.type == "select" and reply.action.product_id == "P1"
+
+
+def test_one_unusable_requirement_does_not_discard_the_others():
+    """A malformed value must cost its own requirement and nothing else.
+
+    Seven of nine failed interpretations on 9 September were budget requests whose money
+    bound did not validate, and each took every other requirement in the same request down
+    with it — so a request stating a size, a colour and a price ended up verifying none of
+    them because of the price alone.
+    """
+    import approv.harness.intent as intent
+    from approv.harness.casepacks import shopify_schema
+    from approv.harness.shopping import ShoppingCase
+
+    reading = {"requirements": [
+        {"attribute": "price", "value": {"kind": "bound", "op": "lte", "limit": "sixty eight"},
+         "quote": "under $68"},
+        {"attribute": "size", "value": {"kind": "term", "surface": "Size 4"}, "quote": "size Size 4"}],
+        "requested_units": None, "units_quote": "", "quantity_scope": "per_sale_unit", "unverified": []}
+
+    def fake_post(url, payload, headers, timeout):
+        return {"choices": [{"finish_reason": "stop", "message": {"content": json.dumps(reading)}}],
+                "usage": {}, "model": "m"}
+
+    original = intent.post_json
+    intent.post_json = fake_post
+    try:
+        interpreter = intent.RequestInterpreter("https://example.invalid/v1", "m", "k", version="v4")
+        case, meta = interpreter(ShoppingCase(id="c", request="size Size 4 under $68",
+                                              author="test", cluster="c"), shopify_schema())
+    finally:
+        intent.post_json = original
+
+    assert meta["status"] == "parsed"
+    assert [c.attribute for c in case.constraints] == ["size"]
+    assert any("Malformed requirement" in n for n in case.interpretation_notes)

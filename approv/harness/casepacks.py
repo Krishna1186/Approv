@@ -127,6 +127,185 @@ def off_stress_pack(path: Path, families=24, seed=20260908):
         note='120 synthetic requests when families=24; real OFF inventory; five templates; name-disjoint dev/heldout. Not representative customer traffic.')
 
 
+# --- Shopify D2C catalogues -------------------------------------------------------
+#
+# A Shopify storefront publishes /products.json unauthenticated: variant trees with SKU,
+# option values, price and a stock flag. Size and colour arrive as structured options
+# rather than prose, so no extraction step stands between the listing and the check, and
+# the merchant is the publisher of record rather than an aggregator.
+#
+# The inventory item here is the *variant*, not the product. "Size 9, in stock, under
+# $150" is a statement about one variant, and a harness that selects products cannot
+# express it.
+
+def shopify_evidence(attribute, value, field, dimension=Dimension.NOMINAL):
+    from approv.types.core import Money
+    typed = Term(surface=str(value)) if dimension is Dimension.NOMINAL else value
+    return Evidence(attribute=attribute, value=typed, field_name=field, certainty=Certainty.EXACT,
+                    liability=Liability.MERCHANT_GUARANTEED, raw_text=str(value))
+
+
+def shopify_schema():
+    return CategorySchema(category_id='shopify.d2c', version='variant-v1', attributes=(
+        AttributeSpec(name='brand', dimension=Dimension.NOMINAL, criticality=Criticality.HARD),
+        AttributeSpec(name='size', dimension=Dimension.NOMINAL, criticality=Criticality.HARD),
+        AttributeSpec(name='color', dimension=Dimension.NOMINAL, criticality=Criticality.HARD),
+        AttributeSpec(name='availability', dimension=Dimension.NOMINAL, criticality=Criticality.HARD),
+        AttributeSpec(name='price', dimension=Dimension.MONEY, criticality=Criticality.BOUND),
+    ), field_profiles=(
+        FieldProfile(field_name='product.vendor', attributes=('brand',), certainty=Certainty.EXACT, liability=Liability.MERCHANT_GUARANTEED),
+        FieldProfile(field_name='variant.option_size', attributes=('size',), certainty=Certainty.EXACT, liability=Liability.MERCHANT_GUARANTEED),
+        FieldProfile(field_name='variant.option_color', attributes=('color',), certainty=Certainty.EXACT, liability=Liability.MERCHANT_GUARANTEED),
+        FieldProfile(field_name='variant.available', attributes=('availability',), certainty=Certainty.EXACT, liability=Liability.MERCHANT_GUARANTEED),
+        FieldProfile(field_name='variant.price', attributes=('price',), certainty=Certainty.EXACT, liability=Liability.MERCHANT_GUARANTEED),
+    ))
+
+
+def shopify_variants(raw, currency='USD', description_limit=900):
+    """Flatten every brand's products into one variant-level catalogue."""
+    import html as htmllib, re as _re
+    from approv.types.core import Money
+    items = []
+    for brand_host, products in raw:
+        for product in products:
+            names = [o['name'].strip().lower() for o in product.get('options', [])]
+            prose = _re.sub(r'<[^>]+>', ' ', htmllib.unescape(product.get('body_html') or ''))
+            prose = _re.sub(r'\s+', ' ', prose).strip()
+            for variant in product.get('variants', []):
+                option = {names[i]: variant.get('option%d' % (i + 1)) for i in range(len(names))
+                          if variant.get('option%d' % (i + 1))}
+                size = option.get('size'); colour = option.get('color') or option.get('colour')
+                price = variant.get('price')
+                if price in (None, ''): continue
+                evidence = [shopify_evidence('brand', product.get('vendor') or brand_host, 'product.vendor'),
+                            shopify_evidence('availability', 'in_stock' if variant.get('available') else 'out_of_stock',
+                                             'variant.available'),
+                            Evidence(attribute='price', value=Money(amount=Decimal(str(price)), currency=currency),
+                                     field_name='variant.price', certainty=Certainty.EXACT,
+                                     liability=Liability.MERCHANT_GUARANTEED, raw_text=str(price))]
+                if size: evidence.append(shopify_evidence('size', size, 'variant.option_size'))
+                if colour: evidence.append(shopify_evidence('color', colour, 'variant.option_color'))
+                title = product['title'].strip()
+                label = str(variant.get('title') or '').strip()
+                details = {'title': title, 'brand': str(product.get('vendor') or ''),
+                           'product_type': str(product.get('product_type') or ''),
+                           'variant': label, 'price': '%s %s' % (price, currency),
+                           'availability': 'in stock' if variant.get('available') else 'out of stock'}
+                if size: details['size'] = str(size)
+                if colour: details['color'] = str(colour)
+                # Long text is withheld from search pages and returned only on inspect.
+                if prose: details['description'] = prose[:description_limit]
+                items.append(Product(id='%s-%s' % (product['id'], variant['id']),
+                    title=title + (' - ' + label if label and label.lower() != 'default title' else ''),
+                    details=details, evidence=tuple(evidence),
+                    source_url='https://%s/products/%s' % (brand_host, product.get('handle', ''))))
+    return tuple(items)
+
+
+def shopify_inventory(raw, captured_at, currency='USD'):
+    items = shopify_variants(raw, currency)
+    seen, unique = set(), []
+    for item in items:
+        if item.id in seen: continue
+        seen.add(item.id); unique.append(item)
+    return Inventory(source='Shopify storefront /products.json, %d brands' % len(raw),
+        source_license='Publisher terms; public unauthenticated endpoint, robots.txt checked per host',
+        captured_at=captured_at, schema=shopify_schema(), products=tuple(unique))
+
+
+def shopify_pack(raw, captured_at, catalogue=10000, cases=90, seed=20260910):
+    """Requests with constraints, and answers computed from the merchant's own fields.
+
+    The request wording is generated (DR 0018). The *answer* is not a judgement: it is the
+    set of variants whose published size, colour, price and stock flag satisfy what the
+    request states, computed here by direct field comparison. Nothing in this function
+    imports approv.algebra, so the answer key cannot agree with the checker by
+    construction — the failure that killed the second benchmark design in 2026-09.
+    """
+    from approv.types.core import Money
+    inventory = shopify_inventory(raw, captured_at)
+    rng = random.Random(seed)
+    items = list(inventory.products)
+
+    def field(product, attribute):
+        for item in product.evidence:
+            if item.attribute == attribute:
+                return item.value.amount if attribute == 'price' else str(item.value.surface)
+        return None
+
+    groups = defaultdict(list)
+    for product in items:
+        groups[(product.details.get('brand', ''), product.details['title'])].append(product)
+    # A family is only interesting if the shopper could pick the wrong member of it.
+    families = [g for g in groups.values() if len(g) >= 4 and any(field(p, 'size') for p in g)]
+    rng.shuffle(families)
+
+    keep = {p.id for g in families[:cases * 3] for p in g}
+    pool = [p for p in items if p.id not in keep]
+    rng.shuffle(pool)
+    catalogue_items = [p for g in families[:cases * 3] for p in g] + pool[:max(0, catalogue - len(keep))]
+    frozen = Inventory(source=inventory.source, source_license=inventory.source_license,
+        captured_at=captured_at, schema=shopify_schema(), products=tuple(catalogue_items))
+
+    tasks = []
+    for index, family in enumerate(families):
+        if len(tasks) >= cases: break
+        sized = [p for p in family if field(p, 'size')]
+        if not sized: continue
+        title = family[0].details['title']
+        brand = family[0].details.get('brand') or ''
+        stocked = [p for p in sized if field(p, 'availability') == 'in_stock']
+        empty = [p for p in sized if field(p, 'availability') == 'out_of_stock']
+        template = ('clear', 'budget', 'colour', 'vernacular', 'impossible')[index % 5]
+        # Every template but 'impossible' promises a reachable answer. Drawing the target
+        # from an out-of-stock variant would silently turn it into an abstention case and
+        # make the template labels describe something other than what they test.
+        if template != 'impossible' and not stocked: continue
+        target = rng.choice(stocked or sized)
+        size = field(target, 'size')
+        price = field(target, 'price')
+        spec = {'size': size, 'availability': 'in_stock'}
+        if template == 'clear':
+            request = f'I want the {title} in size {size}. It needs to be in stock.'
+        elif template == 'budget':
+            cap = (price + Decimal('20')).quantize(Decimal('1'))
+            spec['price_lte'] = cap
+            request = (f'Looking for the {title}, size {size}, in stock — '
+                       f'but I am not spending more than ${cap}.')
+        elif template == 'colour':
+            colour = field(target, 'color')
+            if not colour: continue
+            spec['color'] = colour
+            request = f'Can you get me the {title} in {colour}, size {size}? Must be available to ship.'
+        elif template == 'vernacular':
+            request = f'need the {title} in sz {size} asap — has to actually be in stock, not backordered'
+        else:
+            if not empty: continue
+            target = rng.choice(empty)
+            size = field(target, 'size'); spec['size'] = size
+            request = (f'One {title}, size {size}, and it has to be in stock. '
+                       f'Do not substitute another size or colour — skip it if you cannot get that.')
+
+        def satisfies(product):
+            if field(product, 'size') != spec['size']: return False
+            if field(product, 'availability') != 'in_stock': return False
+            if 'color' in spec and field(product, 'color') != spec['color']: return False
+            if 'price_lte' in spec and (field(product, 'price') or 0) > spec['price_lte']: return False
+            return product.details['title'] == title and product.details.get('brand', '') == brand
+        accepted = [{'product_id': p.id, 'units': 1} for p in family if satisfies(p)]
+        tasks.append({'split': 'dev' if len(tasks) < 15 else 'heldout', 'family': template,
+            'case': ShoppingCase(id=f'shop-{index}-{template}', request=request,
+                author='Generated request over a real merchant catalogue (DR 0018)',
+                cluster=f'shop-family-{index}').model_dump(mode='json'),
+            'gold': {'method': 'published_field_rule', 'accepted': accepted,
+                     'abstention_correct': not accepted, 'spec': {k: str(v) for k, v in spec.items()},
+                     'note': 'Computed from the merchant published size, colour, price and stock '
+                             'flag by direct comparison. No relevance judgement, no Approv logic.'}})
+    return {'kind': 'shopify_d2c', 'seed': seed, 'inventory': frozen.model_dump(mode='json'),
+            'tasks': tasks, 'note': f'{len(frozen.products)} variants from {len(raw)} D2C brands. '
+            'Requests are generated; answers are published-field comparisons.'}
+
+
 def published_vocabulary(inventory, limit=60):
     """Attribute -> the values this catalogue actually publishes, when that set is small.
 
