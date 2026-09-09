@@ -199,6 +199,17 @@ class ToolChatAgent(ChatAgent):
                             else name + " in the frozen merchant inventory"),
             "parameters": {"type": "object", "properties": {k: props[k] for k in names},
                 "required": required[name], "additionalProperties": False}}} for name, names in fields.items()]
+        if reviewed:
+            # Keep "select" offered as well as "confirm_selection". Renaming a tool the model
+            # has just used successfully makes its next, natural call reference a function
+            # that no longer exists, and the provider rejects the whole turn: two of nine
+            # Approv sessions died this way on 9 September, and baseline can never hit it
+            # because only a review arm reaches a second selection.
+            logical_names['select']='select'
+            definitions.append({"type": "function", "function": {"name": "select",
+                "description": "Finish the reviewed proposal with this product and sale count",
+                "parameters": {"type": "object", "properties": {k: props[k] for k in fields['select']},
+                    "required": required['select'], "additionalProperties": False}}})
         initial = {k:v for k,v in observation.items() if k != 'history'}
         messages = [{"role": "system", "content": self.TOOL_SYSTEM},
                     {"role": "user", "content": canonical(initial)}]

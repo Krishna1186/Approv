@@ -349,3 +349,37 @@ def test_declared_colour_is_widened_to_a_family_not_compared_verbatim():
         "product_id": "X2", "product_title": "Sofa", "product_brand": "Ikea",
         "product_color": "Cerulean", "product_bullet_point": None, "product_description": None})
     assert not [e for e in unplaceable.evidence if e.attribute == "color"]
+
+
+def test_a_reviewed_session_still_accepts_the_select_tool_it_was_given():
+    """Renaming select to confirm_selection after review made the natural next call fail.
+
+    The provider rejects a call to a function that is not offered, so the whole turn dies
+    with tool_use_failed rather than degrading. Baseline never reaches a second selection,
+    so this fell only on the review arms — it removed two of nine Approv sessions on
+    9 September while leaving baseline untouched, which biases the comparison it is meant
+    to measure. Both names are offered now, and both mean select.
+    """
+    from approv.harness.adapters import ToolChatAgent
+
+    agent = ToolChatAgent("https://example.invalid/v1", "m", "k")
+    captured = {}
+
+    def fake_post(url, payload, headers, timeout):
+        captured.update(payload)
+        return {"choices": [{"finish_reason": "tool_calls", "message": {"tool_calls": [{"function": {
+            "name": "select", "arguments": '{"product_id":"P1","units":1}'}}]}}], "usage": {}}
+
+    import approv.harness.adapters as adapters
+    original = adapters.post_json
+    adapters.post_json = fake_post
+    try:
+        reply = agent({"request": "x", "actions_remaining": 3, "history": [
+            {"kind": "action", "payload": {"action": {"type": "select", "product_id": "P1", "units": 1}}},
+            {"kind": "response", "payload": {"status": "review"}}]})
+    finally:
+        adapters.post_json = original
+
+    offered = {t["function"]["name"] for t in captured["tools"]}
+    assert {"select", "confirm_selection"} <= offered
+    assert reply.action.type == "select" and reply.action.product_id == "P1"
