@@ -6,6 +6,7 @@ Interpretations remain measured, fallible system outputs.
 """
 import json
 import time
+from approv.algebra.term import normalize_term
 from approv.harness.adapters import AdapterError, post_json
 from approv.harness.shopping import ShoppingCase, canonical, digest
 from approv.types.core import Channel, Constraint, Bound, Claim, Evidence, Certainty, Liability
@@ -74,6 +75,10 @@ class RequestInterpreter:
         # Attribute -> admissible surfaces, normally the values the catalogue publishes.
         # A request naming something outside it is unverifiable here, never a violation.
         self.vocabulary={k:tuple(v) for k,v in (vocabulary or {}).items()}
+        # Membership is tested under the same identity key the comparison uses. Keeping a
+        # second, stricter notion of "the same value" here meant the guard could reject a
+        # requirement that the operator would have matched, which is the worst of both.
+        self._admissible={k:{normalize_term(x) for x in v} for k,v in self.vocabulary.items()}
 
     def __call__(self, case, schema):
         request={'request':case.request,'attributes':{
@@ -105,9 +110,18 @@ class RequestInterpreter:
                 if r['attribute'] not in allowed:
                     if self.version=='v1':raise ValueError('unsupported attribute')
                     notes.append('Unsupported requirement: '+str(r['attribute']));continue
-                permitted=self.vocabulary.get(r['attribute'])
+                permitted=self._admissible.get(r['attribute'])
                 surface=(r.get('value') or {}).get('surface')
-                if permitted is not None and (not isinstance(surface,str) or surface.casefold() not in permitted):
+                # Measured 10 September: this catalogue publishes availability as
+                # `in_stock`, the model writes "in stock", and raw casefold membership
+                # rejected it. The availability requirement was dropped on 4 of 46
+                # held-out cases — an attribute the answer key constrains on all 46, and
+                # dropping it lets a sold-out variant score as satisfied, which is the
+                # one direction this guard exists to prevent. normalize_term folds
+                # separators and punctuation and nothing else, so it still cannot widen
+                # "skin colored" into "beige".
+                if permitted is not None and (not isinstance(surface,str) or
+                                              normalize_term(surface) not in permitted):
                     notes.append('Value outside the published vocabulary, left unverified: '+str(surface));continue
                 quote=r['quote']
                 if not isinstance(quote,str) or not quote or quote not in case.request:

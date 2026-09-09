@@ -40,14 +40,38 @@ def _tokens(text: str) -> frozenset[str]:
     return frozenset(normalize_term(text).split())
 
 
-# A trailing qualifier can narrow or it can negate, and the two are opposites. "Black
-# Multi" is a kind of black; "sugar free" is the absence of sugar. Treating both as
-# contradiction false-flags the first; treating both as unknown clears the second. This
-# is the smallest closed set that separates them, and it is deliberately short: anything
-# not listed here is treated as a narrowing, which routes to confirm rather than to allow.
-_NEGATIONS = frozenset({"free", "less", "without", "non", "no", "zero", "anti", "sub",
-                        "alternative", "substitute", "replacement", "compatible", "style",
-                        "inspired", "imitation", "faux", "dupe"})
+def _run_start(inner: list[str], outer: list[str]) -> int | None:
+    """Where `inner` sits inside `outer` as a contiguous run of whole words, if it does.
+
+    Whole words, contiguous, and strictly shorter, because none of the weaker readings
+    survive contact with a catalogue. Substring matching makes "red" a narrowing of
+    "shredded". A bare token subset makes "navy blue" a narrowing of "blue navy stripe",
+    which reorders the name and so is a different name. Requiring an unbroken run of
+    whole words keeps the ordered-identity stance this module opens with, and only ever
+    downgrades a VIOLATED to an UNSTATED, which per §2.3 is the safe direction.
+    """
+    if not inner or len(inner) >= len(outer):
+        return None
+    for start in range(len(outer) - len(inner) + 1):
+        if outer[start:start + len(inner)] == inner:
+            return start
+    return None
+
+
+# A qualifier can narrow or it can negate, and the two are opposites. "Black Multi" is a
+# kind of black; "sugar free" is the absence of sugar. Treating both as contradiction
+# false-flags the first; treating both as unknown clears the second. This is the smallest
+# closed set that separates them, and it is deliberately short: anything not listed here
+# is treated as a narrowing, which routes to confirm rather than to allow.
+#
+# "not" and "fake" joined the set when the match above stopped being prefix-only. Both
+# negate from in front, so no matcher that only looked rightward could ever reach them,
+# and "not Amul" was scored a contradiction for the accidental reason that the prefix
+# test failed rather than because the word was read. `test_nominal_overlap_is_not_identity`
+# had asserted the right answer all along and was passing for the wrong reason.
+_NEGATIONS = frozenset({"free", "less", "without", "non", "no", "not", "zero", "anti",
+                        "sub", "alternative", "substitute", "replacement", "compatible",
+                        "style", "inspired", "imitation", "faux", "fake", "dupe"})
 
 
 def compare_term(claim: Claim, evidence: Evidence, spec: AttributeSpec) -> Finding:
@@ -112,7 +136,17 @@ def compare_term(claim: Claim, evidence: Evidence, spec: AttributeSpec) -> Findi
     if evidence.certainty is not Certainty.EXACT:
         return finding(Support.UNSTATED, 0.0, Resolution.FIND_BETTER_SOURCE,
                        ReasonCode.UNRESOLVED_TERM, ReasonCode.LOW_CERTAINTY_SOURCE)
-    if claimed.startswith(observed + " "):
+    claimed_words, observed_words = claimed.split(), observed.split()
+
+    # The qualifier can sit on either side of the word it qualifies, and an earlier
+    # version of this function only looked for it on the right. Measured on the
+    # 10 September study: "Orange" against a listing saying "Orange chalk stripe" was
+    # correctly UNVERIFIED, while "blue" against "Medium wash blue" — the same relation
+    # with English's other adjective order — was reported as a contradiction, and it was
+    # a contradiction about the one candidate on the shelf that satisfied the request.
+    # No negation guard on this branch: extra words in the *claim* mean the listing is
+    # silent about them, never that it denies them.
+    if _run_start(observed_words, claimed_words) is not None:
         return finding(Support.UNSTATED, 0.0, Resolution.FIND_BETTER_SOURCE,
                        ReasonCode.CLAIM_MORE_SPECIFIC)
     # "Black" against a listing that says "Black Multi" is not the same kind of answer as
@@ -120,8 +154,12 @@ def compare_term(claim: Claim, evidence: Evidence, spec: AttributeSpec) -> Findi
     # cannot support. The listing names something narrower than the request; whether it
     # satisfies the shopper is exactly what we do not know. Per §2.3 an unknown routes to
     # confirm rather than to allow, so the safe direction is to say we could not tell.
-    if observed.startswith(claimed + " "):
-        extra = set(observed[len(claimed):].split())
+    # Extra words in the *listing* are an assertion by the merchant, so here the negation
+    # guard applies — and it applies to the words on both sides of the match, because
+    # "faux leather" negates "leather" from in front.
+    start = _run_start(claimed_words, observed_words)
+    if start is not None:
+        extra = set(observed_words[:start]) | set(observed_words[start + len(claimed_words):])
         if not extra & _NEGATIONS:
             return finding(Support.UNSTATED, 0.0, Resolution.FIND_BETTER_SOURCE,
                            ReasonCode.LISTING_MORE_SPECIFIC)

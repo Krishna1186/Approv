@@ -184,3 +184,41 @@ def test_rate_limit_diagnostics_exclude_provider_message_and_identifiers():
     assert 'secret-key' not in json.dumps(caught.value.metadata)
     assert 'private-id' not in json.dumps(caught.value.metadata)
     assert '[REDACTED]' in caught.value.metadata['provider_failed_generation']
+
+
+def test_vocabulary_membership_uses_the_comparison_s_own_identity_key():
+    """Measured 10 September on the shopper pack.
+
+    The catalogue publishes availability as `in_stock`; the model writes "in stock".
+    `compare_term` already treats those as the same value, because `normalize_term` folds
+    the separator. The guard used raw casefold, so it rejected a requirement the operator
+    would have matched, and the availability requirement was dropped on 4 of 46 held-out
+    cases — on an attribute the answer key constrains on all 46. Dropping it lets a
+    sold-out variant satisfy every field that was checked.
+    """
+    inv,case=setup()
+    reading={'requirements':[{'attribute':'brand','value':{'kind':'term','surface':'in stock'},
+                              'quote':'Example'}],'unverified':[]}
+    interpreter=RequestInterpreter('https://example.test','model','key','v4',
+                                   vocabulary={'brand':('in_stock','out_of_stock')})
+    with patch('approv.harness.intent.post_json',return_value=response(reading)):
+        result,meta=interpreter(case,inv.category_schema)
+
+    assert meta['status']=='parsed'
+    assert [c.value.surface for c in result.constraints]==['in stock']
+    assert not any('outside the published vocabulary' in n for n in result.interpretation_notes)
+
+
+def test_the_vocabulary_guard_still_refuses_to_widen_a_value():
+    """Folding separators is not translating. The guard exists to stop "skin colored"
+    becoming "beige", and it must still do that."""
+    inv,case=setup()
+    reading={'requirements':[{'attribute':'brand','value':{'kind':'term','surface':'skin colored'},
+                              'quote':'Example'}],'unverified':[]}
+    interpreter=RequestInterpreter('https://example.test','model','key','v4',
+                                   vocabulary={'brand':('beige','black')})
+    with patch('approv.harness.intent.post_json',return_value=response(reading)):
+        result,_=interpreter(case,inv.category_schema)
+
+    assert result.constraints==()
+    assert any('outside the published vocabulary' in n for n in result.interpretation_notes)

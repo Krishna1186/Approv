@@ -119,3 +119,69 @@ def test_pairing_two_different_attributes_raises():
 
     with pytest.raises(ValueError):
         compare_term(claim_of("Amul"), other, SPEC)
+
+
+def test_a_qualifier_in_front_narrows_exactly_as_one_behind_does():
+    """The shopper-110 defect, 10 September study.
+
+    "Orange" against "Orange chalk stripe" was UNVERIFIED and "blue" against
+    "Medium wash blue" was MISMATCH. Both are the listing naming a narrower variant of
+    what was asked for; only the adjective order differs. The second reading ruled out
+    the one candidate on that shelf that satisfied the request.
+    """
+    behind = compare_term(claim_of("Orange"), evidence_of("Orange chalk stripe"), SPEC)
+    infront = compare_term(claim_of("blue"), evidence_of("Medium wash blue"), SPEC)
+
+    assert behind.support is infront.support is Support.UNSTATED
+    assert ReasonCode.LISTING_MORE_SPECIFIC in infront.reasons
+
+
+def test_a_negating_qualifier_in_front_still_contradicts():
+    """The reason the branch above cannot simply accept every extra word.
+
+    "faux leather" is not a kind of leather, and it puts the negation on the left, where
+    the old trailing-only guard could never have seen it. If this ever returns UNSTATED,
+    a request for leather is satisfiable by imitation leather.
+    """
+    assert compare_term(claim_of("leather"), evidence_of("faux leather"), SPEC).support is Support.VIOLATED
+    assert compare_term(claim_of("cola"), evidence_of("sugar free cola"), SPEC).support is Support.VIOLATED
+
+
+def test_a_narrower_claim_is_unstated_wherever_the_extra_words_sit():
+    """Extra words in the claim mean the listing is silent, never that it denies.
+
+    So this branch carries no negation guard: a shopper asking for "sugar free cola"
+    against a listing that says only "cola" has not been contradicted, they have been
+    left unanswered, and UNSTATED is what routes that to confirm.
+    """
+    result = compare_term(claim_of("sugar free cola"), evidence_of("cola"), SPEC)
+
+    assert result.support is Support.UNSTATED
+    assert ReasonCode.CLAIM_MORE_SPECIFIC in result.reasons
+
+
+def test_a_reordered_name_is_not_a_narrowing():
+    """Whole contiguous words, not a token set. Reordering a name makes a different name,
+    and this module's opening claim is ordered identity."""
+    assert compare_term(claim_of("navy blue"), evidence_of("blue navy stripe"), SPEC).support is Support.VIOLATED
+
+
+def test_a_partial_word_is_not_a_narrowing():
+    """Substring matching would make "red" a narrowing of "shredded"."""
+    assert compare_term(claim_of("red"), evidence_of("shredded wheat"), SPEC).support is Support.VIOLATED
+
+
+def test_the_negation_lexicon_is_read_in_both_positions():
+    """Every negator must work from either side, or the set is a list of coincidences.
+
+    Each pair below is the same word doing the same job in the two adjective orders
+    English actually uses. Before the matcher became symmetric only the right-hand
+    column was ever consulted, so a left-hand negator returned a contradiction because
+    the prefix test happened to fail — not because the word had been read.
+    """
+    for word in ("non", "no", "not", "faux", "fake", "imitation", "anti"):
+        infront = compare_term(claim_of("leather"), evidence_of(f"{word} leather"), SPEC)
+        assert infront.support is Support.VIOLATED, word
+    for word in ("free", "less", "substitute", "style", "compatible", "dupe"):
+        behind = compare_term(claim_of("leather"), evidence_of(f"leather {word}"), SPEC)
+        assert behind.support is Support.VIOLATED, word
