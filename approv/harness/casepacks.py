@@ -127,6 +127,21 @@ def off_stress_pack(path: Path, families=24, seed=20260908):
         note='120 synthetic requests when families=24; real OFF inventory; five templates; name-disjoint dev/heldout. Not representative customer traffic.')
 
 
+def published_vocabulary(inventory, limit=60):
+    """Attribute -> the values this catalogue actually publishes, when that set is small.
+
+    An attribute with thousands of surfaces (brand) stays open; sending it would not fit a
+    prompt and a closed list is only useful where it is short enough to choose from.
+    """
+    from approv.types.core import Term
+    seen = {}
+    for product in inventory.products:
+        for item in product.evidence:
+            if isinstance(item.value, Term):
+                seen.setdefault(item.attribute, set()).add(item.value.surface.casefold())
+    return {k: tuple(sorted(v)) for k, v in seen.items() if len(v) <= limit}
+
+
 def write_pack(path,pack):
     pack={**pack,'content_hash':digest(pack)}
     with Path(path).open('x',encoding='utf-8') as f:f.write(canonical(pack)+'\n')

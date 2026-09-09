@@ -43,15 +43,39 @@ explicit lack of size preference as a size constraint.
 '''
 
 
+# v4 is for catalogues that publish a closed vocabulary per attribute. v2's "requirements
+# must be empty for a generic query" was written for a brand/colour-only schema and
+# suppresses attributes a richer schema does support: measured on held-out ESCI queries,
+# v2 returned zero requirements for "bremont watches for men" and "jewelry for girls",
+# where gender is stated outright. Naming the admissible values instead of forbidding
+# inference keeps the caution without discarding what the shopper actually said.
+PROMPT_V4 = PROMPT_V1 + '''
+The supplied attributes object is an exhaustive allowlist, not an example. Never emit an
+attribute absent from it; put that part of the request in unverified instead.
+An attribute whose entry is a list of values is closed: use one of those values exactly,
+or omit the attribute and record the request wording in unverified. Do not widen, guess
+or translate a value into the list — "skin colored" is not "beige" unless the shopper
+wrote beige. State every attribute the request does say, using the shopper's own words
+mapped to an admissible value; a request naming a gender, colour or size has stated it,
+and recording it is not inference. Do not add constraints the request does not state.
+Preserve the final corrected request and omit superseded values.
+'''
+
+
 class RequestInterpreter:
-    def __init__(self, endpoint, model, key, version='v1', catalogue_names=()):
+    def __init__(self, endpoint, model, key, version='v1', catalogue_names=(), vocabulary=None):
         self.endpoint,self.model,self.key,self.version=endpoint.rstrip('/'),model,key,version
-        if version not in ('v1','v2','v3'):raise ValueError('unknown interpreter version')
-        self.prompt=PROMPT_V1 if version=='v1' else PROMPT_V2
+        if version not in ('v1','v2','v3','v4'):raise ValueError('unknown interpreter version')
+        self.prompt={'v1':PROMPT_V1,'v4':PROMPT_V4}.get(version,PROMPT_V2)
         self.catalogue_names=tuple(catalogue_names)
+        # Attribute -> admissible surfaces, normally the values the catalogue publishes.
+        # A request naming something outside it is unverifiable here, never a violation.
+        self.vocabulary={k:tuple(v) for k,v in (vocabulary or {}).items()}
 
     def __call__(self, case, schema):
-        request={'request':case.request,'attributes':{a.name:a.dimension.value for a in schema.attributes}}
+        request={'request':case.request,'attributes':{
+            a.name:list(self.vocabulary[a.name]) if a.name in self.vocabulary else a.dimension.value
+            for a in schema.attributes}}
         payload={'model':self.model,'messages':[{'role':'system','content':self.prompt},
             {'role':'user','content':canonical(request)}],'max_tokens':2048,'temperature':0}
         if self.model.startswith('qwen/'):
@@ -78,6 +102,10 @@ class RequestInterpreter:
                 if r['attribute'] not in allowed:
                     if self.version=='v1':raise ValueError('unsupported attribute')
                     notes.append('Unsupported requirement: '+str(r['attribute']));continue
+                permitted=self.vocabulary.get(r['attribute'])
+                surface=(r.get('value') or {}).get('surface')
+                if permitted is not None and (not isinstance(surface,str) or surface.casefold() not in permitted):
+                    notes.append('Value outside the published vocabulary, left unverified: '+str(surface));continue
                 quote=r['quote']
                 if not isinstance(quote,str) or not quote or quote not in case.request:
                     notes.append('Ungrounded interpretation discarded: '+r['attribute']);continue

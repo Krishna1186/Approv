@@ -83,7 +83,7 @@ def main():
     parser.add_argument('--split',choices=['dev','heldout'],required=True)
     parser.add_argument('--arm',choices=['baseline','blind_review','approv','all'],default='all')
     parser.add_argument('--limit',type=int,default=0);parser.add_argument('--offset',type=int,default=0)
-    parser.add_argument('--version',choices=['v1','v2','v3'],default='v1');parser.add_argument('--model',default='openai/gpt-oss-20b')
+    parser.add_argument('--version',choices=['v1','v2','v3','v4'],default='v1');parser.add_argument('--model',default='openai/gpt-oss-20b')
     parser.add_argument('--interval',type=float,default=12);parser.add_argument('--max-actions',type=int,default=6)
     parser.add_argument('--case-ids',help='Comma-separated IDs; selection must be recorded before looking at outcomes')
     args=parser.parse_args()
@@ -101,7 +101,9 @@ def main():
     output=Path(args.output);output.mkdir(parents=True,exist_ok=True)
     key=get_key();agent=ToolChatAgent('https://api.groq.com/openai/v1',args.model,key,max_tokens=2048,temperature=0)
     paced=PacedAgent(agent,args.interval)
-    interpreter=RequestInterpreter('https://api.groq.com/openai/v1',args.model,key,args.version)
+    from approv.harness.casepacks import published_vocabulary
+    interpreter=RequestInterpreter('https://api.groq.com/openai/v1',args.model,key,args.version,
+        vocabulary=published_vocabulary(Inventory.model_validate(pack['inventory'])) if pack.get('inventory') else {})
     arms=list(Arm) if args.arm=='all' else [Arm(args.arm)]
     schedule=[(t,a) for t in tasks for a in arms];random.Random(pack['seed']).shuffle(schedule)
     config=RunConfig(max_actions=args.max_actions,page_size=4,review_rounds=1,surface='verify',expose_constraints=False)
