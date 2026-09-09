@@ -13,10 +13,10 @@ import argparse, json, re, sys
 from collections import Counter, defaultdict
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from approv.algebra.feedback import explain_all
+from approv.algebra.feedback import _ACTION, explain_all
 from approv.algebra.runner import check_constraints
 from approv.harness.shopping import Inventory, ShoppingCase, canonical, digest
-from approv.types.core import Constraint
+from approv.types.core import Constraint, Resolution, Support
 
 TOKEN = re.compile(r"[a-z0-9]+")
 
@@ -212,10 +212,28 @@ def main():
                 # customer did not ask for. Session._findings filters the same way.
                 asked = {c.attribute for c in parsed_constraints} | inventory.category_schema.floor
                 findings = tuple(f for f in findings if f.attribute in asked)
+            report = (explain_all(findings) if findings else
+                      "No constraints were extracted from the request, so nothing was checked.")
+            if record.get("constraints"):
+                # Checking only the proposed item cannot tell an agent that the request is
+                # unfillable, and every other resolution sends it looking for a substitute.
+                # The candidate set is already here, so say so.
+                parsed_constraints = tuple(Constraint.model_validate(c) for c in record["constraints"])
+                # A candidate is ruled out only by a contradiction. UNSTATED means the
+                # catalogue is silent, not that the item fails — treating it as failure
+                # made this advise declining 16 fulfillable requests out of 25, because a
+                # colour named in a product title has no colour field to confirm it.
+                asked = {c.attribute for c in parsed_constraints}
+                satisfied = any(
+                    not any(f.support is Support.VIOLATED
+                            for f in check_constraints(parsed_constraints, by_id[i].evidence,
+                                                       inventory.category_schema)
+                            if f.attribute in asked)
+                    for i in pools[cid])
+                if not satisfied:
+                    report += chr(10) + _ACTION[Resolution.DECLINE_NO_MATCH]
             approv.append({"case_id": cid, "request": t["case"]["request"], "candidates": pool,
-                           "your_previous_answer": chosen, "note": NUDGE,
-                           "approv_report": explain_all(findings) if findings else
-                           "No constraints were extracted from the request, so nothing was checked."})
+                           "your_previous_answer": chosen, "note": NUDGE, "approv_report": report})
         (work / "stage2-blind.json").write_text(json.dumps(blind, indent=1), encoding="utf-8")
         (work / "stage2-approv.json").write_text(json.dumps(approv, indent=1), encoding="utf-8")
         print(json.dumps({"blind": len(blind), "approv": len(approv)}))

@@ -58,6 +58,9 @@ _ACTION: dict[Resolution, str] = {
         "Confirm this from a structured field, or mark it unverified."
     ),
     Resolution.STATE_THE_ATTRIBUTE: "State this attribute explicitly so it can be checked.",
+    Resolution.DECLINE_NO_MATCH: (
+        "Nothing in these results satisfies the request. Buy nothing and say why."
+    ),
     Resolution.NOT_RESOLVABLE: (
         "This source has no usable value. Seek another admissible source or mark unverified."
     ),
@@ -163,13 +166,26 @@ def explain(finding: Finding, *, reveal: bool = True) -> str:
     return " ".join(parts)
 
 
-def explain_all(findings: tuple[Finding, ...], *, reveal: bool = True) -> str:
+def explain_all(findings: tuple[Finding, ...], *, reveal: bool = True, compact: bool = True) -> str:
     """Render every finding, worst first, so the agent sees the full picture at once.
 
     Ordering is deliberate: an agent given one problem at a time will fix them one at a
     time. Mismatches come before unverified because a mismatch is actionable with
     certainty and an unverified attribute may not be actionable at all.
+
+    `compact` collapses the satisfied ones into a single acknowledgement. Measured over
+    the 9 September study, 63% of report lines and 54% of report characters said an
+    attribute was fine and asked for nothing — an agent pays for every one of those on
+    every call. A check that costs the caller more than it saves is not worth installing,
+    so the default is to spend words only where an action is wanted. Nothing is hidden:
+    the satisfied attributes are still named.
     """
     order = {Support.VIOLATED: 0, Support.UNSTATED: 1, Support.SATISFIED: 2}
     ranked = sorted(findings, key=lambda f: (order[f.support], f.attribute))
-    return "\n".join(explain(f, reveal=reveal) for f in ranked)
+    if not compact:
+        return "\n".join(explain(f, reveal=reveal) for f in ranked)
+    lines = [explain(f, reveal=reveal) for f in ranked if f.support is not Support.SATISFIED]
+    settled = [f.attribute for f in ranked if f.support is Support.SATISFIED]
+    if settled:
+        lines.append("OK: " + ", ".join(settled) + ".")
+    return "\n".join(lines)

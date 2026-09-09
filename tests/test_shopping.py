@@ -474,3 +474,33 @@ def test_a_contradicted_name_says_change_the_product_not_the_request():
     assert finding.support is Support.VIOLATED
     assert finding.repair.resolution is Resolution.PICK_DIFFERENT_PRODUCT
     assert "Restate the claim" not in explain_all((finding,))
+
+
+def test_a_report_spends_words_only_where_an_action_is_wanted():
+    """Satisfied attributes are acknowledged, not narrated one sentence at a time.
+
+    Across the 9 September study 63% of report lines and 54% of report characters said an
+    attribute was fine and asked for nothing. A caller pays for every one of those on
+    every check, and a check that costs more than it saves does not get installed.
+    """
+    from approv.algebra.feedback import explain_all
+    from approv.algebra.term import compare_term
+    from approv.types.core import (AttributeSpec, Certainty, Channel, Claim, Criticality,
+                                   Dimension, Evidence, Liability, Term)
+
+    def finding(name, claimed, observed):
+        spec = AttributeSpec(name=name, dimension=Dimension.NOMINAL, criticality=Criticality.HARD)
+        claim = Claim(attribute=name, value=Term(surface=claimed), channel=Channel.AGENT_MESSAGE)
+        evidence = Evidence(attribute=name, value=Term(surface=observed), field_name="f." + name,
+                            certainty=Certainty.EXACT, liability=Liability.MERCHANT_GUARANTEED)
+        return compare_term(claim, evidence, spec)
+
+    findings = (finding("size", "7", "6"), finding("color", "red", "red"),
+                finding("availability", "in_stock", "in_stock"))
+    compact = explain_all(findings)
+    assert compact.splitlines()[0].startswith("MISMATCH size")
+    assert compact.splitlines()[-1] == "OK: availability, color."
+    assert len(compact) < len(explain_all(findings, compact=False))
+    # nothing is concealed: every attribute still appears
+    for name in ("size", "color", "availability"):
+        assert name in compact

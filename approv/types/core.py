@@ -180,6 +180,12 @@ class Resolution(str, Enum):
     RESTATE_CLAIM = "restate_claim"
     FIND_BETTER_SOURCE = "find_better_source"
     STATE_THE_ATTRIBUTE = "state_the_attribute"
+    # Measured 9 September: on ten requests where nothing in the results satisfied the
+    # constraint, a control that received no information declined all ten and Approv
+    # declined five. Every resolution above sends the agent looking for something else,
+    # which reads as encouragement to keep shopping when the honest answer is that the
+    # item is not there. Naming the move is the only way an agent can take it.
+    DECLINE_NO_MATCH = "decline_no_match"
     NOT_RESOLVABLE = "not_resolvable"
 
 
