@@ -104,15 +104,39 @@ streaming loader.
 - Session records written UTF-8 were read back with the platform default, corrupting any
   accented product name.
 
+## Why the correction fix did not show up in the number
+
+Correction was identified as the barrier on 9 September and fixed the same day: the advice
+that told the agent to reword the customer's requirement was replaced, the advice now names
+the attribute and value that would satisfy the request, a "buy nothing" resolution was
+added, and satisfied lines were collapsed. All four changes are in the 10 September run.
+The result was +0.0 pp against the control.
+
+So correction is not an unfixed item. It was fixed and it did not move the number, and the
+reason is structural rather than a matter of wording:
+
+**Approv examines one product. The control makes the agent re-read all twenty-five.**
+
+The control's instruction is not information-free in effect — "review your choice" sends
+the agent back over the whole shelf, and on a task whose errors are attention slips, that
+is exactly the repair needed. Approv checks only the variant the agent proposed, so its
+information is narrower than the control's prompt even when it is more accurate.
+
+The fix is not better wording. It is to check the shelf rather than the pick: score every
+candidate the agent retrieved, and say which ones satisfy the request. Today that happens
+only for the decline advice, which is the one place Approv beat the control in this run
+(impossible cases, 7/8 against 6/8).
+
+
 ## What would actually move the number
 
 1. **The gold set.** 300–500 hand-labelled pairs against a guideline written first.
    Nothing else calibrates PARSED = 0.9, and no accuracy claim survives without it.
    ~200 pairs bounds the false-alarm rate under 5%; ~1,200 is the floor for a guarantee.
-2. **Correction behaviour, not detection.** Detection reached 95% recall at 95% precision.
-   The gap is entirely in what the report tells the agent to do next. Distinguish: take
-   another variant, inspect missing evidence, search again, clarify, decline. "No match in
-   this shortlist" must not read as "nothing exists".
+2. **Check the shelf, not the pick.** This is the single largest gap. A control that says
+   "look again" beats a correct report about one product, because re-reading twenty-five
+   candidates carries more repair than a precise finding about one. Approv should return
+   the satisfying candidates, not only a verdict on the proposal.
 3. **A task where re-reading does not fix the error.** A control reaching 52% by saying
    "check again" means these are attention slips. Real value lives in substitution and
    prose-only facts — where the Amazon detection signal was.
