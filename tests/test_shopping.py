@@ -419,3 +419,30 @@ def test_one_unusable_requirement_does_not_discard_the_others():
     assert meta["status"] == "parsed"
     assert [c.attribute for c in case.constraints] == ["size"]
     assert any("Malformed requirement" in n for n in case.interpretation_notes)
+
+
+def test_a_spending_limit_reads_as_money_not_as_a_python_repr():
+    """Wording is what this layer owes the caller, and internals are not wording.
+
+    str() on a pydantic model prints its repr, so a budget reached the agent as
+    "claimed kind='bound' op=<BoundOp.LTE: 'lte'> limit=Money(kind='money', amount=
+    Decimal('68.00'), currency='USD')" — unreadable, and it leaks the type layer into a
+    message meant to be acted on.
+    """
+    from decimal import Decimal
+    from approv.algebra.feedback import explain_all
+    from approv.algebra.numeric import compare_numeric
+    from approv.types.core import (AttributeSpec, Bound, BoundOp, Certainty, Channel, Claim,
+                                   Criticality, Dimension, Evidence, Liability, Money)
+
+    spec = AttributeSpec(name="price", dimension=Dimension.MONEY, criticality=Criticality.BOUND)
+    claim = Claim(attribute="price", channel=Channel.AGENT_MESSAGE,
+                  value=Bound(op=BoundOp.LTE, limit=Money(amount=Decimal("68.00"), currency="USD")))
+    evidence = Evidence(attribute="price", value=Money(amount=Decimal("98.00"), currency="USD"),
+                        field_name="variant.price", certainty=Certainty.EXACT,
+                        liability=Liability.MERCHANT_GUARANTEED)
+
+    text = explain_all((compare_numeric(claim, evidence, spec),))
+    assert "at most 68.00 USD" in text and "98.00 USD" in text
+    for leaked in ("kind=", "BoundOp", "Decimal(", "Money("):
+        assert leaked not in text

@@ -96,6 +96,7 @@ def main():
     parser.add_argument("--split", default="heldout"); parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--top", type=int, default=16)
     parser.add_argument("--model", default="openai/gpt-oss-20b")
+    parser.add_argument("--readings", help="JSON of {case_id: extractor output} to replay offline")
     parser.add_argument("--interval", type=float, default=6)
     parser.add_argument("--answerable", action="store_true",
                         help="keep only cases whose answer the shared ranker surfaced")
@@ -137,8 +138,24 @@ def main():
         from approv.harness.intent import RequestInterpreter
         from scripts.run_study import get_key
         import time
-        interpreter = RequestInterpreter("https://api.groq.com/openai/v1", args.model, get_key(),
-                                         "v4", vocabulary=published_vocabulary(inventory))
+        # --readings supplies model output captured elsewhere (a subagent, another
+        # provider) and replays it through the ordinary interpreter, so the vocabulary
+        # guard, quote grounding and type validation still apply. Only the transport is
+        # swapped; nothing downstream can tell the difference.
+        readings = json.loads(Path(args.readings).read_text(encoding="utf-8-sig")) if args.readings else None
+        if readings is None:
+            interpreter = RequestInterpreter("https://api.groq.com/openai/v1", args.model, get_key(),
+                                             "v4", vocabulary=published_vocabulary(inventory))
+        else:
+            import approv.harness.intent as intent_module
+            pending = {}
+            def replay(url, payload, headers, timeout):
+                text = pending["reading"]
+                return {"choices": [{"finish_reason": "stop", "message": {"content": text}}],
+                        "usage": {}, "model": args.model}
+            intent_module.post_json = replay
+            interpreter = RequestInterpreter("https://api.groq.com/openai/v1", args.model, "offline",
+                                             "v4", vocabulary=published_vocabulary(inventory))
         store = {}
         path = work / "constraints.json"
         if path.exists(): store = json.loads(path.read_text(encoding="utf-8"))
@@ -146,9 +163,12 @@ def main():
             cid = task["case"]["id"]
             if cid in store: continue
             case = ShoppingCase.model_validate(task["case"])
+            if readings is not None:
+                if cid not in readings: continue
+                pending["reading"] = json.dumps(readings[cid]) if not isinstance(readings[cid], str) else readings[cid]
             delays = []
             for attempt in range(4):
-                time.sleep(args.interval if not delays else delays[-1])
+                if readings is None: time.sleep(args.interval if not delays else delays[-1])
                 try:
                     case, meta = interpreter(case, inventory.category_schema)
                     break
@@ -169,7 +189,7 @@ def main():
                           "tokens": sum(v["tokens"] for v in store.values())}))
         return 0
 
-    picks = json.loads((work / "answers-baseline.json").read_text(encoding="utf-8"))
+    picks = json.loads((work / "answers-baseline.json").read_text(encoding="utf-8-sig"))
     if args.stage == "followup":
         extracted = json.loads((work / "constraints.json").read_text(encoding="utf-8"))
         blind, approv = [], []
@@ -186,6 +206,12 @@ def main():
                 parsed_constraints = tuple(Constraint.model_validate(c) for c in record["constraints"])
                 findings = check_constraints(parsed_constraints, by_id[chosen].evidence,
                                              inventory.category_schema)
+                # The runner reports every schema attribute, including ones the shopper
+                # never mentioned. Surfacing those buries the finding that matters under
+                # "no claim was made", and tells the agent to state constraints the
+                # customer did not ask for. Session._findings filters the same way.
+                asked = {c.attribute for c in parsed_constraints} | inventory.category_schema.floor
+                findings = tuple(f for f in findings if f.attribute in asked)
             approv.append({"case_id": cid, "request": t["case"]["request"], "candidates": pool,
                            "your_previous_answer": chosen, "note": NUDGE,
                            "approv_report": explain_all(findings) if findings else
@@ -200,7 +226,7 @@ def main():
     answers = {"baseline": picks}
     for arm in ("blind", "approv"):
         path = work / ("answers-%s.json" % arm)
-        if path.exists(): answers[arm] = json.loads(path.read_text(encoding="utf-8"))
+        if path.exists(): answers[arm] = json.loads(path.read_text(encoding="utf-8-sig"))
     def correct(cid, choice):
         g = gold[cid]
         if choice in (None, "ABSTAIN"): return g["abstention_correct"]
