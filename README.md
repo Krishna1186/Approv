@@ -9,7 +9,8 @@ import, human case authoring, API/local/command adapters, the browser storefront
 paired experiments, independent scoring and audit replay.
 
 Product direction and implementation: [simple PRD](docs/product-requirements.md).
-Measured outcomes and limitations: [shopping study results](docs/shopping-study-results-2026-09-08.md).
+Latest measured outcomes and limitations: [current state](progress.md).
+Current engineering assessment: [candidate review and remaining gaps](docs/candidate-review.md).
 For original customer requests, frozen human-labelled and synthetic cases, and
 version comparisons, use the study commands in the harness guide.
 
@@ -23,6 +24,6 @@ It is not the shopping experiment or an independent accuracy measurement.
 
 Design changes: [DR 0017](docs/decisions/0017-traceable-shopping-experiments.md).
 Current defenses and limits: [security register](docs/security.md).
-Review evidence: [external review](docs/external-review-2026-09-08.md).
+Review evidence: [archived external review](docs/archive/external-review-2026-09-08.md).
 
 No production payment evaluator, priced guarantee, or certification is implemented.

@@ -3,6 +3,10 @@
 Approved direction: 2026-09-08. This describes the product we are building, not a
 claim that every feature exists today.
 
+The dated implementation and experiment sections below are historical. Use
+[progress.md](../progress.md) for the latest completed study and
+[the engineering assessment](candidate-review.md) for the candidate-review change.
+
 ## Purpose
 
 Make autonomous shopping safe enough for merchants and customers to adopt.
@@ -107,7 +111,7 @@ coverage, live clarification, automatic feedback-driven releases, production
 mobile/general-assistant/protocol integrations and underwriting remain unfinished.
 The current deliverable is measurement and debugging infrastructure, not validated
 pilot readiness. Detailed evidence is in
-[the study report](shopping-study-results-2026-09-08.md).
+[the study report](archive/shopping-study-results-2026-09-08.md).
 
 ### What should have been handled better
 

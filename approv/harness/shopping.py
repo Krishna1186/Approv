@@ -14,11 +14,9 @@ from typing import Literal, Protocol
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 import pydantic
 
-from approv.algebra.feedback import explain_all
-from approv.algebra.runner import check_constraints
+from approv.harness.review import check_product, check_shelf
 from approv.types.core import (
-    AttributeSpec, Bound, CategorySchema, Certainty, Channel, CheckKind, Claim, Constraint,
-    Count, Criticality, Dimension, Evidence, Liability, Money, Quantity,
+    Bound, CategorySchema, Certainty, Channel, Claim, Constraint, Evidence, Liability,
 )
 
 VERSION = "shopping-v1"
@@ -134,6 +132,7 @@ class RunConfig(Frozen):
     surface: Literal["mark", "verify"] = "mark"
     seed: int = 42
     expose_constraints: bool = True
+    candidate_review: bool = False
 
 
 class Action(Frozen):
@@ -193,6 +192,7 @@ class Session:
         self.status = "running"
         self.selection = None
         self.seen: set[str] = set()
+        self.seen_order: list[str] = []
         self.reviews = 0
         self.actions = 0
         self.binding = {"version": VERSION, "inventory_hash": digest(self.inventory),
@@ -231,32 +231,7 @@ class Session:
         }))
 
     def _findings(self, product: Product, units: int = 1) -> dict:
-        evidence = []
-        for item in product.evidence:
-            value = item.value
-            if self.case.quantity_scope == "cart_total":
-                if item.attribute in ("net_weight", "net_volume") and isinstance(value, Quantity):
-                    value = value.model_copy(update={"magnitude": value.magnitude * units})
-                elif item.attribute == "price" and isinstance(value, Money):
-                    value = value.model_copy(update={"amount": value.amount * units})
-                elif item.attribute == "pack_count" and isinstance(value, Count):
-                    value = value.model_copy(update={"n": value.n * units})
-            evidence.append(item.model_copy(update={"value": value}))
-        findings = check_constraints(self.case.constraints, tuple(evidence), self.inventory.category_schema)
-        # NO_CLAIM on unrelated optional fields is diagnostic noise for this task.
-        requested = {c.attribute for c in self.case.constraints} | self.inventory.category_schema.floor
-        findings = tuple(f for f in findings if f.attribute in requested)
-        if self.case.requested_units is not None:
-            from approv.algebra.count import compare_count
-            assertion = Claim(attribute="sale_units", value=Count(n=self.case.requested_units),
-                              channel=Channel.TOOL_ARGUMENT)
-            count_finding = compare_count(assertion, Evidence(attribute="sale_units", value=Count(n=units),
-                field_name="cart.units", liability=Liability.UNATTRIBUTED, certainty=Certainty.EXACT),
-                AttributeSpec(name="sale_units", dimension=Dimension.COUNT, criticality=Criticality.HARD))
-            findings += (count_finding.model_copy(update={"check": CheckKind.CONSISTENCY}),)
-        return {"findings": [f.model_dump(mode="json") for f in findings],
-                "feedback": explain_all(findings) + ("\nUnverified request details: " + "; ".join(self.case.interpretation_notes) if self.case.interpretation_notes else ""), "assessed_sale_units": units,
-                "quantity_scope": self.case.quantity_scope}
+        return check_product(self.case, product, self.inventory.category_schema, units)
 
     def _visible_product(self, product: Product, detailed: bool = False) -> dict:
         result = product.model_dump(mode="json", exclude={"raw"})
@@ -264,6 +239,8 @@ class Session:
             result["details"] = {k:v for k,v in product.details.items() if k not in ("description", "bullet_point")}
         if self.arm is Arm.APPROV and self.config.surface == "mark":
             result["approv"] = self._findings(product, self.case.requested_units or 1)
+        if product.id not in self.seen:
+            self.seen_order.append(product.id)
         self.seen.add(product.id)
         return result
 
@@ -298,6 +275,13 @@ class Session:
                                     "Inspect or search if needed; select again or abstain."}
             if self.arm is Arm.APPROV and self.config.surface == "verify":
                 response["approv"] = self._findings(self.products[action.product_id], action.units)
+                if self.config.candidate_review:
+                    response["approv"]["shelf"] = check_shelf(
+                        self.case, tuple(self.products[i] for i in self.seen_order),
+                        self.inventory.category_schema,
+                        units=self.case.requested_units or action.units,
+                        proposed=action.product_id,
+                    )
         else:
             self.selection = {"product_id": action.product_id, "units": action.units}
             self.status = "selected"

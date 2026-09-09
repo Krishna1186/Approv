@@ -187,6 +187,13 @@ class Resolution(str, Enum):
     # which reads as encouragement to keep shopping when the honest answer is that the
     # item is not there. Naming the move is the only way an agent can take it.
     DECLINE_NO_MATCH = "decline_no_match"
+    # The counterpart DECLINE_NO_MATCH had been missing, and the asymmetry was measured.
+    # On the 10 September study the shelf check named the satisfying candidate on five
+    # held-out cases and the agent abstained on all five, because the report could tell it
+    # to stop shopping and had no way to tell it to proceed. This is a repair resolution
+    # like every other member here, addressed to an agent — it is not `Decision.ALLOW`,
+    # which only `evaluator/` may return, and its wording keeps the identity caveat.
+    SELECT_FROM_SUPPORTED = "select_from_supported"
     NOT_RESOLVABLE = "not_resolvable"
 
 

@@ -544,7 +544,7 @@ def test_an_unparseable_agent_reply_is_a_failure_not_a_refusal():
 
     replies = iter([
         {"choices": [{"message": {"content": "not json at all"}}], "usage": {}},
-        {"choices": [{"message": {"content": '{"id":"P1"}'}}], "usage": {}},
+        {"choices": [{"finish_reason": "stop", "message": {"content": '{"id":"P1"}'}}], "usage": {}},
     ])
     original = study.post_json if hasattr(study, "post_json") else None
 

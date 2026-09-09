@@ -64,6 +64,8 @@ def main(argv=None):
             command.add_argument("--max-actions", type=int, default=12)
             command.add_argument("--review-rounds", type=int, default=1)
             command.add_argument("--surface", choices=("mark", "verify"), default="mark")
+            command.add_argument("--candidate-review", action="store_true",
+                                 help="verify: compare all previously seen candidates at review")
             command.add_argument("--seed", type=int, default=42)
         if name == "serve":
             command.add_argument("--port", type=int, default=8765)
@@ -110,7 +112,7 @@ def main(argv=None):
         print(canonical(result))
         return 0
     config = RunConfig(max_actions=args.max_actions, review_rounds=args.review_rounds,
-                       surface=args.surface, seed=args.seed)
+                       surface=args.surface, seed=args.seed, candidate_review=args.candidate_review)
     if Path(args.output).exists():
         raise FileExistsError(args.output)
     if args.command == "serve":

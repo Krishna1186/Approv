@@ -93,11 +93,32 @@ labelled example of an agent being manipulated.
 
 ---
 
+## Resolutions that belong to a shelf rather than to one finding
+
+Two resolutions are not emitted by any row above, because they are statements about a set
+of candidates rather than about one comparison. They are listed here so the vocabulary is
+in one place.
+
+| Resolution | Fires when | Message to the agent |
+|---|---|---|
+| `DECLINE_NO_MATCH` | every retrieved candidate contradicts a required field | "Nothing in these results satisfies the request. Buy nothing and say why." |
+| `SELECT_FROM_SUPPORTED` | at least one candidate satisfies every required field, **and** nothing in the request was left unread | "Select one of these unless the original request rules it out." |
+
+They are each other's opposite and can never both fire: the first requires an empty
+supported set. `SELECT_FROM_SUPPORTED` additionally requires an empty interpretation-note
+list, because a note is the extractor reporting that it did not read the whole request,
+and an imperative built on a partial reading of the request is the worst version of the
+`allow` this file forbids. Where notes exist the supported candidates are still named,
+without the imperative.
+
 ## Two rules that hold across every row
 
 **Nothing here ever produces `allow`.** Per §2.3 and §4.4, every code above resolves to
 `confirm` or `refuse`. A failure to check is never a permission to proceed. That is the
-one invariant this whole file exists to serve.
+one invariant this whole file exists to serve. `SELECT_FROM_SUPPORTED` is not an
+exception and is not an `allow`: it is advice to an agent about which candidates are worth
+its attention, carries the identity caveat with it, and no `Decision` is produced anywhere
+on this path — only `evaluator/` may return one.
 
 **Every message is rendered, never stored.** The signed record holds codes and fields
 (§2.7). Wording can be rewritten at any time without invalidating a single existing

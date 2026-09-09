@@ -16,12 +16,36 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from approv.algebra.feedback import _ACTION, explain_all
 from approv.algebra.runner import check_constraints
 from approv.harness.shopping import Inventory, ShoppingCase, canonical, digest
+from approv.harness.review import check_product, check_shelf
 from approv.types.core import Constraint, Resolution, Support
 
 TOKEN = re.compile(r"[a-z0-9]+")
 
 NUDGE = ("Some selections like yours turn out to be wrong. Review your choice against the "
          "request once more and give your final answer.")
+
+
+def candidate_followup(original_case, record, products, chosen, schema):
+    """Use extracted requirements only; no answer key enters the review."""
+    case = ShoppingCase.model_validate({
+        **original_case,
+        "constraints": record.get("constraints", []),
+        "interpretation_notes": record.get("notes", []),
+        "requested_units": record.get("requested_units"),
+        "quantity_scope": record.get("quantity_scope", "per_sale_unit"),
+    })
+    if case.requested_units not in (None, 1) or case.quantity_scope != "per_sale_unit":
+        raise ValueError("ID-only forked study cannot test cart counts; use the shopping session runner")
+    shelf = check_shelf(case, tuple(products), schema, proposed=chosen)
+    proposed = next((p for p in products if p.id == chosen), None)
+    report = shelf["feedback"]
+    if proposed is not None:
+        report += "\nPrevious proposal:\n" + check_product(case, proposed, schema)["feedback"]
+    elif chosen == "ABSTAIN":
+        report += "\nYour previous answer was to abstain; the shelf assessment still applies."
+    else:
+        report += "\nThe previous answer was not a candidate ID; no product proposal was checked."
+    return report, shelf
 
 
 def candidates(products, blobs, request, k, families=None, idf=None):
@@ -109,6 +133,16 @@ def pick_stage(work, stage, model, key, endpoint, interval, limit=0, flat=False,
     if limit: source = source[:limit]
     name = stage.split("-", 1)[1] if "-" in stage else stage
     out = work / ("answers-%s%s.json" % (name, suffix))
+    manifest_path = out.with_suffix(".manifest.json")
+    manifest = {"stage_hash": digest(source), "model": model, "endpoint": endpoint,
+                "flat": flat, "system_hash": digest(PICK_SYSTEM),
+                "driver_hash": digest(Path(__file__).read_text(encoding="utf-8"))}
+    if out.exists() and (not manifest_path.exists() or
+                        json.loads(manifest_path.read_text(encoding="utf-8")) != manifest):
+        raise ValueError("answer checkpoint has missing or mismatched run identity; use a new suffix")
+    manifest_path.write_text(canonical(manifest) + "\n", encoding="utf-8")
+    calls_path = out.with_suffix(".calls.json")
+    calls = json.loads(calls_path.read_text(encoding="utf-8")) if calls_path.exists() else {}
     answers = json.loads(out.read_text(encoding="utf-8-sig")) if out.exists() else {}
     spent = 0
     for case in source:
@@ -138,7 +172,9 @@ def pick_stage(work, stage, model, key, endpoint, interval, limit=0, flat=False,
         if case.get("your_previous_answer"):
             user += ["", "YOUR EARLIER ANSWER: " + case["your_previous_answer"], case.get("note", "")]
         if case.get("approv_report"):
-            user += ["", "AUTOMATED CHECK OF YOUR EARLIER ANSWER:", case["approv_report"]]
+            heading = ("AUTOMATED CHECK OF RETRIEVED CANDIDATES:" if name == "shelf"
+                       else "AUTOMATED CHECK OF YOUR EARLIER ANSWER:")
+            user += ["", heading, case["approv_report"]]
         payload = {"model": model, "temperature": 0, "max_tokens": 512,
                    "response_format": {"type": "json_object"},
                    "messages": [{"role": "system", "content": PICK_SYSTEM},
@@ -150,6 +186,7 @@ def pick_stage(work, stage, model, key, endpoint, interval, limit=0, flat=False,
             # agent would not pay for it. The same setting is used in every arm.
             payload["reasoning_effort"] = "low"
         delays = []
+        started = time.monotonic()
         for attempt in range(4):
             time.sleep(interval if not delays else delays[-1])
             try:
@@ -171,16 +208,28 @@ def pick_stage(work, stage, model, key, endpoint, interval, limit=0, flat=False,
                 break
         if data is None:
             answers[cid] = "ERROR"
+            calls[cid] = {"status": "provider_error", "elapsed_seconds": time.monotonic() - started}
+            calls_path.write_text(canonical(calls) + "\n", encoding="utf-8")
             out.write_text(json.dumps(answers, indent=1), encoding="utf-8")
             continue
         spent += data.get("usage", {}).get("total_tokens", 0)
         try:
-            answers[cid] = str(json.loads(data["choices"][0]["message"]["content"])["id"])
+            choice = data["choices"][0]
+            answer = json.loads(choice["message"]["content"])["id"]
+            if (choice.get("finish_reason") != "stop" or not isinstance(answer, str)
+                    or answer not in {"ABSTAIN", *(c["id"] for c in case["candidates"])}):
+                raise ValueError("invalid or incomplete selection")
+            answers[cid] = answer
         except (KeyError, ValueError, TypeError):
             # A response we could not parse is a failure, not a decision. Recording it as
             # ABSTAIN lets a broken call score as a correct refusal on exactly the cases
             # where declining is right, which flatters the arm that produced it.
             answers[cid] = "ERROR"
+        calls[cid] = {"status": "error" if answers[cid] == "ERROR" else "answered",
+                      "usage": data.get("usage", {}), "model": data.get("model", model),
+                      "elapsed_seconds": time.monotonic() - started,
+                      "request_hash": digest(payload), "response_hash": digest(data)}
+        calls_path.write_text(canonical(calls) + "\n", encoding="utf-8")
         out.write_text(json.dumps(answers, indent=1), encoding="utf-8")
     print(json.dumps({"stage": stage, "answered": len(answers), "tokens": spent,
                       "tokens_per_case": round(spent / max(len(answers), 1))}))
@@ -273,6 +322,7 @@ def main():
     parser.add_argument("--top", type=int, default=16)
     parser.add_argument("--model", default="openai/gpt-oss-20b")
     parser.add_argument("--readings", help="JSON of {case_id: extractor output} to replay offline")
+    parser.add_argument("--review-scope", choices=("product", "shelf"), default="product")
     parser.add_argument("--interval", type=float, default=6)
     parser.add_argument("--answerable", action="store_true",
                         help="keep only cases whose answer the shared ranker surfaced")
@@ -287,8 +337,8 @@ def main():
     if args.limit: tasks = tasks[:args.limit]
     work = Path(args.work); work.mkdir(parents=True, exist_ok=True)
 
-    pools = {t["case"]["id"]: [p.id for p in candidates(products, blobs, t["case"]["request"], args.top, families, idf)]
-             for t in tasks}
+    pools = ({t["case"]["id"]: [p.id for p in candidates(products, blobs, t["case"]["request"], args.top, families, idf)]
+              for t in tasks} if args.stage == "baseline" or args.answerable else {})
     # A case whose answer retrieval never surfaced is unwinnable in every arm, so it can
     # only dilute. Answerability is a property of the shared ranker, fixed before any agent
     # runs and identical across arms, so restricting to it is a population choice rather
@@ -296,7 +346,7 @@ def main():
     def answerable(task):
         return (not task["gold"]["accepted"]
                 or any(a["product_id"] in pools[task["case"]["id"]] for a in task["gold"]["accepted"]))
-    dropped = [t["case"]["id"] for t in tasks if not answerable(t)]
+    dropped = [t["case"]["id"] for t in tasks if pools and not answerable(t)]
     if args.answerable: tasks = [t for t in tasks if answerable(t)]
 
     if args.stage == "baseline":
@@ -369,7 +419,8 @@ def main():
                     delays.append(wait + 1)
             store[cid] = {"status": meta["status"], "tokens": meta.get("usage", {}).get("total_tokens", 0),
                           "constraints": [c.model_dump(mode="json") for c in case.constraints],
-                          "notes": list(case.interpretation_notes)}
+                          "notes": list(case.interpretation_notes),
+                          "requested_units": case.requested_units, "quantity_scope": case.quantity_scope}
             path.write_text(json.dumps(store, indent=1), encoding="utf-8")
         parsed = sum(1 for v in store.values() if v["status"] == "parsed")
         print(json.dumps({"cases": len(store), "parsed": parsed,
@@ -386,8 +437,12 @@ def main():
         # in what they were shown.
         seen = {c["case_id"]: [x["id"] for x in c["candidates"]]
                 for c in json.loads((work / "stage1-baseline.json").read_text(encoding="utf-8-sig"))}
-        pools = {**pools, **{k: v for k, v in seen.items() if k in pools or True}}
-        blind, approv = [], []
+        missing = [t["case"]["id"] for t in tasks
+                   if t["case"]["id"] in picks and t["case"]["id"] not in seen]
+        if missing:
+            raise ValueError("missing frozen baseline shelves: " + ", ".join(missing))
+        pools = seen
+        blind, approv, assessments = [], [], {}
         for t in tasks:
             cid = t["case"]["id"]
             if cid not in picks: continue
@@ -395,6 +450,13 @@ def main():
             chosen = picks[cid]
             blind.append({"case_id": cid, "request": t["case"]["request"], "candidates": pool,
                           "your_previous_answer": chosen, "note": NUDGE})
+            if args.review_scope == "shelf":
+                report, assessments[cid] = candidate_followup(
+                    t["case"], extracted.get(cid, {}), [by_id[i] for i in pools[cid]],
+                    chosen, inventory.category_schema)
+                approv.append({"case_id": cid, "request": t["case"]["request"], "candidates": pool,
+                               "your_previous_answer": chosen, "note": NUDGE, "approv_report": report})
+                continue
             findings = ()
             record = extracted.get(cid, {})
             if chosen in by_id and record.get("constraints"):
@@ -430,14 +492,20 @@ def main():
             approv.append({"case_id": cid, "request": t["case"]["request"], "candidates": pool,
                            "your_previous_answer": chosen, "note": NUDGE, "approv_report": report})
         (work / "stage2-blind.json").write_text(json.dumps(blind, indent=1), encoding="utf-8")
-        (work / "stage2-approv.json").write_text(json.dumps(approv, indent=1), encoding="utf-8")
+        arm_name = "shelf" if args.review_scope == "shelf" else "approv"
+        (work / ("stage2-%s.json" % arm_name)).write_text(json.dumps(approv, indent=1), encoding="utf-8")
+        if assessments:
+            (work / "shelf-assessments.json").write_text(canonical({
+                "inventory_hash": digest(inventory), "baseline_shelves_hash": digest(seen),
+                "extraction_hash": digest(extracted), "assessments": assessments,
+            }) + "\n", encoding="utf-8")
         print(json.dumps({"blind": len(blind), "approv": len(approv)}))
         return 0
 
     gold = {t["case"]["id"]: t["gold"] for t in tasks}
     family = {t["case"]["id"]: t["family"] for t in tasks}
     answers = {"baseline": picks}
-    for arm in ("blind", "approv"):
+    for arm in ("blind", "approv", "shelf"):
         path = work / ("answers-%s.json" % arm)
         if path.exists(): answers[arm] = json.loads(path.read_text(encoding="utf-8-sig"))
     def correct(cid, choice):

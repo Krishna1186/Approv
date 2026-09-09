@@ -65,6 +65,9 @@ _ACTION: dict[Resolution, str] = {
     Resolution.DECLINE_NO_MATCH: (
         "Nothing in these results satisfies the request. Buy nothing and say why."
     ),
+    Resolution.SELECT_FROM_SUPPORTED: (
+        "Select one of these unless the original request rules it out."
+    ),
     Resolution.NOT_RESOLVABLE: (
         "This source has no usable value. Seek another admissible source or mark unverified."
     ),
