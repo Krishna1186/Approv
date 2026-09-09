@@ -84,7 +84,7 @@ renderer · evaluator/ the decision function, with a test parsing its imports to
 the §4.1 boundary · harness/ catalogue adapters, case packs, sessions, storefront ·
 scripts/ study drivers and the error register.
 
-**170 tests pass.** Software tests are not accuracy results.
+**210 tests pass.** Software tests are not accuracy results.
 
 On disk: 74,858 Shopify variants from 19 brands; 599 Open Food Facts India records; Amazon
 ESCI examples and products; WebShop's 500 human instructions and 1.18M-product attribute
@@ -127,6 +127,90 @@ candidate the agent retrieved, and say which ones satisfy the request. Today tha
 only for the decline advice, which is the one place Approv beat the control in this run
 (impossible cases, 7/8 against 6/8).
 
+
+## Four defects found by replaying the 10 September study — 10 September
+
+The run above was replayed against its own frozen shelves and frozen extraction, and the
+five cases it should have won were read one at a time. Each defect below was found that
+way, and the effect stated for each is a **checker-side** effect measured offline. No
+agent answers were re-collected, so **there is no new accuracy number in this section and
+none should be quoted from it.**
+
+**1. The report had no way to say "select one of these."** `Resolution` carried
+`DECLINE_NO_MATCH` and no counterpart, so the report could tell an agent to stop shopping
+and had no vocabulary for telling it to proceed. On five held-out cases the check named
+the answer-key product as the one candidate out of twenty-five satisfying every required
+field, and the agent abstained on all five. Two further faults compounded it: the report
+closed on `Candidates with contradicted requirements: 24.` — the work the check did,
+rendered as a failure statistic, and the last line read before answering — and the
+identity caveat trailed the supported list, so `OK: availability, size.` read as a doubt
+about the candidate it had just cleared. The report now states the count as work done,
+puts the caveats before the move, and ends naming the move.
+
+**2. It never said when the agent was already right.** On shopper-45 the agent's own
+standing pick was first in the supported list and it answered ABSTAIN, under a review
+nudge that says selections like yours turn out to be wrong. `check_shelf` now takes the
+standing answer and says whether it is among the supported candidates. It is used for
+that sentence only — it never reorders the shelf and never changes a status.
+
+**3. The narrowing rule was prefix-only.** "Orange" against a listing saying "Orange chalk
+stripe" was correctly UNVERIFIED; "blue" against "Medium wash blue" was MISMATCH. Same
+relation, English's other adjective order, and on shopper-110 it ruled out the one
+candidate on the shelf that satisfied the request. Matching is now a contiguous run of
+whole words in either direction, and the negation guard reads the words on both sides of
+the match — `faux leather` had been scored a contradiction only because the trailing-only
+test happened to fail, never because the word was read. `not` and `fake` joined the
+negation set for the same reason; `test_nominal_overlap_is_not_identity` had been passing
+for the wrong reason and caught the gap immediately. Measured: the answer-key product moves
+from `contradicted` to `unresolved` on one case, and no case moves the other way.
+
+**4. The vocabulary guard and the comparison disagreed about "the same value."** The
+catalogue publishes availability as `in_stock`; the model writes "in stock". `compare_term`
+already treats those as identical because `normalize_term` folds the separator, but the
+guard used raw casefold and dropped the requirement — on 4 of 46 held-out cases, on the one
+attribute the answer key constrains on all 46. On shopper-49, an unfillable request that
+says *"do not substitute a different colour or size"*, dropping availability left a
+**sold-out** variant satisfying every field that remained. The guard now uses the same
+identity key the operator uses. It still refuses to widen: "skin colored" is still not
+"beige".
+
+### What the imperative is not
+
+`SELECT_FROM_SUPPORTED` fires only when at least one candidate satisfies every required
+field **and** the extractor recorded nothing it could not read. An interpretation note is
+the extractor saying it did not get a complete reading of the request, and an imperative
+built on a partial reading is the worst available version of the `allow` that §2.3
+forbids — shopper-49 is exactly that case, and under the old wording the agent correctly
+declined. Where notes exist the supported candidates are still named, without the
+imperative. Measured over the 46 held-out cases: 13 reports now end on the imperative, the
+answer-key product is among the named candidates in **13 of 13**, and **no** unfillable
+case names a satisfying candidate at all (it was 1 before).
+
+None of this is an accuracy result. It says the check now names the answer where it had
+it and stays quiet where it does not. Whether that changes what the agent does is the next
+held-out run, against the generic-review control, and it has not been run.
+
+### Tested and refuted: Approv's constraints do not retrieve better
+
+The obvious way to attack the retrieval ceiling is that Approv holds the request as typed
+constraints while the agent only writes free text, so feeding the extracted constraint
+values to the ranker should surface what the agent's query missed. Measured over the same
+46 held-out cases and the same ranker, counting whether the answer-key product appears in
+the top 16:
+
+| What the ranker was given | Answer reachable |
+|---|---:|
+| The agent's own query | 27/46 = 58.7% |
+| The full request text | 28/46 = 60.9% |
+| Approv's extracted constraint values | **19/46 = 41.3%** |
+| The agent's query plus the constraint values | 27/46 = 58.7% |
+
+Constraint values retrieve **worse** than the agent's own query, and appending them adds
+nothing. The reason is visible in the values: `Gold`, `S`, `in_stock`, `White`,
+`King/Cali King` are the discriminating attributes for *checking* and the least
+discriminating tokens for *finding* — every brand sells a small white thing that is in
+stock. Retrieval fails here because the ranker is bag-of-words over 33k variants, not
+because the agent dropped what the customer said. Do not spend the effort a second time.
 
 ## What would actually move the number
 
