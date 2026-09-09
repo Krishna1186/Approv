@@ -256,35 +256,42 @@ def shopify_pack(raw, captured_at, catalogue=10000, cases=90, seed=20260910):
         brand = family[0].details.get('brand') or ''
         stocked = [p for p in sized if field(p, 'availability') == 'in_stock']
         empty = [p for p in sized if field(p, 'availability') == 'out_of_stock']
-        template = ('clear', 'budget', 'colour', 'vernacular', 'impossible')[index % 5]
+        template = ('full', 'budget', 'casual', 'terse', 'impossible')[index % 5]
         # Every template but 'impossible' promises a reachable answer. Drawing the target
         # from an out-of-stock variant would silently turn it into an abstention case and
         # make the template labels describe something other than what they test.
         if template != 'impossible' and not stocked: continue
         target = rng.choice(stocked or sized)
         size = field(target, 'size')
+        colour = field(target, 'color')
         price = field(target, 'price')
+        # Several constraints at once, on purpose. A single re-read repairs the salient
+        # error and leaves the rest, which is the condition under which reporting every
+        # finding together is worth more than telling an agent to look again.
         spec = {'size': size, 'availability': 'in_stock'}
-        if template == 'clear':
-            request = f'I want the {title} in size {size}. It needs to be in stock.'
+        if colour: spec['color'] = colour
+        wants = f'{title} in {colour}, size {size}' if colour else f'{title}, size {size}'
+        if template == 'full':
+            request = f'I want the {wants}. It has to be in stock.'
         elif template == 'budget':
-            cap = (price + Decimal('20')).quantize(Decimal('1'))
+            cap = (price + Decimal('15')).quantize(Decimal('1'))
             spec['price_lte'] = cap
-            request = (f'Looking for the {title}, size {size}, in stock — '
-                       f'but I am not spending more than ${cap}.')
-        elif template == 'colour':
-            colour = field(target, 'color')
-            if not colour: continue
-            spec['color'] = colour
-            request = f'Can you get me the {title} in {colour}, size {size}? Must be available to ship.'
-        elif template == 'vernacular':
-            request = f'need the {title} in sz {size} asap — has to actually be in stock, not backordered'
+            request = (f'Looking for the {wants}, in stock, and I do not want to go over '
+                       f'${cap} for it.')
+        elif template == 'casual':
+            request = (f'hey can you grab me the {wants}? needs to actually be in stock, '
+                       f'not on backorder')
+        elif template == 'terse':
+            request = f'{wants}, in stock only'
         else:
             if not empty: continue
             target = rng.choice(empty)
-            size = field(target, 'size'); spec['size'] = size
-            request = (f'One {title}, size {size}, and it has to be in stock. '
-                       f'Do not substitute another size or colour — skip it if you cannot get that.')
+            size = field(target, 'size'); colour = field(target, 'color')
+            spec = {'size': size, 'availability': 'in_stock'}
+            if colour: spec['color'] = colour
+            shape = f'{title} in {colour}, size {size}' if colour else f'{title}, size {size}'
+            request = (f'One {shape}, in stock. Do not substitute another size or colour, '
+                       f'and skip it entirely if you cannot get exactly that.')
 
         def satisfies(product):
             if field(product, 'size') != spec['size']: return False
@@ -304,6 +311,111 @@ def shopify_pack(raw, captured_at, catalogue=10000, cases=90, seed=20260910):
     return {'kind': 'shopify_d2c', 'seed': seed, 'inventory': frozen.model_dump(mode='json'),
             'tasks': tasks, 'note': f'{len(frozen.products)} variants from {len(raw)} D2C brands. '
             'Requests are generated; answers are published-field comparisons.'}
+
+
+def shopify_shopper_pack(raw, captured_at, catalogue=25000, cases=120, seed=20260912):
+    """Requests that describe what the shopper wants, without naming the catalogue entry.
+
+    The previous generator quoted the product's exact title in 94% of requests, so the
+    agent's search query quoted it too and retrieval succeeded 95% of the time. That
+    measured string matching. A shopper who already knows the exact product name is not
+    the case worth testing; a shopper who knows what they want is.
+
+    The answer key is the generator's own spec applied to published fields. Approv has to
+    re-derive those requirements from the free text with a model and can get it wrong, so
+    the key and the checker are independent paths rather than the same computation twice.
+    """
+    inventory = shopify_inventory(raw, captured_at)
+    rng = random.Random(seed)
+    items = list(inventory.products)
+
+    def field(product, attribute):
+        for item in product.evidence:
+            if item.attribute == attribute:
+                return item.value.amount if attribute == 'price' else str(item.value.surface)
+        return None
+
+    # Group by the words a shopper would actually use: what kind of thing it is.
+    kinds = defaultdict(list)
+    for product in items:
+        kind = (product.details.get('product_type') or '').strip().lower()
+        if kind and field(product, 'size') and field(product, 'color'):
+            kinds[kind].append(product)
+    # A product_type is only a shopper's word for the thing if several products share it.
+    # Brands fill that field with names like "the point iii" or "the d'orsay espadrille",
+    # which would put the catalogue title back into the request through the side door.
+    def generic(members):
+        titles = {p.details['title'] for p in members}
+        brands = {p.details.get('brand', '') for p in members}
+        return len(members) >= 12 and len(titles) >= 4
+    usable = [k for k, v in kinds.items() if generic(v)]
+    rng.shuffle(usable)
+
+    keep = {p.id for k in usable for p in kinds[k]}
+    pool = [p for p in items if p.id not in keep]
+    rng.shuffle(pool)
+    frozen = Inventory(source=inventory.source, source_license=inventory.source_license,
+        captured_at=captured_at, schema=shopify_schema(),
+        products=tuple([p for k in usable for p in kinds[k]] + pool[:max(0, catalogue - len(keep))]))
+    by_kind = defaultdict(list)
+    for product in frozen.products:
+        by_kind[(product.details.get('product_type') or '').strip().lower()].append(product)
+
+    tasks = []
+    for index, kind in enumerate(usable):
+        if len(tasks) >= cases: break
+        members = by_kind[kind]
+        stocked = [p for p in members if field(p, 'availability') == 'in_stock']
+        if not stocked: continue
+        template = ('plain', 'budget', 'casual', 'terse', 'impossible')[index % 5]
+        target = rng.choice(stocked)
+        # Reject the case outright if the shopper's word for the thing is just the
+        # product's own name wearing a different hat.
+        if kind in target.details['title'].lower(): continue
+        colour, size, price = field(target, 'color'), field(target, 'size'), field(target, 'price')
+        spec = {'color': colour, 'size': size, 'availability': 'in_stock'}
+        if template == 'plain':
+            request = f'I need a {colour} {kind} in size {size}. It has to be in stock.'
+        elif template == 'budget':
+            cap = (price + Decimal('25')).quantize(Decimal('1'))
+            spec['price_lte'] = cap
+            request = f'Do you have any {kind} in {colour}, size {size}? Nothing over ${cap}, and it needs to be available.'
+        elif template == 'casual':
+            request = f'hey im after a {kind} — {colour}, size {size}. needs to be in stock, not backordered'
+        elif template == 'terse':
+            request = f'{kind}, {colour}, size {size}, in stock'
+        else:
+            # A combination this catalogue cannot fill: correct behaviour is to decline.
+            absent = [p for p in members if field(p, 'availability') == 'out_of_stock']
+            if not absent: continue
+            target = rng.choice(absent)
+            colour, size = field(target, 'color'), field(target, 'size')
+            spec = {'color': colour, 'size': size, 'availability': 'in_stock'}
+            if any(field(p, 'color') == colour and field(p, 'size') == size
+                   and field(p, 'availability') == 'in_stock' for p in members): continue
+            request = (f'One {kind} in {colour}, size {size}, in stock. Do not substitute a '
+                       f'different colour or size — skip it if you cannot get exactly that.')
+
+        def satisfies(product):
+            if field(product, 'size') != spec['size']: return False
+            if field(product, 'color') != spec['color']: return False
+            if field(product, 'availability') != 'in_stock': return False
+            if 'price_lte' in spec and (field(product, 'price') or 0) > spec['price_lte']: return False
+            return (product.details.get('product_type') or '').strip().lower() == kind
+        accepted = [{'product_id': p.id, 'units': 1} for p in members if satisfies(p)]
+        tasks.append({'split': 'dev' if len(tasks) < 20 else 'heldout', 'family': template,
+            'case': ShoppingCase(id=f'shopper-{index}-{template}', request=request,
+                author='Generated request over a real merchant catalogue (DR 0018)',
+                cluster=f'kind-{index}').model_dump(mode='json'),
+            'gold': {'method': 'published_field_rule', 'accepted': accepted,
+                     'abstention_correct': not accepted,
+                     'spec': {k: str(v) for k, v in spec.items()}, 'kind': kind,
+                     'note': 'Any variant of this product type whose published colour, size, '
+                             'stock and price satisfy the request. Several answers may be '
+                             'correct, as they would be for a real shopper.'}})
+    return {'kind': 'shopify_shopper', 'seed': seed, 'inventory': frozen.model_dump(mode='json'),
+            'tasks': tasks, 'note': f'{len(frozen.products)} variants. Requests describe the '
+            'item by kind, colour and size and never name the catalogue title.'}
 
 
 def published_vocabulary(inventory, limit=60):

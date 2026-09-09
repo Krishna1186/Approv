@@ -184,9 +184,82 @@ def pick_stage(work, stage, model, key, endpoint, interval, limit=0, flat=False,
     return 0
 
 
+SEARCH_SYSTEM = ("You are a shopping agent. The customer's request is below. Write the "
+                 "search query you would type into the merchant's product search to find "
+                 'it. Reply with JSON only: {"query":"..."}. No other keys.')
+
+
+def search_stage(work, pack_path, model, key, endpoint, interval, split, top, limit=0, suffix=""):
+    """Let the agent retrieve for itself, instead of being handed a shortlist.
+
+    The earlier harness ranked the catalogue with the request text, kept the top slice and
+    discarded the cases where the answer did not survive. That hands the agent a list that
+    contains the answer 100% of the time and quotes the product's exact title in 94% of
+    requests, which measures string matching rather than shopping. Here the agent sees
+    only the request, writes its own query, and lives with what comes back — including
+    nothing.
+    """
+    import time
+    from approv.harness.adapters import AdapterError, post_json
+    pack, inventory, blobs = load(pack_path)
+    products = list(inventory.products)
+    families = defaultdict(list)
+    for p in products:
+        families[(p.details.get("brand", ""), p.details["title"])].append(p)
+    idf = document_frequency(products, blobs)
+    tasks = [t for t in pack["tasks"] if t["split"] == split]
+    if limit: tasks = tasks[:limit]
+    out = work / ("queries%s.json" % suffix)
+    queries = json.loads(out.read_text(encoding="utf-8-sig")) if out.exists() else {}
+    spent = 0
+    for task in tasks:
+        cid = task["case"]["id"]
+        if cid in queries: continue
+        payload = {"model": model, "temperature": 0, "max_tokens": 256,
+                   "response_format": {"type": "json_object"},
+                   "messages": [{"role": "system", "content": SEARCH_SYSTEM},
+                                {"role": "user", "content": task["case"]["request"]}]}
+        if model.startswith("openai/gpt-oss-"): payload["reasoning_effort"] = "low"
+        delays = []
+        for attempt in range(4):
+            time.sleep(interval if not delays else delays[-1])
+            try:
+                data = post_json(endpoint + "/chat/completions", payload,
+                                 {"Authorization": "Bearer " + key}, 60)
+                break
+            except AdapterError as error:
+                wait = error.metadata.get("retry_after_seconds", 0)
+                if error.code == "http_429" and 0 < wait <= 90 and attempt < 3:
+                    delays.append(wait + 1); continue
+                out.write_text(json.dumps(queries, indent=1), encoding="utf-8")
+                print(json.dumps({"blocked": error.code, "case": cid, "done": len(queries)}))
+                return 2
+        spent += data.get("usage", {}).get("total_tokens", 0)
+        try:
+            queries[cid] = str(json.loads(data["choices"][0]["message"]["content"])["query"])
+        except (KeyError, ValueError, TypeError):
+            queries[cid] = task["case"]["request"]
+        out.write_text(json.dumps(queries, indent=1), encoding="utf-8")
+
+    # Retrieve with the agent's own query, and keep every case whatever comes back.
+    stage, reached = [], 0
+    for task in tasks:
+        cid = task["case"]["id"]
+        found = candidates(products, blobs, queries[cid], top, families, idf)
+        ids = {p.id for p in found}
+        if not task["gold"]["accepted"] or any(a["product_id"] in ids for a in task["gold"]["accepted"]):
+            reached += 1
+        stage.append({"case_id": cid, "request": task["case"]["request"],
+                      "agent_query": queries[cid], "candidates": [listing(p) for p in found]})
+    (work / ("stage1-search%s.json" % suffix)).write_text(json.dumps(stage, indent=1), encoding="utf-8")
+    print(json.dumps({"cases": len(stage), "answer_retrieved_by_the_agent": reached,
+                      "retrieval_rate": round(reached / max(len(stage), 1), 3), "tokens": spent}))
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("stage", choices=["baseline", "interpret", "followup", "pick", "score"])
+    parser.add_argument("stage", choices=["baseline", "search", "interpret", "followup", "pick", "score"])
     parser.add_argument("--file", help="pick: stage file suffix, e.g. 1-baseline or 2-approv")
     parser.add_argument("--flat", action="store_true", help="pick: repeat the product blurb per variant")
     parser.add_argument("--suffix", default="", help="pick: suffix for the answers file")
@@ -229,6 +302,12 @@ def main():
         print(json.dumps({"cases_written": len(out), "excluded_unanswerable": len(dropped),
                           "top": args.top}))
         return 0
+
+    if args.stage == "search":
+        from scripts.run_study import get_key
+        return search_stage(work, args.pack, args.model, get_key(),
+                            "https://api.groq.com/openai/v1", args.interval, args.split,
+                            args.top, args.limit, args.suffix)
 
     if args.stage == "pick":
         from scripts.run_study import get_key
