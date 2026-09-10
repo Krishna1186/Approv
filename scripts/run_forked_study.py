@@ -209,8 +209,16 @@ def pick_stage(work, stage, model, key, endpoint, interval, limit=0, flat=False,
                     delays.append(wait + 1); continue
                 if error.code == "http_429" or attempt == 3:
                     out.write_text(json.dumps(answers, indent=1), encoding="utf-8")
+                    # Name the metric. A per-minute throttle is waited out and a per-day
+                    # cap is not, and the printed line said only "http_429" for both, so
+                    # the first response to a stopped run was to retry it and spend the
+                    # remaining budget finding out which one it was.
                     print(json.dumps({"blocked": error.code, "case": cid,
-                                      "done": len(answers), "tokens": spent}))
+                                      "done": len(answers), "tokens": spent,
+                                      "limit": error.metadata.get("rate_limit_metric"),
+                                      "used": error.metadata.get("rate_limit_used"),
+                                      "of": error.metadata.get("rate_limit_limit"),
+                                      "retry_after_seconds": error.metadata.get("retry_after_seconds")}))
                     return 2
                 # A provider failure is a failure, never a quiet abstention. Recording one
                 # as an abstention is how 29 dead calls once became 29 honest declines.

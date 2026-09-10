@@ -5,6 +5,8 @@ import json
 
 import pytest
 
+import pathlib
+
 from approv.harness.review import check_shelf
 from approv.harness.shopping import (
     Action, Arm, Inventory, Product, RunConfig, Session, ShoppingCase, replay,
@@ -279,7 +281,8 @@ def test_an_incomplete_reading_of_the_request_withholds_the_imperative():
     knowing what we were asked is the worst unknown there is.
     """
     products = (product("wrong", "S"), product("right", "M"))
-    unsure = case().model_copy(update={"interpretation_notes": ("colour, left unverified",)})
+    unsure = case().model_copy(update={"interpretation_notes": (
+        "Value outside the published vocabulary, left unverified: in stock",)})
     report = check_shelf(unsure, products, schema())
 
     assert report["groups"]["supported"] == ["right"]
@@ -291,10 +294,74 @@ def test_an_incomplete_reading_of_the_request_withholds_the_imperative():
 def test_the_hedged_report_still_ends_on_an_action_and_still_names_the_candidates():
     """Withholding the imperative must not send the report back to burying the answer.
     The candidates are still named and the last line is still a move."""
-    unsure = case().model_copy(update={"interpretation_notes": ("colour, left unverified",)})
+    unsure = case().model_copy(update={"interpretation_notes": (
+        "Invalid typed requirement discarded: color",)})
     report = check_shelf(unsure, (product("wrong", "S"), product("right", "M")), schema(),
                          proposed="right")
     lines = report["feedback"].splitlines()
 
     assert lines[-1].startswith("Fields that were checked are satisfied by: right.")
     assert "Your earlier answer right is already among the candidates below." in lines
+
+
+def test_only_a_guard_note_withholds_the_imperative():
+    """The distinction the 10 September re-run forced.
+
+    A guard note means a requirement this schema *could* have checked was dropped, and
+    better extraction would fix it. The model's free-text list is mostly the request
+    naming a product type the schema has no attribute for — "chelsea boots", "bath mats" —
+    which no extraction can fix and which is true of 35 of 46 requests on that pack.
+    Keying the gate on any note at all left the imperative firing on 4 cases, chosen by
+    whether the model happened to annotate the request.
+    """
+    products = (product("wrong", "S"), product("right", "M"))
+    schema_ = schema()
+    guard = case().model_copy(update={"interpretation_notes": (
+        "Unsupported requirement: product_name",)})
+    free = case().model_copy(update={"interpretation_notes": ("chelsea boots",)})
+
+    assert "Select one of these" not in check_shelf(guard, products, schema_)["feedback"]
+    assert "Select one of these" in check_shelf(free, products, schema_)["feedback"]
+    # The free-text note is still shown; it is not being hidden, only read correctly.
+    assert "Unverified request details: chelsea boots" in check_shelf(free, products, schema_)["feedback"]
+
+
+def test_every_guard_prefix_is_recognised_as_a_dropped_requirement():
+    """intent.py raises these; review.py reads them. A prefix reworded on one side and
+    not the other fails open — the imperative would fire on an incomplete reading."""
+    from approv.harness.intent import DROPPED_REQUIREMENT_PREFIXES, dropped_requirement
+
+    assert DROPPED_REQUIREMENT_PREFIXES
+    for prefix in DROPPED_REQUIREMENT_PREFIXES:
+        assert dropped_requirement(prefix + "something")
+    assert not dropped_requirement("chelsea boots")
+    assert not dropped_requirement("")
+
+
+def test_every_note_the_extractor_can_emit_is_classified_on_purpose():
+    """Pins the full set of literal notes intent.py raises.
+
+    The gate fails open: a new drop that nobody classifies is read as free text, and the
+    imperative then fires on a reading that lost a requirement. Adding a note must break
+    this test and force the choice. Found this way — the sale-unit drop carries no colon,
+    so it did not look like the others and was being read as free text.
+    """
+    import re
+    from approv.harness.intent import dropped_requirement
+
+    source = pathlib.Path("approv/harness/intent.py").read_text(encoding="utf-8")
+    emitted = set(re.findall(r"notes\.append\('([^']+)'", source))
+    classified = {
+        "Unsupported requirement: ": True,
+        "Value outside the published vocabulary, left unverified: ": True,
+        "Ungrounded interpretation discarded: ": True,
+        "Malformed requirement value discarded: ": True,
+        "Invalid typed requirement discarded: ": True,
+        "Sale-unit interpretation has no original quote": True,
+    }
+    assert emitted == set(classified), (
+        "intent.py's note vocabulary changed; classify the new note as a dropped "
+        "requirement or as free text before the gate reads it"
+    )
+    for note, is_drop in classified.items():
+        assert dropped_requirement(note + "x") is is_drop, note

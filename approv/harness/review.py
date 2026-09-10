@@ -102,16 +102,23 @@ def check_shelf(case: ShoppingCase, products: tuple[Product, ...],
                          + ("already among the candidates below."
                             if proposed in groups["supported"] else
                             "not among the candidates below."))
-        # The imperative requires a complete reading of the request, and an
-        # interpretation note is the extractor saying it did not get one. Measured on
+        # The imperative requires that nothing checkable went unread. Measured on
         # shopper-49, an unfillable held-out case: the request said "do not substitute a
-        # different colour or size", the extractor could not encode the colour, and one
-        # candidate then satisfied every field that remained. Under the old wording the
-        # agent read a buried status label and correctly declined. "Select one of these"
-        # would have told it to buy. §2.3 is the rule that settles it — an unknown never
-        # authorises, and not knowing what we were asked is the worst unknown available,
-        # strictly worse than not knowing something about the product.
-        if case.interpretation_notes:
+        # different colour or size", a guard dropped the availability requirement, and one
+        # candidate then satisfied every field that remained — a sold-out one. Under the
+        # old buried wording the agent correctly declined; "Select one of these" would
+        # have told it to buy. §2.3 is the rule that settles it: an unknown never
+        # authorises, and not knowing what we were asked is the worst unknown available.
+        #
+        # Only a *guard* note counts. Keying on any note at all was tried and measured
+        # wrong: the model's free-text list is mostly the request naming a product type
+        # this schema cannot express, which is true of 35 of 46 requests on this pack, so
+        # the imperative fired on 4 cases and which 4 depended on whether the model
+        # happened to annotate the request. That is not a gate, it is noise. What that
+        # note describes is already carried by the identity caveat above, which every
+        # report states.
+        from approv.harness.intent import dropped_requirement
+        if any(dropped_requirement(note) for note in case.interpretation_notes):
             lines.append("Fields that were checked are satisfied by: "
                          + ", ".join(groups["supported"]) + ". The unverified request "
                          "details above were not checked. Resolve them against the "

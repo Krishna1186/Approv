@@ -66,6 +66,34 @@ with amount as a decimal string and currency as a three-letter code.
 '''
 
 
+# Notes carrying these prefixes are the guards below reporting that a requirement they
+# could have checked was dropped: an attribute outside the schema, a value outside the
+# published vocabulary, a quote that was not in the request, a value that would not
+# validate. They mean the reading of the request is incomplete in a way better extraction
+# could fix.
+#
+# They are different in kind from the model's free-text `unverified` list, which is mostly
+# the request naming a product type this schema has no attribute for — "chelsea boots",
+# "bath mats". That is unverifiable in principle against this catalogue, not a gap in the
+# reading, and on the 10 September pack it is true of 35 of 46 requests. Treating the two
+# alike makes any rule that keys on "was anything left unread" fire on almost everything.
+DROPPED_REQUIREMENT_PREFIXES = (
+    'Unsupported requirement: ',
+    'Value outside the published vocabulary, left unverified: ',
+    'Ungrounded interpretation discarded: ',
+    'Malformed requirement value discarded: ',
+    'Invalid typed requirement discarded: ',
+    # Not attribute-shaped and so carries no colon, but the same thing: the shopper asked
+    # for a number of packs, the quote did not ground it, and the count was discarded.
+    'Sale-unit interpretation has no original quote',
+)
+
+
+def dropped_requirement(note: str) -> bool:
+    """True when this note means a checkable requirement was not checked."""
+    return isinstance(note, str) and note.startswith(DROPPED_REQUIREMENT_PREFIXES)
+
+
 class RequestInterpreter:
     def __init__(self, endpoint, model, key, version='v1', catalogue_names=(), vocabulary=None):
         self.endpoint,self.model,self.key,self.version=endpoint.rstrip('/'),model,key,version
