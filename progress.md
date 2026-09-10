@@ -1,275 +1,123 @@
-# progress.md — Approv
+# progress.md
 
-Rewritten 10 September 2026 to replace everything before it. Earlier entries described a
-design stage that measurement has since overtaken, and several numbers in them are now
-known to be artifacts. Session history before this date lives in git history.
+What is measured, what is built, what is not. Rewritten 10 September 2026.
 
-## What Approv is, in the narrowest claim the evidence supports
+## The number
 
-An agent proposes a purchase. Approv compares the customer's stated requirements against
-what the merchant published about that exact variant, and returns per-attribute findings
-plus one decision: allow, confirm, or refuse.
+**The gate, scored as a classifier.** 1,057 (request, product) pairs over 34 held-out
+requests, fresh corpus, gpt-oss-20b extraction, no model call at evaluation time.
+Requirements come from the extractor; the answer key is the generator's spec applied to
+published merchant fields by code importing nothing from `approv.algebra`.
 
-The wider framing in docs/product-requirements.md — "make autonomous shopping safe enough
-to adopt" — is the ambition. **What is measured supports something narrower:** catch the
-near-miss when the agent has the right shelf in front of it, and stop a substitute
-purchase when it does not. Of 21 agent failures in the current study, 11 were the agent
-never seeing the item at all. That is retrieval, and Approv does not retrieve.
-
-## The current number
-
-Three arms, 46 held-out cases, gpt-oss-120b, agent wrote its own search query against a
-33,485-variant catalogue from 19 real Shopify D2C brands. Answer key computed from
-published merchant fields by code importing nothing from approv.algebra.
-
-| Arm | Correct | 95% CI |
+| | rate | 95% CI |
 |---|---:|---|
-| Baseline — one pass, no help | 23/46 = **50.0%** | 36–64% |
-| Control — "check again", no information | 24/46 = 52.2% | 38–66% |
-| Approv — findings and repair advice | 24/46 = **52.2%** | 38–66% |
+| **False allow** — wrong product authorised | **0.0%** | [0.0, 0.4] |
+| **False refuse** — right product blocked | **0.0%** | [0.0, 4.1] |
+| Caught — wrong product refused | 96.5% | [95.1, 97.5] |
+| Escalated — wrong product confirmed | 3.3% | [2.4, 4.6] |
+| Nuisance — right product confirmed | 3.3% | [1.1, 9.2] |
 
-**Approv − control = +0.0 pp**, paired bootstrap 95% CI **[−6.5, +6.5]**. One case better,
-one worse. Zero errors in every arm.
+False allow on near-misses (694 pairs, same product different variant — the failure this
+exists for): **0.0%** [0.0, 0.6].
 
-The control comparison is the only honest headline. Against the untouched baseline Approv
-shows +2.2 pp, but a content-free retry gets +2.2 pp on its own, so that measures the retry.
+Reproduce: `python scripts/score_gate.py --pack data/cache/shopping-study/shopper-fresh.json
+--constraints output/fresh-2026-09-10/constraints-recovered.json`
 
-### Why the effect is bounded — measured, not assumed
+**`strict_unread` is a business parameter, not a constant** (§2.6). At `True` false allow
+is 0.0% and nuisance 41.8%; at `False` both sit as above. Recovery removed the reason to
+pay for strict.
 
-| Failure mode | Cases | Reachable by Approv? |
-|---|---:|---|
-| Search found the item, agent picked wrong | 7 | yes — the core case |
-| Search missed it, agent bought anyway | 3 | yes — "nothing here matches" |
-| Search missed it, agent declined | 11 | no — it never saw the item |
+## Retrieval
 
-**Ceiling on this task is +21.7 pp.** The remaining 24% is retrieval.
+Agent's own text search reaches the answer on **43.8%** of fillable held-out cases (14/32).
+Filtering the catalogue's published fields reaches **90.6%** (29/32); either, 96.9%.
 
-### Run-to-run variance
+Approv does not retrieve — it states the predicate and the catalogue executes it. The
+filter withholds entirely when the request carries an unverified detail: measured cost 3 of
+17 recoveries, measured benefit the only wrong fill removed.
 
-Re-running an identical configuration at temperature zero moved the baseline 54.3% to
-50.0%. At n=46 any effect below roughly ±8 pp is indistinguishable from noise.
+## What is built
 
-## What else is measured and defensible
+`types/` vocabulary · `algebra/` five operators + feedback renderer · `evaluator/` the
+decision function, import boundary asserted by test · `receipts/` record assembly, Ed25519
+signing, hash chain · `harness/` extraction, catalogue filter, sessions, storefront ·
+`scripts/` study drivers, gate scoring, standalone verifier.
+
+Three call sites: `mark`, `verify`, `gate`. Scored separately, never averaged (invariant 7).
+Only `gate` has been scored for accuracy. A stranger verifies a receipt with a public key
+and none of this code: `scripts/verify_receipt.py`, asserted by a test that parses its
+imports.
+
+**262 tests pass.** Software tests are not accuracy results.
+
+On disk: 33,485 Shopify variants from 19 brands; 599 Open Food Facts India records; Amazon
+ESCI examples and products; WebShop instructions and attribute map.
+
+## Also measured
 
 | Finding | Number |
 |---|---|
-| Detection signal on Amazon prose listings | flags 20.8% of non-exact vs 9.7% of exact, **+11.1 pp**, CI [0.8, 23.2] |
-| Size stated in description but never the title | **26.9%** of 132,832 Amazon listings |
-| Real queries carrying a checkable constraint | **25.6%** of 97,346 US ESCI queries |
-| Decline advice precision | 17 right, 1 wrong, 5 missed |
-| Cost of a check | ~25 tokens per report, down from 81 |
-| Two model families on identical cases | both **54.3%** — the task is the difficulty |
+| Detection signal on Amazon prose listings | +11.1 pp, CI [0.8, 23.2] |
+| Size stated in description but never the title | 26.9% of 132,832 listings |
+| Real queries carrying a checkable constraint | 25.6% of 97,346 US ESCI queries |
+| Cost of a check | ~25 tokens per report |
+
+## Never measured
+
+Extraction precision against hand labels. Whether published merchant data is true.
+Underwriting, loss rates, pricing. Injection resistance against a hostile corpus. Any
+surface other than a JSON API agent. `mark` and `verify` accuracy.
 
 ## Retracted — do not reuse
 
 | Claim | Why it fell |
 |---|---|
-| Baseline 96.3%, and 38.5% | The task gave the answer away: 94% of requests quoted the exact catalogue title, the answer sat in the candidate list 100% of the time, failed-retrieval cases were discarded. It measured string matching. |
+| Baseline 96.3%, and 38.5% | 94% of requests quoted the exact catalogue title. It measured string matching. |
 | "Approv improves accuracy +24.6 pp" | A content-free retry beat it by 26 points on the same cases. |
-| "Presentation causes the error rate" | Tested: the messier flat layout scored better, 100% vs 95%. |
-| "Model choice moves accuracy 58 points" | Confounded — model and pack changed together. Two families later scored identically. |
-| "Cheap agents do not make mistakes" | Refuted by the 50.0% baseline here. |
-| "Approv was factually right on every Brother/myCartridge flag" | It read the brand field correctly. Whether the shopper meant Brother-made or Brother-compatible is a separate unanswered question — grounds to confirm, never refuse. |
+| "Presentation causes the error rate" | The messier layout scored better, 100% vs 95%. |
+| "Model choice moves accuracy 58 points" | Confounded; two families later scored identically. |
+| **"+0.0 pp against control" as evidence about the product** | It measured persuasion, not the gate. See below. |
+| Approv's constraints improve retrieval | Tested: 41.3% against the agent's own 58.7%. As search terms they are noise. |
 
-## Never measured
+## Why three studies returned +0.0 pp
 
-Extraction precision against hand labels. Receipt integrity beyond hashes. Underwriting,
-loss rates, pricing. Injection resistance against a hostile corpus. Any surface other than
-a JSON API agent.
+They scored the wrong mechanism. The forked driver shows an agent a report and asks whether
+its second answer changes — persuasion, bounded by model stubbornness and by n=46 with a
+noise floor near ±8 pp. **It never calls `decide()`.** The product claim is a deterministic
+classifier that refuses without asking the agent anything, and nothing scored it until
+`scripts/score_gate.py`. That eval needs no model at evaluation time and no rate limit, so
+the one measurement that validates the product was the one being throttled.
 
-## What exists in the build
+The persuasion study is kept and demoted: it scores `verify`, a real surface, and its null
+result is itself the argument for a gate that does not ask permission.
 
-types/ shared vocabulary · algebra/ five deterministic operators plus the feedback
-renderer · evaluator/ the decision function, with a test parsing its imports to enforce
-the §4.1 boundary · harness/ catalogue adapters, case packs, sessions, storefront ·
-scripts/ study drivers and the error register.
+## Defects found by running it, and fixed
 
-**210 tests pass.** Software tests are not accuracy results.
+- `compare_term` matched a narrowing qualifier only after the word it qualified: "Orange"
+  vs "Orange chalk stripe" was UNVERIFIED, "blue" vs "Medium wash blue" was MISMATCH. Same
+  relation, other adjective order. `not` and `fake` joined the negation set as a result.
+- The vocabulary guard and the comparison operator held two notions of "the same value".
+  The catalogue publishes `in_stock`, the model writes "in stock", and the availability
+  requirement was dropped on 4 of 46 cases — the one attribute the key constrains on all 46.
+- The shelf report had no way to say "select one of these" and closed on the count of
+  ruled-out candidates. On five cases it named the answer and the agent abstained anyway.
+- The driver appended a trailer after that report, so the fix reached no prompt.
+- `ComparisonRecord` had no `request_text` and no `request_constraints`. The record whose
+  purpose is holding the request together with the product did not contain the request.
+- `completeness` conflated "the request was silent" with "we failed to read it", so an
+  extraction failure of ours was recorded as nobody's fault. `unread` is now separate.
+- The extractor filed stated requirements as unverified when it had no closed list to map
+  onto. Recovering them collapsed a 45-point nuisance/false-allow trade-off.
 
-On disk: 74,858 Shopify variants from 19 brands; 599 Open Food Facts India records; Amazon
-ESCI examples and products; WebShop's 500 human instructions and 1.18M-product attribute
-map. WebShop per-product price and options are still missing — a 5.5 GB file needing a
-streaming loader.
+## Open
 
-## Defects found and fixed this week, each from running the thing
-
-- Repair advice told the agent to reword the customer's requirement until it matched the
-  wrong product. Measured cost: that arm scored 26 points below a null control.
-- A narrower listing value ("Black Multi" vs "Black") was reported as a contradiction. Now
-  unknown — except where the extra word negates ("sugar free", "Brother Compatible").
-- One malformed requirement discarded every other requirement in the same request.
-- A malformed model reply was recorded as an abstention, so a broken call could score as a
-  correct refusal. Found by external review.
-- Follow-up arms rebuilt the candidate list instead of continuing from the baseline's.
-- Session records written UTF-8 were read back with the platform default, corrupting any
-  accented product name.
-
-## Why the correction fix did not show up in the number
-
-Correction was identified as the barrier on 9 September and fixed the same day: the advice
-that told the agent to reword the customer's requirement was replaced, the advice now names
-the attribute and value that would satisfy the request, a "buy nothing" resolution was
-added, and satisfied lines were collapsed. All four changes are in the 10 September run.
-The result was +0.0 pp against the control.
-
-So correction is not an unfixed item. It was fixed and it did not move the number, and the
-reason is structural rather than a matter of wording:
-
-**Approv examines one product. The control makes the agent re-read all twenty-five.**
-
-The control's instruction is not information-free in effect — "review your choice" sends
-the agent back over the whole shelf, and on a task whose errors are attention slips, that
-is exactly the repair needed. Approv checks only the variant the agent proposed, so its
-information is narrower than the control's prompt even when it is more accurate.
-
-The fix is not better wording. It is to check the shelf rather than the pick: score every
-candidate the agent retrieved, and say which ones satisfy the request. Today that happens
-only for the decline advice, which is the one place Approv beat the control in this run
-(impossible cases, 7/8 against 6/8).
-
-
-## Four defects found by replaying the 10 September study — 10 September
-
-The run above was replayed against its own frozen shelves and frozen extraction, and the
-five cases it should have won were read one at a time. Each defect below was found that
-way, and the effect stated for each is a **checker-side** effect measured offline. No
-agent answers were re-collected, so **there is no new accuracy number in this section and
-none should be quoted from it.**
-
-**1. The report had no way to say "select one of these."** `Resolution` carried
-`DECLINE_NO_MATCH` and no counterpart, so the report could tell an agent to stop shopping
-and had no vocabulary for telling it to proceed. On five held-out cases the check named
-the answer-key product as the one candidate out of twenty-five satisfying every required
-field, and the agent abstained on all five. Two further faults compounded it: the report
-closed on `Candidates with contradicted requirements: 24.` — the work the check did,
-rendered as a failure statistic, and the last line read before answering — and the
-identity caveat trailed the supported list, so `OK: availability, size.` read as a doubt
-about the candidate it had just cleared. The report now states the count as work done,
-puts the caveats before the move, and ends naming the move.
-
-**2. It never said when the agent was already right.** On shopper-45 the agent's own
-standing pick was first in the supported list and it answered ABSTAIN, under a review
-nudge that says selections like yours turn out to be wrong. `check_shelf` now takes the
-standing answer and says whether it is among the supported candidates. It is used for
-that sentence only — it never reorders the shelf and never changes a status.
-
-**3. The narrowing rule was prefix-only.** "Orange" against a listing saying "Orange chalk
-stripe" was correctly UNVERIFIED; "blue" against "Medium wash blue" was MISMATCH. Same
-relation, English's other adjective order, and on shopper-110 it ruled out the one
-candidate on the shelf that satisfied the request. Matching is now a contiguous run of
-whole words in either direction, and the negation guard reads the words on both sides of
-the match — `faux leather` had been scored a contradiction only because the trailing-only
-test happened to fail, never because the word was read. `not` and `fake` joined the
-negation set for the same reason; `test_nominal_overlap_is_not_identity` had been passing
-for the wrong reason and caught the gap immediately. Measured: the answer-key product moves
-from `contradicted` to `unresolved` on one case, and no case moves the other way.
-
-**4. The vocabulary guard and the comparison disagreed about "the same value."** The
-catalogue publishes availability as `in_stock`; the model writes "in stock". `compare_term`
-already treats those as identical because `normalize_term` folds the separator, but the
-guard used raw casefold and dropped the requirement — on 4 of 46 held-out cases, on the one
-attribute the answer key constrains on all 46. On shopper-49, an unfillable request that
-says *"do not substitute a different colour or size"*, dropping availability left a
-**sold-out** variant satisfying every field that remained. The guard now uses the same
-identity key the operator uses. It still refuses to widen: "skin colored" is still not
-"beige".
-
-### What the imperative is not
-
-`SELECT_FROM_SUPPORTED` fires only when at least one candidate satisfies every required
-field **and** the extractor recorded nothing it could not read. An interpretation note is
-the extractor saying it did not get a complete reading of the request, and an imperative
-built on a partial reading is the worst available version of the `allow` that §2.3
-forbids — shopper-49 is exactly that case, and under the old wording the agent correctly
-declined. Where notes exist the supported candidates are still named, without the
-imperative. Measured over the 46 held-out cases: 13 reports now end on the imperative, the
-answer-key product is among the named candidates in **13 of 13**, and **no** unfillable
-case names a satisfying candidate at all (it was 1 before).
-
-None of this is an accuracy result. It says the check now names the answer where it had
-it and stays quiet where it does not. Whether that changes what the agent does is the next
-held-out run, against the generic-review control, and it has not been run.
-
-### Tested and refuted: Approv's constraints do not retrieve better
-
-The obvious way to attack the retrieval ceiling is that Approv holds the request as typed
-constraints while the agent only writes free text, so feeding the extracted constraint
-values to the ranker should surface what the agent's query missed. Measured over the same
-46 held-out cases and the same ranker, counting whether the answer-key product appears in
-the top 16:
-
-| What the ranker was given | Answer reachable |
-|---|---:|
-| The agent's own query | 27/46 = 58.7% |
-| The full request text | 28/46 = 60.9% |
-| Approv's extracted constraint values | **19/46 = 41.3%** |
-| The agent's query plus the constraint values | 27/46 = 58.7% |
-
-Constraint values retrieve **worse** than the agent's own query, and appending them adds
-nothing. The reason is visible in the values: `Gold`, `S`, `in_stock`, `White`,
-`King/Cali King` are the discriminating attributes for *checking* and the least
-discriminating tokens for *finding* — every brand sells a small white thing that is in
-stock. Retrieval fails here because the ranker is bag-of-words over 33k variants, not
-because the agent dropped what the customer said. Do not spend the effort a second time.
-
-## In flight — the held-out re-run, stopped by quota on 10 September
-
-Everything the run needs is prepared and on disk in `output/shelf-v2-2026-09-10/`.
-The agent answers are not collected: Groq's `tokens_per_day` cap (200,000) was reached
-after the control arm, at 199,118 used.
-
-Prepared, and unaffected by the stop:
-
-- `stage1-baseline.json` and `answers-baseline.json`, carried over frozen. Retrieval and
-  the starting proposal are fixed by the forked design and must not be recollected.
-- `constraints.json`, re-extracted so the vocabulary fix is exercised. 46 of 46 parsed;
-  availability recovered from 41 to 45 of 46 and no value is now dropped by the guard,
-  against 4 before. The extractor's raw output is stored, so this extraction can be
-  replayed rather than resampled.
-- `stage2-blind.json` and `stage2-shelf.json`, both arms' prompts. Every shelf report ends
-  on a move: 25 select, 14 decline, 7 on the identity caveat. The answer key's product is
-  among the named candidates in 23 of the 25, no unfillable case is urged, and the two
-  exceptions are cases whose answer retrieval never surfaced.
-
-To finish it, with roughly 118,000 tokens of daily budget free:
-
-```powershell
-python scripts/run_forked_study.py pick  --pack data/cache/shopping-study/shopper.json --work output/shelf-v2-2026-09-10 --split heldout --file 2-blind --model openai/gpt-oss-120b --interval 12
-python scripts/run_forked_study.py pick  --pack data/cache/shopping-study/shopper.json --work output/shelf-v2-2026-09-10 --split heldout --file 2-shelf --model openai/gpt-oss-120b --interval 12
-python scripts/run_forked_study.py score --pack data/cache/shopping-study/shopper.json --work output/shelf-v2-2026-09-10 --split heldout
-```
-
-Both arms are collected together on purpose. A completed control arm from before the last
-driver commit was discarded rather than reused: the change between them is a print
-statement in the rate-limit path and could not have altered an answer, but the checkpoint
-manifest binds the driver's file hash precisely so that argument never has to be made, and
-this file already carries a list of numbers retracted for confounds no larger than that.
-
-**Until those answers exist there is no result here, and the earlier +0.0 pp against
-control stands as the current number.**
-
-## What would actually move the number
-
-1. **The gold set.** 300–500 hand-labelled pairs against a guideline written first.
-   Nothing else calibrates PARSED = 0.9, and no accuracy claim survives without it.
-   ~200 pairs bounds the false-alarm rate under 5%; ~1,200 is the floor for a guarantee.
-2. **Check the shelf, not the pick.** This is the single largest gap. A control that says
-   "look again" beats a correct report about one product, because re-reading twenty-five
-   candidates carries more repair than a precise finding about one. Approv should return
-   the satisfying candidates, not only a verdict on the proposal.
-3. **A task where re-reading does not fix the error.** A control reaching 52% by saying
-   "check again" means these are attention slips. Real value lives in substitution and
-   prose-only facts — where the Amazon detection signal was.
-4. **One real integration.** Merchant-owned agent over the existing HTTP contract, then a
-   browser agent, then MCP. Each carrying request provenance, exact variant, evidence
-   snapshot, findings and final action.
-
-## Standing constraints
-
-evaluator/ imports only approv.types, asserted by test. Gold set never AI-generated.
-Public catalogue data only, ToS checked. Every accuracy figure carries denominator, model,
-prompt version, date and interval. Mark and verify scored separately.
-
-The §8 amendment of 2026-09-06 suspends founder-authored tests for the pitch window in
-exchange for a full teach-back. §4.2 was waived explicitly on 2026-09-10 for the
-evaluator, which is written and awaiting review.
+- Extraction has never been scored against hand labels. It is the largest unmeasured error
+  surface and every gate number above is conditional on it.
+- `mark` and `verify` unscored.
+- A three-arm agent run on the fresh corpus is prepared in `output/fresh-2026-09-10/` and
+  unrun: Groq's 200k tokens/day cap. It measures persuasion, so it is no longer the
+  headline — but the arms are built and the retrieval repair is untested end to end.
+- Real integration shapes are untested. Cart submission (ACP/AP2) carries no query text at
+  all, so merchant-side Approv is blind there; MCP endpoints already expose filters, so the
+  live gap is whether the agent's filter call matches what the customer said —
+  `CheckKind.CONSISTENCY` exists for exactly this and has never been used.

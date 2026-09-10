@@ -5,7 +5,7 @@ claim that every feature exists today.
 
 The dated implementation and experiment sections below are historical. Use
 [progress.md](../progress.md) for the latest completed study and
-[the engineering assessment](candidate-review.md) for the candidate-review change.
+[progress.md](../progress.md) for the candidate-review change.
 
 ## Purpose
 
