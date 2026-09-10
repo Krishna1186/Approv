@@ -424,6 +424,15 @@ class ComparisonRecord(BaseModel):
     category_version: str
     locale: str
 
+    # The stated request, both verbatim and as read. §1's claim is that nobody in the
+    # chain holds the request and the chosen product together — so the record has to hold
+    # it, and until this was built it did not: findings carry a `constraint` each, which
+    # recovers only the attributes that produced a finding, and the shopper's own words
+    # were nowhere at all. A record missing the request cannot settle a dispute about
+    # what was asked for, which is the only kind of dispute this exists for.
+    request_text: str
+    request_constraints: tuple[Constraint, ...] = ()
+
     turns: tuple[AgentTurn, ...] = ()
     claims: tuple[Claim, ...] = ()
     product_id: str
@@ -433,6 +442,12 @@ class ComparisonRecord(BaseModel):
     findings: tuple[Finding, ...]
     completeness: tuple[str, ...] = ()
     decision: Decision
+    # The attributes that drove the decision, as `evaluator.decide` returned them.
+    # Derivable from `findings` by anyone who runs the evaluator, and stored anyway:
+    # §10's bar is that a stranger can verify and read a receipt with a public key and
+    # none of our code, and "recompute it with our engine" fails that bar. An operator
+    # who cannot attribute a refusal to a named attribute switches the check off.
+    decision_reasons: tuple[str, ...] = ()
 
     model_version: str
     evaluator_version: str
