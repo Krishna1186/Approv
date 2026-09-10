@@ -362,6 +362,10 @@ def main():
     parser.add_argument("--review-scope", choices=("product", "shelf", "catalogue"),
                         default="product")
     parser.add_argument("--interval", type=float, default=6)
+    parser.add_argument("--interpreter-version", default="v4", choices=("v1", "v2", "v3", "v4", "v5"),
+                        help="interpret: RequestInterpreter prompt version. Default v4 matches every "
+                             "published extraction number; pass v5 to exercise the supersession-logging "
+                             "clause added after the 10 September WebShop audit.")
     parser.add_argument("--answerable", action="store_true",
                         help="keep only cases whose answer the shared ranker surfaced")
     args = parser.parse_args()
@@ -422,7 +426,7 @@ def main():
         readings = json.loads(Path(args.readings).read_text(encoding="utf-8-sig")) if args.readings else None
         if readings is None:
             interpreter = RequestInterpreter("https://api.groq.com/openai/v1", args.model, get_key(),
-                                             "v4", vocabulary=published_vocabulary(inventory),
+                                             args.interpreter_version, vocabulary=published_vocabulary(inventory),
                                              published=published_values(inventory))
         else:
             import approv.harness.intent as intent_module
@@ -433,7 +437,7 @@ def main():
                         "usage": {}, "model": args.model}
             intent_module.post_json = replay
             interpreter = RequestInterpreter("https://api.groq.com/openai/v1", args.model, "offline",
-                                             "v4", vocabulary=published_vocabulary(inventory),
+                                             args.interpreter_version, vocabulary=published_vocabulary(inventory),
                                              published=published_values(inventory))
         store = {}
         path = work / "constraints.json"

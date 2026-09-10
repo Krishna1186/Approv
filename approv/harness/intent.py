@@ -5,11 +5,12 @@ semantic correctness. V3 literal checks can use public catalogue titles.
 Interpretations remain measured, fallible system outputs.
 """
 import json
+import re
 import time
-from approv.algebra.term import normalize_term
+from approv.algebra.term import normalize_term, _tokens
 from approv.harness.adapters import AdapterError, post_json
 from approv.harness.shopping import ShoppingCase, canonical, digest
-from approv.types.core import Channel, Constraint, Bound, Claim, Evidence, Certainty, Liability
+from approv.types.core import Channel, Constraint, Bound, Claim, Count, Evidence, Certainty, Liability, Term
 
 PROMPT_V1 = '''Extract only explicit shopping requirements from the original request.
 Return one JSON object, no markdown:
@@ -66,6 +67,25 @@ with amount as a decimal string and currency as a three-letter code.
 '''
 
 
+# v5 adds one clause to v4: name what a correction discarded, instead of only discarding
+# it. Measured on the 10 September WebShop audit and its coverage_gap replay (this file,
+# coverage_gap): a superseded value ("Cognac" corrected to "Dark brown") and a value the
+# model genuinely missed are textually identical once the reading omits both — nothing
+# downstream can tell a correction that was handled correctly from one that was not. This
+# does not change what gets compared: the superseded value is still never a constraint,
+# never checked, never authorises anything. It only makes the omission visible instead of
+# silent, the same way `unverified` already does for an attribute the schema cannot
+# express — coverage_gap (below) already treats any word inside a note as accounted for,
+# so this is a prompt-side change with no corresponding change to that function.
+PROMPT_V5 = PROMPT_V4 + '''
+When you follow a correction and omit a value the shopper superseded, name what you
+discarded in unverified as "Superseded, discarded: <value> (<attribute>)" — one entry per
+discarded value, using the attribute's schema name. Do this only for a value you are
+omitting because the shopper corrected it, never for a value that is simply outside this
+schema (that has its own place in unverified already, unmarked).
+'''
+
+
 # Notes carrying these prefixes are the guards below reporting that a requirement they
 # could have checked was dropped: an attribute outside the schema, a value outside the
 # published vocabulary, a quote that was not in the request, a value that would not
@@ -77,6 +97,10 @@ with amount as a decimal string and currency as a three-letter code.
 # "bath mats". That is unverifiable in principle against this catalogue, not a gap in the
 # reading, and on the 10 September pack it is true of 35 of 46 requests. Treating the two
 # alike makes any rule that keys on "was anything left unread" fire on almost everything.
+DESCRIPTOR_PREFIX = 'Descriptive property, not a named value, left unverified: '
+COVERAGE_GAP_PREFIX = 'Text not explicitly accounted for: '
+DUPLICATE_PREFIX = 'Duplicate requirement for a stated attribute, second value discarded: '
+
 DROPPED_REQUIREMENT_PREFIXES = (
     'Unsupported requirement: ',
     'Value outside the published vocabulary, left unverified: ',
@@ -86,6 +110,9 @@ DROPPED_REQUIREMENT_PREFIXES = (
     # Not attribute-shaped and so carries no colon, but the same thing: the shopper asked
     # for a number of packs, the quote did not ground it, and the count was discarded.
     'Sale-unit interpretation has no original quote',
+    DESCRIPTOR_PREFIX,
+    COVERAGE_GAP_PREFIX,
+    DUPLICATE_PREFIX,
 )
 
 
@@ -94,12 +121,132 @@ def dropped_requirement(note: str) -> bool:
     return isinstance(note, str) and note.startswith(DROPPED_REQUIREMENT_PREFIXES)
 
 
+# Measured on the 10 September WebShop audit (scripts/audit_webshop.py, real crowd-worker
+# instructions, not generated): "non slip" was recorded as a material, on a request that
+# named no material at all. The pattern is a real English one, not a guess specific to
+# that sentence — an adjectival compound of this shape names a property something has,
+# never the name of the thing itself, so it can never be the whole answer to "what colour
+# / what material / what brand". Scoped to full matches only: "quality leather" keeps its
+# material, because "leather" is outside the pattern and stays the value; only a value
+# that consists *entirely* of a property phrase is redirected.
+_PROPERTY_DESCRIPTOR_RE = re.compile(
+    r'(non|anti) ?slip'
+    r'|\w+ (resistant|proof)'
+    r'|easy to use'
+)
+
+
+def _implausible_value(value) -> str | None:
+    """The surface text if it is only a property descriptor, else None.
+
+    Quantities, counts, money and bounds are never ambiguous this way — the ambiguity is
+    specific to a bare Term standing in for a named value.
+    """
+    if not isinstance(value, Term):
+        return None
+    normalized = normalize_term(value.surface)
+    return value.surface if _PROPERTY_DESCRIPTOR_RE.fullmatch(normalized) else None
+
+
+# Function words and request-framing verbs a residual span may consist of on its own
+# without being flagged. Not a claim of completeness — narrow enough that a genuine
+# leftover content word still trips the guard below, generous enough that ordinary
+# connective phrasing does not. Expected to grow the same way SIZE_PATTERNS/COLOR did:
+# by measurement against real text, not by anticipation.
+_COVERAGE_STOPWORDS = frozenset((
+    'i', 'a', 'an', 'the', 'for', 'in', 'of', 'to', 'am', 'is', 'are', 'it', 'its',
+    'that', 'this', 'and', 'or', 'please', 'need', 'needs', 'needing', 'want', 'wants',
+    'wanting', 'looking', 'look', 'get', 'got', 'me', 'my', 'you', 'your', 'do', 'does',
+    'have', 'has', 'had', 'one', 'some', 'any', 'with', 'without', 'right', 'now',
+    'just', 'actually', 'really', 'can', 'could', 'would', 'like', 'if', 'unless',
+    'no', 'not', 'be', 'being', 'was', 'were', 'go', 'going', 'so', 'but', 'im',
+    'hey', 'make', 'exactly', 'skip', 'substitute', 'different', 'sorry', 'wait',
+    'meant', 'ill', 'let', 'lets', 'know', 'wrong', 'searching', 'search', 'find',
+    'finding', 'buy', 'buying', 'order', 'ordering', 'browsing', 'browse', 'trying',
+    'try', 'shopping', 'shop', 'grab', 'available', 'stock', 'backorder', 'backordered',
+    'who', 'mind', "don't", 'dont', "doesn't", 'doesnt', 'anything', 'after', 'nothing',
+    'over', 'eye', 'pretty', 'sure', 'out', 'which', 'case', 'never', 'cannot', 'colour',
+))
+
+
+def _value_text(value) -> str:
+    """The text a value would actually be compared against, not the quote it came from.
+
+    A quote proves the words were really said; it does not prove every word in it
+    survived into something checkable. Coverage is computed against this, deliberately
+    not the quote — "individually wrapped gummy candies" grounding a product_type of
+    "gummy candies" leaves "individually wrapped" uncovered by this function on purpose,
+    because algebra/runner.py will only ever compare "gummy candies".
+    """
+    if isinstance(value, Bound):
+        return _value_text(value.limit)
+    if isinstance(value, Term):
+        return value.surface
+    if isinstance(value, Count):
+        return str(value.n)
+    return '%s %s' % (getattr(value, 'magnitude', getattr(value, 'amount', '')),
+                      getattr(value, 'unit', getattr(value, 'currency', '')))
+
+
+def _normalize_note(entry) -> str:
+    """A note entry as a string, however the model chose to shape it.
+
+    Measured live against gemini-3.5-flash-lite on the 10 September WebShop audit: the
+    prompt asks for `unverified` to be a list of strings, and on 3 of 28 real cases this
+    model wrote a list of objects instead — {"reason": "mens", "quote": "mens"} — which
+    is not malformed content, it is the same information in a shape the prompt did not
+    ask for. `interpretation_notes` is typed `tuple[str, ...]` (approv.harness.shopping),
+    so a dict there raised a pydantic ValidationError — a subclass of ValueError — and
+    took the entire reading down over a formatting preference, the same class of failure
+    as the duplicate-attribute crash above. Prefer the most specific field to the whole
+    object, so the note stays readable.
+    """
+    if isinstance(entry, str):
+        return entry
+    if isinstance(entry, dict):
+        for key in ('quote', 'text', 'reason', 'attribute', 'value'):
+            value = entry.get(key)
+            if isinstance(value, str) and value:
+                return value
+        return json.dumps(entry, sort_keys=True)
+    return str(entry)
+
+
+def coverage_gap(request: str, constraints, notes, schema, units_quote: str = '') -> str | None:
+    """Request words carried forward by no constraint's value and no note, or None.
+
+    Deterministic, no model call: a set difference between the request's own words and
+    every word this reading actually keeps. Measured on the WebShop audit: "individually
+    wrapped gummy candies" produced one constraint (product_type=gummy candies) and zero
+    notes, so "individually wrapped" simply vanished — not flagged unsupported, not
+    flagged ungrounded, not present anywhere in the reading. This is the general form of
+    that failure, not a fix for that one sentence: it names *any* content this reading
+    silently dropped, however it was dropped, because from downstream the two are
+    indistinguishable and section 2.2 needs completeness computed on what was actually
+    read, not on what the model remembered to mention in `unverified`.
+
+    A schema's own attribute names are excluded the same replay measured they had to be:
+    "in color eleven" records color=eleven, which accounts for "eleven" but not the word
+    "color" itself — a frame word naming which attribute is being stated, not content the
+    reading dropped. Derived from the schema in use rather than hardcoded, so it holds
+    for any schema, not only this one.
+    """
+    accounted: set[str] = set()
+    for text in (*(_value_text(c.value) for c in constraints), *notes, units_quote or ''):
+        accounted |= _tokens(text)
+    for spec in schema.attributes:
+        accounted |= _tokens(spec.name.replace('_', ' '))
+    residual = [w for w in normalize_term(request).split()
+               if w not in accounted and w not in _COVERAGE_STOPWORDS and len(w) > 2]
+    return COVERAGE_GAP_PREFIX + ' '.join(residual) if residual else None
+
+
 class RequestInterpreter:
     def __init__(self, endpoint, model, key, version='v1', catalogue_names=(), vocabulary=None,
                  published=None):
         self.endpoint,self.model,self.key,self.version=endpoint.rstrip('/'),model,key,version
-        if version not in ('v1','v2','v3','v4'):raise ValueError('unknown interpreter version')
-        self.prompt={'v1':PROMPT_V1,'v4':PROMPT_V4}.get(version,PROMPT_V2)
+        if version not in ('v1','v2','v3','v4','v5'):raise ValueError('unknown interpreter version')
+        self.prompt={'v1':PROMPT_V1,'v4':PROMPT_V4,'v5':PROMPT_V5}.get(version,PROMPT_V2)
         self.catalogue_names=tuple(catalogue_names)
         # Attribute -> admissible surfaces, normally the values the catalogue publishes.
         # A request naming something outside it is unverifiable here, never a violation.
@@ -137,7 +284,7 @@ class RequestInterpreter:
             if choice['finish_reason']!='stop':raise ValueError('incomplete')
             reading=json.loads(text)
             if not isinstance(reading,dict):raise ValueError('not object')
-            constraints=[];notes=list(reading.get('unverified',[]));specs={a.name:a for a in schema.attributes};allowed=set(specs)
+            constraints=[];notes=[_normalize_note(n) for n in reading.get('unverified',[])];specs={a.name:a for a in schema.attributes};allowed=set(specs)
             for r in reading.get('requirements',[]):
                 if r['attribute'] not in allowed:
                     if self.version=='v1':raise ValueError('unsupported attribute')
@@ -176,6 +323,24 @@ class RequestInterpreter:
                 except (TypeError,ValueError):
                     if self.version=='v1':raise ValueError('interpretation type does not match schema')
                     notes.append('Invalid typed requirement discarded: '+candidate.attribute);continue
+                descriptor=_implausible_value(candidate.value)
+                if descriptor is not None:
+                    notes.append(DESCRIPTOR_PREFIX+candidate.attribute+'='+descriptor);continue
+                if candidate.attribute in {c.attribute for c in constraints}:
+                    # ShoppingCase.unique_constraints (approv.harness.shopping) rejects two
+                    # constraints on the same attribute, and until now nothing upstream of
+                    # that stopped a second one arriving — so a model that splits one
+                    # compound value into two same-attribute requirements ("Beige" and
+                    # "blue mouliné" as two separate `color` entries, instead of one
+                    # "Beige and blue mouliné") took the *entire* reading down at that
+                    # validator, not just the split attribute: found live against
+                    # gemini-3.6-flash on 10 September, same failure class as the money-bound
+                    # crashes PROMPT_V1's docstring already names above. First value wins,
+                    # kept in the order the model wrote it; the second is named rather than
+                    # silently dropped, and its words still surface if coverage_gap does not
+                    # already see them accounted for by this note.
+                    if self.version=='v1':raise ValueError('duplicate requirement for attribute')
+                    notes.append(DUPLICATE_PREFIX+candidate.attribute+'='+_value_text(candidate.value));continue
                 constraints.append(candidate)
             units=reading.get('requested_units');quote=reading.get('units_quote','')
             if units is not None and (not quote or quote not in case.request):
@@ -194,6 +359,10 @@ class RequestInterpreter:
                 from approv.harness.request_literals import recover_noted_values
                 result,recovered=recover_noted_values(result,schema,self.published)
                 if recovered:metadata['recovered_from_notes']=recovered
+            gap=coverage_gap(case.request,result.constraints,result.interpretation_notes,schema,quote)
+            if gap is not None:
+                result=result.model_copy(update={'interpretation_notes':result.interpretation_notes+(gap,)})
+                metadata['coverage_gap']=gap
             metadata['supported_requirement_count']=len(result.constraints)+(result.requested_units is not None)
             if not result.constraints and result.requested_units is None and not result.interpretation_notes:
                 result=result.model_copy(update={'interpretation_notes':(

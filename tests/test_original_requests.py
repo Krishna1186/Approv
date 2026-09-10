@@ -66,10 +66,16 @@ def test_empty_valid_extraction_does_not_silently_imply_verification():
     with patch('approv.harness.intent.post_json',return_value=response({'requirements':[],'unverified':[]})):
         result,meta=RequestInterpreter('https://example.test','fixture','key','v3')(case,inv.category_schema)
     assert meta['supported_requirement_count']==0
+    # 'Example' is the one content word in the request and nothing in the empty reading
+    # accounts for it, so the coverage-gap guard (approv.harness.intent.coverage_gap)
+    # names it directly — a strict improvement on the older generic fallback message,
+    # which was not registered under DROPPED_REQUIREMENT_PREFIXES and so could not
+    # suppress a downstream confident recommendation the way this note now does.
+    assert 'Text not explicitly accounted for: example' in result.interpretation_notes
     session=Session(inv,result,Arm.APPROV,RunConfig(surface='verify',expose_constraints=False))
     session.step(Action(type='search'))
     review=session.step(Action(type='select',product_id='x'))
-    assert 'this is not verification' in review['approv']['feedback']
+    assert 'Text not explicitly accounted for: example' in review['approv']['feedback']
 
 
 def test_native_tools_execute_one_declared_action_and_preserve_call_id():

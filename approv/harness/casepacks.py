@@ -428,6 +428,161 @@ def shopify_shopper_pack(raw, captured_at, catalogue=25000, cases=120, seed=2026
             'item by kind, colour and size and never name the catalogue title.'}
 
 
+# Sentences that name a real concern outside shopify_schema. score_extraction.py's
+# "invented" count cannot see these land wrong, because intent.py's own allowlist guard
+# already drops an unsupported attribute name into `interpretation_notes` before it
+# becomes a Constraint (§4.1's boundary, one layer up from the schema). What a distractor
+# actually tests is whether the extractor folds it into an attribute that *is* in scope
+# instead — "eco-friendly" read as a colour, "fast shipping" read as availability — which
+# shows up as a wrong_value on a spec'd attribute, not as an invention. Left out of
+# 'terse' (defeats the point) and drawn independently of template, so it compounds with
+# every sentence shape below rather than being its own category.
+DISTRACTOR_CLAUSES = (
+    "It's a gift, so nothing that looks obviously cheap.",
+    "I'd prefer eco-friendly packaging if that's an option.",
+    "Delivery speed doesn't matter, I'm not in a rush.",
+    "My last order took forever to arrive, hopefully this one's faster.",
+    "Whatever's easiest to return if it ends up not fitting.",
+    "No rush on this, just whenever it's convenient.",
+)
+
+
+def shopify_shopper_pack_v2(raw, captured_at, catalogue=25000, cases=120, seed=20260913):
+    """Same answer-key method as v1, harder sentences to recover it from.
+
+    v1's five templates (plain/budget/casual/terse/impossible) are close to a declarative
+    list: attribute, value, attribute, value, in the order the schema would ask for them.
+    An agent's actual request corrects itself mid-sentence, buries a constraint in a
+    clause the shopper cares about for an unrelated reason, states what they don't want
+    alongside what they do, or asks a question instead of giving an instruction. None of
+    that touches the answer key — the spec is still fixed before the sentence exists, so
+    this stays admissible under section 4 for the same reason v1 is — it only changes how
+    hard the sentence is to parse, which score_extraction.py had nothing to measure that
+    on until now.
+
+    'correction' is new coverage specifically: nothing in the shopper-facing packs tested
+    whether the extractor keeps the final stated value over a superseded one, despite that
+    being an explicit instruction in every prompt version since v1 ("follow corrections and
+    the final request").
+    """
+    inventory = shopify_inventory(raw, captured_at)
+    rng = random.Random(seed)
+    items = list(inventory.products)
+
+    def field(product, attribute):
+        for item in product.evidence:
+            if item.attribute == attribute:
+                return item.value.amount if attribute == 'price' else str(item.value.surface)
+        return None
+
+    kinds = defaultdict(list)
+    for product in items:
+        kind = (product.details.get('product_type') or '').strip().lower()
+        if kind and field(product, 'size') and field(product, 'color'):
+            kinds[kind].append(product)
+
+    def generic(members):
+        titles = {p.details['title'] for p in members}
+        return len(members) >= 12 and len(titles) >= 4
+    usable = [k for k, v in kinds.items() if generic(v)]
+    rng.shuffle(usable)
+
+    keep = {p.id for k in usable for p in kinds[k]}
+    pool = [p for p in items if p.id not in keep]
+    rng.shuffle(pool)
+    frozen = Inventory(source=inventory.source, source_license=inventory.source_license,
+        captured_at=captured_at, schema=shopify_schema(),
+        products=tuple([p for k in usable for p in kinds[k]] + pool[:max(0, catalogue - len(keep))]))
+    by_kind = defaultdict(list)
+    for product in frozen.products:
+        by_kind[(product.details.get('product_type') or '').strip().lower()].append(product)
+
+    templates = ('plain', 'budget', 'casual', 'terse', 'correction', 'negation',
+                 'question', 'indirect', 'hedge', 'impossible')
+    tasks = []
+    for index, kind in enumerate(usable):
+        if len(tasks) >= cases: break
+        members = by_kind[kind]
+        stocked = [p for p in members if field(p, 'availability') == 'in_stock']
+        if not stocked: continue
+        template = templates[index % len(templates)]
+        target = rng.choice(stocked)
+        if kind in target.details['title'].lower(): continue
+        colour, size, price = field(target, 'color'), field(target, 'size'), field(target, 'price')
+        spec = {'color': colour, 'size': size, 'availability': 'in_stock'}
+
+        if template == 'plain':
+            request = f'I need a {colour} {kind} in size {size}. It has to be in stock.'
+        elif template == 'budget':
+            cap = (price + Decimal('25')).quantize(Decimal('1'))
+            spec['price_lte'] = cap
+            request = f'Do you have any {kind} in {colour}, size {size}? Nothing over ${cap}, and it needs to be available.'
+        elif template == 'casual':
+            request = f'hey im after a {kind} — {colour}, size {size}. needs to be in stock, not backordered'
+        elif template == 'terse':
+            request = f'{kind}, {colour}, size {size}, in stock'
+        elif template == 'correction':
+            # A real alternative colour from the same kind group, not the target's own —
+            # so the sentence states something genuinely false before correcting it,
+            # rather than merely restating the answer twice.
+            other_colours = sorted({field(p, 'color') for p in members
+                                    if field(p, 'color') and field(p, 'color') != colour})
+            if not other_colours: continue
+            wrong = rng.choice(other_colours)
+            request = (f'Get me the {kind} in {wrong} — actually no, make that {colour}. '
+                       f'Size {size}, and it has to be in stock.')
+        elif template == 'negation':
+            request = (f'Not fussed about the brand, but I do need a {colour} {kind}, '
+                       f'size {size} — and it actually has to be in stock, not backordered.')
+        elif template == 'question':
+            request = f'Do you have the {kind} in {colour} and size {size} in stock right now?'
+        elif template == 'indirect':
+            request = (f"I'm a size {size} and I've had my eye on a {colour} {kind} — "
+                       f'is one in stock?')
+        elif template == 'hedge':
+            request = (f'Pretty sure I need a {colour} {kind}, size {size} — go with that '
+                       f'unless it is out of stock, in which case never mind.')
+        else:  # impossible
+            absent = [p for p in members if field(p, 'availability') == 'out_of_stock']
+            if not absent: continue
+            target = rng.choice(absent)
+            colour, size = field(target, 'color'), field(target, 'size')
+            spec = {'color': colour, 'size': size, 'availability': 'in_stock'}
+            if any(field(p, 'color') == colour and field(p, 'size') == size
+                   and field(p, 'availability') == 'in_stock' for p in members): continue
+            request = (f'One {kind} in {colour}, size {size}, in stock. Do not substitute a '
+                       f'different colour or size — skip it if you cannot get exactly that.')
+
+        distractor = rng.choice(DISTRACTOR_CLAUSES) if template != 'terse' and rng.random() < 0.4 else ''
+        if distractor:
+            request += ' ' + distractor
+
+        def satisfies(product, spec=spec, kind=kind):
+            if field(product, 'size') != spec['size']: return False
+            if field(product, 'color') != spec['color']: return False
+            if field(product, 'availability') != 'in_stock': return False
+            if 'price_lte' in spec and (field(product, 'price') or 0) > spec['price_lte']: return False
+            return (product.details.get('product_type') or '').strip().lower() == kind
+        accepted = [{'product_id': p.id, 'units': 1} for p in members if satisfies(p)]
+        tasks.append({'split': 'dev' if len(tasks) < 20 else 'heldout', 'family': template,
+            'case': ShoppingCase(id=f'shopper2-{index}-{template}', request=request,
+                author='Generated request over a real merchant catalogue (DR 0018)',
+                cluster=f'kind-{index}').model_dump(mode='json'),
+            'gold': {'method': 'published_field_rule', 'accepted': accepted,
+                     'abstention_correct': not accepted,
+                     'spec': {k: str(v) for k, v in spec.items()}, 'kind': kind,
+                     'distractor': distractor,
+                     'note': 'Computed from the merchant published colour, size, price and stock '
+                             'flag by direct comparison — same method as shopify_shopper_pack. '
+                             'Sentence shape varies (correction/negation/question/indirect/hedge, '
+                             'plus an independently-drawn off-schema distractor clause); the '
+                             'answer key does not.'}})
+    return {'kind': 'shopify_shopper_v2', 'seed': seed, 'inventory': frozen.model_dump(mode='json'),
+            'tasks': tasks, 'note': f'{len(frozen.products)} variants. Same answer-key method as '
+            'shopify_shopper_pack, ten sentence shapes instead of five, plus off-schema '
+            'distractor clauses drawn independently of shape.'}
+
+
 def published_vocabulary(inventory, limit=60):
     """Attribute -> the values this catalogue actually publishes, when that set is small.
 
