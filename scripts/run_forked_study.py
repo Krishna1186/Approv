@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from approv.algebra.feedback import _ACTION, explain_all
 from approv.algebra.runner import check_constraints
 from approv.harness.shopping import Inventory, ShoppingCase, canonical, digest
+from approv.harness.catalogue import build_index, describe, satisfying
 from approv.harness.review import check_product, check_shelf
 from approv.types.core import Constraint, Resolution, Support
 
@@ -23,6 +24,23 @@ TOKEN = re.compile(r"[a-z0-9]+")
 
 NUDGE = ("Some selections like yours turn out to be wrong. Review your choice against the "
          "request once more and give your final answer.")
+
+
+def catalogue_repair(case, all_products, shelf_ids, schema, index):
+    """What the whole catalogue holds that the retrieved shelf did not.
+
+    Retrieval is the larger failure: 14 of 46 held-out cases in the September study ended
+    with the answer never on the shelf, against 7 where it was on the shelf and the agent
+    picked wrong. Every repair before this one worked on the second group.
+
+    The arms still fork from one proposal, so retrieval is held fixed in the sense that
+    matters — the starting choice is identical. What this adds is candidates, named and
+    attributed, which is the intervention under test. Not doing this would test a repair
+    that structurally cannot reach the larger half of the failures.
+    """
+    result = satisfying(case.constraints, all_products, schema, index=index)
+    extra = [pid for pid in result["matches"] if pid not in shelf_ids]
+    return result, extra
 
 
 def candidate_followup(original_case, record, products, chosen, schema):
@@ -340,7 +358,8 @@ def main():
     parser.add_argument("--top", type=int, default=16)
     parser.add_argument("--model", default="openai/gpt-oss-20b")
     parser.add_argument("--readings", help="JSON of {case_id: extractor output} to replay offline")
-    parser.add_argument("--review-scope", choices=("product", "shelf"), default="product")
+    parser.add_argument("--review-scope", choices=("product", "shelf", "catalogue"),
+                        default="product")
     parser.add_argument("--interval", type=float, default=6)
     parser.add_argument("--answerable", action="store_true",
                         help="keep only cases whose answer the shared ranker surfaced")
@@ -468,6 +487,8 @@ def main():
             raise ValueError("missing frozen baseline shelves: " + ", ".join(missing))
         pools = seen
         blind, approv, assessments = [], [], {}
+        idf_index = (build_index(products, inventory.category_schema)
+                     if args.review_scope == "catalogue" else None)
         for t in tasks:
             cid = t["case"]["id"]
             if cid not in picks: continue
@@ -475,11 +496,29 @@ def main():
             chosen = picks[cid]
             blind.append({"case_id": cid, "request": t["case"]["request"], "candidates": pool,
                           "your_previous_answer": chosen, "note": NUDGE})
-            if args.review_scope == "shelf":
+            if args.review_scope in ("shelf", "catalogue"):
                 report, assessments[cid] = candidate_followup(
                     t["case"], extracted.get(cid, {}), [by_id[i] for i in pools[cid]],
                     chosen, inventory.category_schema)
-                approv.append({"case_id": cid, "request": t["case"]["request"], "candidates": pool,
+                shown = pool
+                if args.review_scope == "catalogue":
+                    case = ShoppingCase.model_validate({
+                        **t["case"],
+                        "constraints": extracted.get(cid, {}).get("constraints", []),
+                        "interpretation_notes": extracted.get(cid, {}).get("notes", []),
+                        "requested_units": extracted.get(cid, {}).get("requested_units"),
+                        "quantity_scope": extracted.get(cid, {}).get("quantity_scope", "per_sale_unit")})
+                    found, extra = catalogue_repair(case, products, set(pools[cid]),
+                                                    inventory.category_schema, idf_index)
+                    assessments[cid]["catalogue"] = {**found, "added": extra}
+                    if extra:
+                        # Appended, never reordered, and the shelf keeps its order. The
+                        # agent must be able to select these, so they join `candidates`.
+                        shown = pool + [listing(by_id[i]) for i in extra[:10]]
+                        report += chr(10) + describe({**found, "matches": extra[:10]}, by_id)
+                    elif found["checked"]:
+                        report += chr(10) + describe(found, by_id)
+                approv.append({"case_id": cid, "request": t["case"]["request"], "candidates": shown,
                                "your_previous_answer": chosen, "note": NUDGE, "approv_report": report})
                 continue
             findings = ()
@@ -517,7 +556,7 @@ def main():
             approv.append({"case_id": cid, "request": t["case"]["request"], "candidates": pool,
                            "your_previous_answer": chosen, "note": NUDGE, "approv_report": report})
         (work / "stage2-blind.json").write_text(json.dumps(blind, indent=1), encoding="utf-8")
-        arm_name = "shelf" if args.review_scope == "shelf" else "approv"
+        arm_name = {"shelf": "shelf", "catalogue": "catalogue"}.get(args.review_scope, "approv")
         (work / ("stage2-%s.json" % arm_name)).write_text(json.dumps(approv, indent=1), encoding="utf-8")
         if assessments:
             (work / "shelf-assessments.json").write_text(canonical({
@@ -530,7 +569,7 @@ def main():
     gold = {t["case"]["id"]: t["gold"] for t in tasks}
     family = {t["case"]["id"]: t["family"] for t in tasks}
     answers = {"baseline": picks}
-    for arm in ("blind", "approv", "shelf"):
+    for arm in ("blind", "approv", "shelf", "catalogue"):
         path = work / ("answers-%s.json" % arm)
         if path.exists(): answers[arm] = json.loads(path.read_text(encoding="utf-8-sig"))
     def correct(cid, choice):
