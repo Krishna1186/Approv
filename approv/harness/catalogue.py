@@ -72,6 +72,7 @@ def satisfying(
     *,
     index: dict[tuple[str, str], set[str]] | None = None,
     limit: int = 25,
+    unverified: tuple[str, ...] = (),
 ) -> dict:
     """Every variant whose published fields satisfy every recorded requirement.
 
@@ -87,6 +88,28 @@ def satisfying(
     silence never authorises. This function is the optimistic half of the pair — it says
     what does satisfy, and stays quiet about what merely might.
     """
+    # Any unverified detail disqualifies, and this is deliberately stricter than the
+    # shelf report, which withholds only on a guard note. The asymmetry is about what the
+    # agent can see. On the shelf it has already read the candidates and has the listing
+    # in front of it; here it is being handed variants it never retrieved, chosen purely
+    # on the attributes we managed to encode. If part of the request went unencoded, those
+    # variants were selected against an incomplete requirement set and nothing else in the
+    # agent's context will catch it.
+    #
+    # Measured on the fresh corpus, 35 extracted cases: gating here costs 3 of 17
+    # recoveries and removes the only wrong fill. That wrong fill was the request "size
+    # L || 2", which the extractor recorded as size "L" with "|| 2" left as a note — it
+    # narrowed the requirement rather than dropping it, which is worse than dropping,
+    # and the filter then correctly returned every black size-L bra in stock for a
+    # request that was unfillable by construction. Approv proposing a purchase for an
+    # unfillable request is the one failure worse than not helping.
+    if unverified:
+        return {"version": VERSION, "checked": [], "matches": [], "scanned": 0,
+                "withheld": list(unverified),
+                "reason": "the request contains details that were not encoded, so a "
+                          "filter on the encoded ones would select against an incomplete "
+                          "requirement set"}
+
     by_id = {p.id: p for p in products}
     blocking = (Criticality.HARD, Criticality.BOUND)
     required = tuple(c for c in constraints
@@ -134,6 +157,10 @@ def describe(result: dict, products_by_id: dict) -> str:
     `option_color == "Dark blue"` has to translate it back into a search; an agent handed
     three ids can select one. The predicate is in `checked` for the record.
     """
+    if result.get("withheld"):
+        return ("The catalogue was not filtered, because the request contains details "
+                "that were not encoded: " + "; ".join(result["withheld"]) + ". Judge "
+                "those against the original request yourself.")
     if not result["matches"]:
         return ("No variant in the full catalogue satisfies every recorded requirement ("
                 + ", ".join(result["checked"]) + "). The request cannot be filled as "

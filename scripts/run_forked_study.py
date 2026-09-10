@@ -38,7 +38,8 @@ def catalogue_repair(case, all_products, shelf_ids, schema, index):
     attributed, which is the intervention under test. Not doing this would test a repair
     that structurally cannot reach the larger half of the failures.
     """
-    result = satisfying(case.constraints, all_products, schema, index=index)
+    result = satisfying(case.constraints, all_products, schema, index=index,
+                        unverified=tuple(case.interpretation_notes))
     extra = [pid for pid in result["matches"] if pid not in shelf_ids]
     return result, extra
 
