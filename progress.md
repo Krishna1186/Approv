@@ -212,6 +212,42 @@ discriminating tokens for *finding* — every brand sells a small white thing th
 stock. Retrieval fails here because the ranker is bag-of-words over 33k variants, not
 because the agent dropped what the customer said. Do not spend the effort a second time.
 
+## In flight — the held-out re-run, stopped by quota on 10 September
+
+Everything the run needs is prepared and on disk in `output/shelf-v2-2026-09-10/`.
+The agent answers are not collected: Groq's `tokens_per_day` cap (200,000) was reached
+after the control arm, at 199,118 used.
+
+Prepared, and unaffected by the stop:
+
+- `stage1-baseline.json` and `answers-baseline.json`, carried over frozen. Retrieval and
+  the starting proposal are fixed by the forked design and must not be recollected.
+- `constraints.json`, re-extracted so the vocabulary fix is exercised. 46 of 46 parsed;
+  availability recovered from 41 to 45 of 46 and no value is now dropped by the guard,
+  against 4 before. The extractor's raw output is stored, so this extraction can be
+  replayed rather than resampled.
+- `stage2-blind.json` and `stage2-shelf.json`, both arms' prompts. Every shelf report ends
+  on a move: 25 select, 14 decline, 7 on the identity caveat. The answer key's product is
+  among the named candidates in 23 of the 25, no unfillable case is urged, and the two
+  exceptions are cases whose answer retrieval never surfaced.
+
+To finish it, with roughly 118,000 tokens of daily budget free:
+
+```powershell
+python scripts/run_forked_study.py pick  --pack data/cache/shopping-study/shopper.json --work output/shelf-v2-2026-09-10 --split heldout --file 2-blind --model openai/gpt-oss-120b --interval 12
+python scripts/run_forked_study.py pick  --pack data/cache/shopping-study/shopper.json --work output/shelf-v2-2026-09-10 --split heldout --file 2-shelf --model openai/gpt-oss-120b --interval 12
+python scripts/run_forked_study.py score --pack data/cache/shopping-study/shopper.json --work output/shelf-v2-2026-09-10 --split heldout
+```
+
+Both arms are collected together on purpose. A completed control arm from before the last
+driver commit was discarded rather than reused: the change between them is a print
+statement in the rate-limit path and could not have altered an answer, but the checkpoint
+manifest binds the driver's file hash precisely so that argument never has to be made, and
+this file already carries a list of numbers retracted for confounds no larger than that.
+
+**Until those answers exist there is no result here, and the earlier +0.0 pp against
+control stands as the current number.**
+
 ## What would actually move the number
 
 1. **The gold set.** 300–500 hand-labelled pairs against a guideline written first.
