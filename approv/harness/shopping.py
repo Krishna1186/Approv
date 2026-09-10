@@ -14,9 +14,12 @@ from typing import Literal, Protocol
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 import pydantic
 
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
 from approv.harness.review import check_product, check_shelf
 from approv.types.core import (
-    Bound, CategorySchema, Certainty, Channel, Claim, Constraint, Evidence, Liability,
+    AgentTurn, Bound, CategorySchema, Certainty, Channel, Claim, Constraint, Decision,
+    Evidence, Finding, Liability,
 )
 
 VERSION = "shopping-v1"
@@ -129,7 +132,14 @@ class RunConfig(Frozen):
     max_actions: int = Field(default=12, ge=2, le=100)
     review_rounds: int = Field(default=1, ge=0, le=5)
     page_size: int = Field(default=5, ge=1, le=20)
-    surface: Literal["mark", "verify"] = "mark"
+    # §2.5's three call sites. `gate` is `verify` plus consequence: the decision is
+    # taken by `evaluator/`, a REFUSE stops the selection instead of advising against it,
+    # and a signed record is written either way. Scored separately from the other two and
+    # never averaged with them (invariant 7) — refusing costs a sale, and a lost sale and
+    # a missed catch are not the same error.
+    surface: Literal["mark", "verify", "gate"] = "mark"
+    # Where receipts go. None keeps the harness a pure feedback experiment.
+    receipt_key_hex: str | None = None
     seed: int = 42
     expose_constraints: bool = True
     candidate_review: bool = False
@@ -195,6 +205,8 @@ class Session:
         self.seen_order: list[str] = []
         self.reviews = 0
         self.actions = 0
+        self.receipts: list = []
+        self._receipt_head: str | None = None
         self.binding = {"version": VERSION, "inventory_hash": digest(self.inventory),
                         "case_hash": digest(self.case), "arm": self.arm.value,
                         "implementation": implementation_identity(),
@@ -232,6 +244,48 @@ class Session:
 
     def _findings(self, product: Product, units: int = 1) -> dict:
         return check_product(self.case, product, self.inventory.category_schema, units)
+
+    def _decide(self, product: Product, units: int = 1):
+        """Run the decision path over one proposal and seal the result.
+
+        The record is built and chained whether or not a key is configured. Without a key
+        it stays unsigned, which is the honest state — an unsigned record still proves the
+        chain is intact against edits made through this process, and it makes the decision
+        path exercisable in a test without inventing a keypair per session.
+        """
+        from approv.receipts.chain import seal
+        from approv.receipts.record import build_record
+
+        report = self._findings(product, units)
+        findings = tuple(Finding.model_validate(f) for f in report["findings"])
+        snapshot = product.model_dump(mode="json", exclude={"raw"})
+        record = build_record(
+            correlation_id="%s:%s:%d" % (self.case.id, product.id, len(self.receipts)),
+            request_text=self.case.request,
+            constraints=self.case.constraints,
+            findings=findings,
+            schema=self.inventory.category_schema,
+            product_id=product.id,
+            product_snapshot=snapshot,
+            snapshot_hash=digest(snapshot),
+            model_version=self.binding["implementation"]["source_hash"][:16],
+            prompt_version=VERSION,
+            turns=tuple(AgentTurn(tool=e["payload"]["action"]["type"],
+                                  raw_arguments=e["payload"]["action"])
+                        for e in self.events if e["kind"] == "action"),
+        )
+        if self.config.receipt_key_hex:
+            key = Ed25519PrivateKey.from_private_bytes(
+                bytes.fromhex(self.config.receipt_key_hex))
+            record = seal(record, key, prev_hash=self._receipt_head)
+            self._receipt_head = record.hash
+        self.receipts.append(record)
+        self._event("decision", {"decision": record.decision.value,
+                                 "reasons": list(record.decision_reasons),
+                                 "completeness": list(record.completeness),
+                                 "product_id": product.id,
+                                 "hash": record.hash})
+        return record
 
     def _visible_product(self, product: Product, detailed: bool = False) -> dict:
         result = product.model_dump(mode="json", exclude={"raw"})
@@ -282,6 +336,24 @@ class Session:
                         units=self.case.requested_units or action.units,
                         proposed=action.product_id,
                     )
+        elif self.config.surface == "gate":
+            record = self._decide(self.products[action.product_id], action.units)
+            if record.decision is Decision.REFUSE:
+                # The one place a finding stops something. Recorded as a first-class
+                # outcome, not an error: a refusal that leaves no trace is indistinguish-
+                # able from a session that never happened, and refusals are the expensive
+                # half of §2.6.
+                self.status = "refused"
+                response = {"status": self.status, "decision": record.decision.value,
+                            "reasons": list(record.decision_reasons),
+                            "receipt": record.hash}
+            else:
+                self.selection = {"product_id": action.product_id, "units": action.units}
+                self.status = "selected"
+                response = {"status": self.status, "selection": self.selection,
+                            "decision": record.decision.value,
+                            "reasons": list(record.decision_reasons),
+                            "receipt": record.hash}
         else:
             self.selection = {"product_id": action.product_id, "units": action.units}
             self.status = "selected"
@@ -341,13 +413,18 @@ def replay(result: dict, inventory: Inventory, case: ShoppingCase) -> None:
     session = Session(inventory, case, Arm(binding["arm"]), RunConfig.model_validate(binding["config"]))
     if session.binding != binding:
         raise ValueError("implementation/runtime binding mismatch; replay with the recorded version")
-    for event in result["events"][1:]:
+    # Walked by index rather than against `events[-1]`. One `step` can now append three
+    # events — action, decision, response — so "the last one we appended" stops being the
+    # one under comparison as soon as a gate is in play.
+    for index, event in enumerate(result["events"][1:], start=1):
         if event["kind"] == "action":
             payload = event["payload"]
             session.step(Action.model_validate(payload["action"]), payload["metadata"])
-        elif event["kind"] == "response":
-            if session.events[-1]["payload"] != event["payload"]:
-                raise ValueError("tool response replay mismatch")
+        elif event["kind"] in ("response", "decision"):
+            # Produced as a side effect of replaying the action above, so compared in
+            # place rather than re-applied.
+            if index >= len(session.events) or session.events[index]["payload"] != event["payload"]:
+                raise ValueError("%s replay mismatch at %d" % (event["kind"], index))
         elif event["kind"] == "error":
             session.fail(event["payload"]["error"], event["payload"].get("metadata", {}))
         else:

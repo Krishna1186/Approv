@@ -148,12 +148,20 @@ def shopify_evidence(attribute, value, field, dimension=Dimension.NOMINAL):
 def shopify_schema():
     return CategorySchema(category_id='shopify.d2c', version='variant-v1', attributes=(
         AttributeSpec(name='brand', dimension=Dimension.NOMINAL, criticality=Criticality.HARD),
+        # Product identity, and the reason it is here is measured. Every one of the 46
+        # held-out answer keys is an exact `product_type` value, and nothing was reading
+        # it: a filter on colour/size/stock alone returned matches on 4 of 8 deliberately
+        # unfillable requests, because "no longsleeve exists in black, size M" is not a
+        # statement about colour or size. Identity was being left to bag-of-words search
+        # over a text blob while the merchant published it as an exact field.
+        AttributeSpec(name='product_type', dimension=Dimension.NOMINAL, criticality=Criticality.HARD),
         AttributeSpec(name='size', dimension=Dimension.NOMINAL, criticality=Criticality.HARD),
         AttributeSpec(name='color', dimension=Dimension.NOMINAL, criticality=Criticality.HARD),
         AttributeSpec(name='availability', dimension=Dimension.NOMINAL, criticality=Criticality.HARD),
         AttributeSpec(name='price', dimension=Dimension.MONEY, criticality=Criticality.BOUND),
     ), field_profiles=(
         FieldProfile(field_name='product.vendor', attributes=('brand',), certainty=Certainty.EXACT, liability=Liability.MERCHANT_GUARANTEED),
+        FieldProfile(field_name='product.product_type', attributes=('product_type',), certainty=Certainty.EXACT, liability=Liability.MERCHANT_GUARANTEED),
         FieldProfile(field_name='variant.option_size', attributes=('size',), certainty=Certainty.EXACT, liability=Liability.MERCHANT_GUARANTEED),
         FieldProfile(field_name='variant.option_color', attributes=('color',), certainty=Certainty.EXACT, liability=Liability.MERCHANT_GUARANTEED),
         FieldProfile(field_name='variant.available', attributes=('availability',), certainty=Certainty.EXACT, liability=Liability.MERCHANT_GUARANTEED),
@@ -183,6 +191,8 @@ def shopify_variants(raw, currency='USD', description_limit=900):
                             Evidence(attribute='price', value=Money(amount=Decimal(str(price)), currency=currency),
                                      field_name='variant.price', certainty=Certainty.EXACT,
                                      liability=Liability.MERCHANT_GUARANTEED, raw_text=str(price))]
+                kind = str(product.get('product_type') or '').strip()
+                if kind: evidence.append(shopify_evidence('product_type', kind, 'product.product_type'))
                 if size: evidence.append(shopify_evidence('size', size, 'variant.option_size'))
                 if colour: evidence.append(shopify_evidence('color', colour, 'variant.option_color'))
                 title = product['title'].strip()
