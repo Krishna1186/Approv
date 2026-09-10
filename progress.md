@@ -27,6 +27,25 @@ Reproduce: `python scripts/score_gate.py --pack data/cache/shopping-study/shoppe
 is 0.0% and nuisance 41.8%; at `False` both sit as above. Recovery removed the reason to
 pay for strict.
 
+## Extraction
+
+Every gate number is conditional on this. 35 held-out cases, 148 stated requirements,
+scored against the generator's spec (code) by the extractor's output (model) — independent
+paths, no model call at evaluation time.
+
+| | rate | 95% CI |
+|---|---:|---|
+| Recall — stated and recorded | 97.3% | [93.3, 98.9] |
+| Fidelity — recorded with the stated value | 97.1% | [92.7, 98.9] |
+| End to end | 94.3% | [89.1, 97.1] |
+| **Invented** — recorded, never stated | **0** | — |
+
+`python scripts/score_extraction.py --pack PACK --constraints WORK/constraints-recovered.json`
+
+Four wrong values, four misses, one case each: `"size 6"` where the spec said `6` (the
+model echoed the attribute name into the value); `"L || 2"` narrowed to `"L"`; a mojibake
+colour split across colour and product_type; one whole case whose extraction failed.
+
 ## Retrieval
 
 Agent's own text search reaches the answer on **43.8%** of fillable held-out cases (14/32).
@@ -64,8 +83,7 @@ ESCI examples and products; WebShop instructions and attribute map.
 
 ## Never measured
 
-Extraction precision against hand labels. Whether published merchant data is true.
-Underwriting, loss rates, pricing. Injection resistance against a hostile corpus. Any
+Whether published merchant data is true. Underwriting, loss rates, pricing. Injection resistance against a hostile corpus. Any
 surface other than a JSON API agent. `mark` and `verify` accuracy.
 
 ## Retracted — do not reuse
@@ -111,9 +129,11 @@ result is itself the argument for a gate that does not ask permission.
 
 ## Open
 
-- Extraction has never been scored against hand labels. It is the largest unmeasured error
-  surface and every gate number above is conditional on it.
+- Extraction is scored against the generator's spec, not against hand labels. That
+  measures recovery of a machine-written requirement from machine-written prose; a real
+  shopper's wording is not in evidence anywhere.
 - `mark` and `verify` unscored.
+- Whether published merchant data is true. Nothing here tests that and nothing can.
 - A three-arm agent run on the fresh corpus is prepared in `output/fresh-2026-09-10/` and
   unrun: Groq's 200k tokens/day cap. It measures persuasion, so it is no longer the
   headline — but the arms are built and the retrieval repair is untested end to end.
