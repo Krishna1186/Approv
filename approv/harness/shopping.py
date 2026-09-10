@@ -270,6 +270,7 @@ class Session:
             snapshot_hash=digest(snapshot),
             model_version=self.binding["implementation"]["source_hash"][:16],
             prompt_version=VERSION,
+            unread=tuple(self.case.interpretation_notes),
             turns=tuple(AgentTurn(tool=e["payload"]["action"]["type"],
                                   raw_arguments=e["payload"]["action"])
                         for e in self.events if e["kind"] == "action"),

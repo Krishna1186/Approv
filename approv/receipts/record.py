@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from approv.evaluator import VERSION as EVALUATOR_VERSION, decide
 from approv.types.core import (
     AgentTurn, Attestation, CategorySchema, Claim, ComparisonRecord, Constraint,
-    Finding, ReasonCode,
+    Criticality, Finding, ReasonCode,
 )
 
 VERSION = "receipt-v1"
@@ -40,13 +40,42 @@ def completeness(schema: CategorySchema, constraints: tuple[Constraint, ...]) ->
     return tuple(sorted(spec.name for spec in schema.attributes if spec.name not in named))
 
 
-def floor_is_met(findings: tuple[Finding, ...]) -> bool:
-    """Whether every attribute the category cannot be verified without was supplied.
+def floor_is_met(findings: tuple[Finding, ...], unread: tuple[str, ...] = ()) -> bool:
+    """Whether verification had its preconditions at all.
 
     Read off the findings rather than recomputed from the schema, so there is exactly one
     place that decides a floor was missed. Two implementations of the same rule drift,
     and this one gates a `confirm`.
+
+    An unread part of the request fails the floor too, and that is not a stretch of the
+    idea — the floor is the set of things without which verification was never possible,
+    and not having finished reading the request is the strongest case of that there is.
+    Measured on the fresh corpus: every false allow in the first gate scoring was one
+    case, `fresh-42`, whose request said "Stone Two Tone" and whose extractor recorded
+    that it could not encode it. The gate then allowed three comforters in the wrong
+    colour. The extractor had already said the words; nothing was listening.
+
+    Routing to `confirm` rather than `refuse` is the point. The purchase is not blocked,
+    it is escalated, which is the only branch that is recoverable (section 2.6).
+
+    Whether to apply this at all is `strict_unread`, and it is a business parameter rather
+    than a constant, because section 2.6 says a false allow and a false refuse do not cost
+    the same and the ratio differs per merchant. Both operating points are measured on the
+    fresh corpus, 1,057 pairs over 34 requests:
+
+        strict_unread=True    false allow  0.0% [0.0, 0.4]   nuisance confirm  48.4%
+        strict_unread=False   false allow  0.3% [0.1, 0.9]   nuisance confirm   3.3%
+
+    Neither is obviously right and picking one here would be picking a merchant's risk
+    appetite for them. What the numbers do say is that the gate is the wrong place to fix
+    this: 35 of the 44 nuisance confirms are one request whose unread note was "not
+    backordered", which is a restatement of the availability requirement the extractor had
+    already captured. Nothing was lost and the gate escalated anyway. The repair belongs in
+    extraction — a note that duplicates a constraint should not be recorded as a note —
+    and until that lands this parameter is how a merchant chooses which error to eat.
     """
+    if unread:
+        return False
     return not any(ReasonCode.FLOOR_NOT_MET in f.reasons for f in findings)
 
 
@@ -70,6 +99,8 @@ def build_record(
     attestation: Attestation = Attestation.NEITHER,
     prev_hash: str | None = None,
     timestamp: datetime | None = None,
+    unread: tuple[str, ...] = (),
+    strict_unread: bool = True,
 ) -> ComparisonRecord:
     """Assemble one unsigned ComparisonRecord and decide it.
 
@@ -82,7 +113,8 @@ def build_record(
     wants to override it, that caller is the decision path and the company's central
     claim is false.
     """
-    decision, reasons = decide(findings, floor_met=floor_is_met(findings))
+    decision, reasons = decide(
+        findings, floor_met=floor_is_met(findings, unread if strict_unread else ()))
     return ComparisonRecord(
         correlation_id=correlation_id,
         agent_id=agent_id,
@@ -100,6 +132,7 @@ def build_record(
         snapshot_hash=snapshot_hash,
         findings=findings,
         completeness=completeness(schema, constraints),
+        unread=unread,
         decision=decision,
         decision_reasons=reasons,
         model_version=model_version,

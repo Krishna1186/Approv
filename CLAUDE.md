@@ -74,12 +74,15 @@ ComparisonRecord
 ```
 approv/
   types/        shared vocabulary. Imports nothing from approv.
-  semantic/     model call -> fields. No verdict, ever.
   algebra/      typed comparison operators -> findings.
   evaluator/    pure functions. findings -> allow|confirm|refuse.
-  receipts/     Ed25519-signed, hash-chained records + a standalone verifier.
-  harness/      corpora through the decision path, emits metrics.
-  surfaces/     mock storefront, confirmation screen.
+  receipts/     record assembly, Ed25519 signing, hash chain.
+  harness/      extraction (intent.py), catalogue filter, sessions, storefront, metrics.
+
+Extraction lives in `harness/intent.py` and the storefront in `harness/storefront.py`.
+Earlier drafts named `semantic/` and `surfaces/` packages; they were never created and
+the names are dropped rather than carried as aspiration. The boundary that matters is
+enforced and tested: `evaluator/` imports only `approv.types`.
 ```
 
 ---
@@ -131,8 +134,9 @@ cost. Never state a behaviour number as an accuracy number.
 
 ## 5. The MVP — done by Sunday
 
-The engine exists. The decision path does not: `decide()` has zero call sites and
-`ComparisonRecord` has never been constructed. That is the whole gap.
+The decision path is built: `decide()` is called from `receipts/record.py`, sessions
+gate on it, and records are signed and chained. What was missing after that is an
+*evaluation* of it — see §6.
 
 | # | Deliverable | Rough size |
 |---|---|---|
@@ -153,7 +157,29 @@ record, the merchant plugin, a new accuracy claim.
 
 ---
 
-## 6. Attack surface
+## 6. How the gate is measured
+
+Every accuracy number published before 10 September measured a different mechanism from
+the one being sold. The forked study shows an agent a report and asks whether its second
+answer changes — that is persuasion, it never calls `decide()`, and it is bounded by how
+stubborn the model is and by an n of 46 with a noise floor near ±8 pp. Three such studies
+returned +0.0 pp, which is the expected result from testing whether text changes a
+model's mind.
+
+The gate is a classifier and is scored as one, by `scripts/score_gate.py`: no agent, no
+model call at evaluation time, thousands of pairs, on every commit. Requirements come
+from the extractor and never from the answer key — feeding the key's own spec back in
+would make the gate and the key the same computation over the same fields and the matrix
+would come back perfect having measured nothing.
+
+Report three outcomes against two truths, split by population, because `confirm` is not a
+third error but a different cost, and near-misses are the failure this exists for while
+unrelated products are the easy half. Never average the call sites (invariant 7).
+
+The persuasion study is kept, demoted: it scores `verify`, which is a real surface, and
+its null result is itself the argument for a gate that does not ask permission.
+
+## 7. Attack surface
 
 Written as a catalogue — attack, entry point, absorbing component, proving test. Priority
 order is deliberate: near-miss substitution first (wrong variant, pack size, quantity —
@@ -169,7 +195,7 @@ nobody is answerable for — reviews, Q&A, third-party seller copy.
 
 ---
 
-## 7. How we work now
+## 8. How we work now
 
 - **Write code when asked.** Explanation on request, not by default.
 - **Teach-back on anything non-obvious:** what it does, why, what was rejected. Short.
@@ -179,7 +205,7 @@ nobody is answerable for — reviews, Q&A, third-party seller copy.
 - **Every claim carries its denominator.** Retracted claims stay listed in `progress.md`.
 - **Prose is a cost.** A decision record earns its place only for §3.8 changes.
 
-## 8. Stack
+## 9. Stack
 
 Python · Pydantic · pytest · Ed25519 via `cryptography` · SQLite before Postgres ·
 FastAPI only at the surface layer · no agent framework in the engine · small commits.

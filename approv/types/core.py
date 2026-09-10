@@ -448,6 +448,12 @@ class ComparisonRecord(BaseModel):
     # none of our code, and "recompute it with our engine" fails that bar. An operator
     # who cannot attribute a refusal to a named attribute switches the check off.
     decision_reasons: tuple[str, ...] = ()
+    # What the request said that we could not encode. Distinct from `completeness`, and
+    # the distinction is the whole liability story: silence is nobody's fault and is not
+    # covered, whereas a requirement we failed to read is *ours*. Both look like an absent
+    # constraint from inside the engine, so without this field an extraction miss is
+    # recorded as the shopper having said nothing and absolves everyone.
+    unread: tuple[str, ...] = ()
 
     model_version: str
     evaluator_version: str
