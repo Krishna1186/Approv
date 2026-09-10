@@ -38,14 +38,24 @@ def candidate_followup(original_case, record, products, chosen, schema):
         raise ValueError("ID-only forked study cannot test cart counts; use the shopping session runner")
     shelf = check_shelf(case, tuple(products), schema, proposed=chosen)
     proposed = next((p for p in products if p.id == chosen), None)
-    report = shelf["feedback"]
+    # The shelf report ends on the move it wants made, and `approv_report` is the last
+    # thing in the user message, so whatever is appended here becomes the last line the
+    # model reads. Appending the per-product detail after it put "OK: availability, size."
+    # or a bare "Unverified request details:" in that position on 22 of 46 cases, and the
+    # abstain branch put "the shelf assessment still applies" there on the other 24 —
+    # filler, in the one position that was carrying the instruction. The detail about the
+    # standing answer belongs before the shelf verdict, not after it.
+    lines = []
     if proposed is not None:
-        report += "\nPrevious proposal:\n" + check_product(case, proposed, schema)["feedback"]
-    elif chosen == "ABSTAIN":
-        report += "\nYour previous answer was to abstain; the shelf assessment still applies."
-    else:
-        report += "\nThe previous answer was not a candidate ID; no product proposal was checked."
-    return report, shelf
+        lines += ["Your previous answer, checked on its own:",
+                  check_product(case, proposed, schema)["feedback"]]
+    elif chosen != "ABSTAIN":
+        lines.append("Your previous answer was not a candidate ID; no product proposal "
+                     "was checked.")
+    # No branch for ABSTAIN: `pick_stage` already states YOUR EARLIER ANSWER separately,
+    # and `check_shelf` says whether that answer is among the supported candidates.
+    lines.append(shelf["feedback"])
+    return "\n".join(lines), shelf
 
 
 def candidates(products, blobs, request, k, families=None, idf=None):
@@ -417,10 +427,17 @@ def main():
                         print(json.dumps({"blocked": error.code, "case": cid, "done": len(store)}))
                         return 2
                     delays.append(wait + 1)
+            # `raw_output` is kept so this extraction can be replayed through --readings
+            # instead of resampled. Without it, changing a guard in intent.py and
+            # re-running mixes the guard's effect with a fresh draw from the model, and
+            # the two cannot be separated afterwards — which is exactly the position the
+            # 10 September run left behind, because it stored only the parsed result.
             store[cid] = {"status": meta["status"], "tokens": meta.get("usage", {}).get("total_tokens", 0),
                           "constraints": [c.model_dump(mode="json") for c in case.constraints],
                           "notes": list(case.interpretation_notes),
-                          "requested_units": case.requested_units, "quantity_scope": case.quantity_scope}
+                          "requested_units": case.requested_units, "quantity_scope": case.quantity_scope,
+                          "raw_output": meta.get("raw_output"), "extractor": meta.get("version"),
+                          "extractor_model": meta.get("model"), "prompt_hash": meta.get("prompt_hash")}
             path.write_text(json.dumps(store, indent=1), encoding="utf-8")
         parsed = sum(1 for v in store.values() if v["status"] == "parsed")
         print(json.dumps({"cases": len(store), "parsed": parsed,
