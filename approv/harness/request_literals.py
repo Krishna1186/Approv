@@ -83,3 +83,86 @@ def repair_literals(original, interpreted, schema, catalogue_names=()):
             changes.append('Grounded sale count in explicit request wording')
     result=interpreted.model_copy(update={**updates,'constraints':tuple(constraints.values()),'interpretation_notes':tuple(notes)})
     return result,changes
+
+
+def recover_noted_values(interpreted, schema, published):
+    """Promote an unverified note that is verbatim a value the catalogue publishes.
+
+    The extractor drops a stated requirement into `unverified` when it has no closed list
+    to map onto. Colour has 1,146 distinct published values here and product_type 112, both
+    past the size at which a vocabulary can be put in a prompt, so the model writes the
+    shopper's words into the note field and the attribute goes unconstrained.
+
+    Measured on the fresh corpus: 4 of 7 notes are a verbatim published value of an
+    attribute that has no constraint — "Stone Two Tone" and "Pride" and "Tri-Fusion" are
+    colours, "in stock" is an availability. One of them, fresh-42, produced every false
+    allow in the first gate scoring: the gate cleared three comforters in the wrong colour
+    because the colour requirement was sitting in a note nobody read.
+
+    This is not inference. The match is exact under `normalize_term`, which is the same
+    identity key the comparison operators use, so a value recovered here is one the engine
+    would have compared identically had the model emitted it in the first place. Three
+    guards keep it that way:
+
+      * the note must appear in the original request, so nothing is invented;
+      * it must match exactly one attribute, because a surface belonging to two attributes
+        is ambiguous and guessing which is exactly the inference this avoids;
+      * that attribute must be unconstrained, so a recovery can never overwrite or
+        contradict something the model did state.
+
+    A recovered value stops being a note, which is the point: it is no longer unread, so it
+    no longer fails the verification floor. Anything not recovered stays a note and still
+    does.
+    """
+    from approv.algebra.term import normalize_term
+
+    allowed = {a.name for a in schema.attributes}
+    constraints = list(interpreted.constraints)
+    held = {c.attribute for c in constraints}
+    text = normalize_term(interpreted.request)
+    kept, changes = [], []
+
+    for note in interpreted.interpretation_notes:
+        surface = normalize_term(str(note))
+        if not surface or surface not in text:
+            kept.append(note)
+            continue
+        matches = sorted(a for a, values in published.items()
+                         if a in allowed and a not in held and surface in values)
+        if len(matches) != 1:
+            kept.append(note)
+            continue
+        attribute = matches[0]
+        try:
+            candidate = Constraint(attribute=attribute, value=Term(surface=str(note)),
+                                   raw_text=str(note), channel=Channel.AGENT_MESSAGE)
+        except (TypeError, ValueError):
+            kept.append(note)
+            continue
+        constraints.append(candidate)
+        held.add(attribute)
+        changes.append({"recovered": attribute, "surface": str(note)})
+
+    if not changes:
+        return interpreted, []
+    return interpreted.model_copy(update={
+        "constraints": tuple(constraints),
+        "interpretation_notes": tuple(kept),
+    }), changes
+
+
+def published_values(inventory):
+    """attribute -> every value the catalogue publishes for it, as identity keys.
+
+    Separate from `published_vocabulary`, which is capped so it can go in a prompt. This
+    one is uncapped because it never reaches a model; it is only ever used to check whether
+    a note the model already wrote is a value that exists.
+    """
+    from approv.algebra.term import normalize_term
+    values = {}
+    for product in inventory.products:
+        for item in product.evidence:
+            surface = getattr(item.value, "surface", None)
+            if surface is not None:
+                values.setdefault(item.attribute, set()).add(normalize_term(surface))
+    return values

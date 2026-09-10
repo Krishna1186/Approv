@@ -411,6 +411,7 @@ def main():
     if args.stage == "interpret":
         from approv.harness.adapters import AdapterError
         from approv.harness.casepacks import published_vocabulary
+        from approv.harness.request_literals import published_values
         from approv.harness.intent import RequestInterpreter
         from scripts.run_study import get_key
         import time
@@ -421,7 +422,8 @@ def main():
         readings = json.loads(Path(args.readings).read_text(encoding="utf-8-sig")) if args.readings else None
         if readings is None:
             interpreter = RequestInterpreter("https://api.groq.com/openai/v1", args.model, get_key(),
-                                             "v4", vocabulary=published_vocabulary(inventory))
+                                             "v4", vocabulary=published_vocabulary(inventory),
+                                             published=published_values(inventory))
         else:
             import approv.harness.intent as intent_module
             pending = {}
@@ -431,7 +433,8 @@ def main():
                         "usage": {}, "model": args.model}
             intent_module.post_json = replay
             interpreter = RequestInterpreter("https://api.groq.com/openai/v1", args.model, "offline",
-                                             "v4", vocabulary=published_vocabulary(inventory))
+                                             "v4", vocabulary=published_vocabulary(inventory),
+                                             published=published_values(inventory))
         store = {}
         path = work / "constraints.json"
         if path.exists(): store = json.loads(path.read_text(encoding="utf-8"))

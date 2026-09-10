@@ -95,7 +95,8 @@ def dropped_requirement(note: str) -> bool:
 
 
 class RequestInterpreter:
-    def __init__(self, endpoint, model, key, version='v1', catalogue_names=(), vocabulary=None):
+    def __init__(self, endpoint, model, key, version='v1', catalogue_names=(), vocabulary=None,
+                 published=None):
         self.endpoint,self.model,self.key,self.version=endpoint.rstrip('/'),model,key,version
         if version not in ('v1','v2','v3','v4'):raise ValueError('unknown interpreter version')
         self.prompt={'v1':PROMPT_V1,'v4':PROMPT_V4}.get(version,PROMPT_V2)
@@ -107,6 +108,9 @@ class RequestInterpreter:
         # second, stricter notion of "the same value" here meant the guard could reject a
         # requirement that the operator would have matched, which is the worst of both.
         self._admissible={k:{normalize_term(x) for x in v} for k,v in self.vocabulary.items()}
+        # Every published value, uncapped, used only to recognise a value the model already
+        # wrote into a note. Never sent to the model — see recover_noted_values.
+        self.published={k:set(v) for k,v in (published or {}).items()}
 
     def __call__(self, case, schema):
         request={'request':case.request,'attributes':{
@@ -186,6 +190,10 @@ class RequestInterpreter:
                 result,changes=repair_literals(case,result,schema,self.catalogue_names)
                 metadata['literal_checks']=changes
                 metadata['catalogue_vocabulary_hash']=digest(self.catalogue_names)
+            if self.published:
+                from approv.harness.request_literals import recover_noted_values
+                result,recovered=recover_noted_values(result,schema,self.published)
+                if recovered:metadata['recovered_from_notes']=recovered
             metadata['supported_requirement_count']=len(result.constraints)+(result.requested_units is not None)
             if not result.constraints and result.requested_units is None and not result.interpretation_notes:
                 result=result.model_copy(update={'interpretation_notes':(
