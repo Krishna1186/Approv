@@ -16,8 +16,10 @@ def export_study(destination):
     files += list((root/'scripts').glob('*.py'))
     files += list((root/'approv').rglob('*.py'))
     files += list((root/'tests').rglob('*.py'))
-    files += [root/'docs'/name for name in ('product-requirements.md','shopping-harness.md',
-              'shopping-study-results-2026-09-08.md','public-shopping-datasets.md','security.md','external-review-2026-09-08.md')]
+    files += [root/'docs'/name for name in ('shopping-harness.md','security.md',
+              'direction-2026-09-11.md')]
+    files += [root/'docs/archive'/name for name in ('product-requirements.md',
+              'shopping-study-results-2026-09-08.md','public-shopping-datasets.md','external-review-2026-09-08.md')]
     files += [root/'docs/decisions'/name for name in ('0017-traceable-shopping-experiments.md',
               '0018-original-requests-and-synthetic-experiments.md')]
     files += [root/'data/cache/public-shopping/esci'/name for name in ('LICENSE','NOTICE','README.md','manifest.json')]

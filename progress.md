@@ -129,10 +129,20 @@ result is itself the argument for a gate that does not ask permission.
 
 ## Direction
 
-Reset 11 September: agent-side integration, not merchant checkout. Only a position next to
-the agent's reasoning can see the agent misreading the human, which is the failure with no
-liable party today. `docs/direction-2026-09-11.md` has the integration surface, the
-guarantee shape, GTM sequencing and criticality inference.
+Reset 11 September, then inverted the same day (DR 0020). The morning's conclusion —
+agent-side integration is architecturally necessary — was answering a question the product
+does not have to ask. Proving *the agent erred* needs the human's raw request and is
+unreachable. Proving *the merchant did not err* needs the agent's stated request and the
+merchant's fulfilment record, both already merchant-side.
+
+Approv is the **dispute artifact** for agent-authorised transactions: did the merchant
+deliver what was asked for, and if they are compelled to refund anyway, Approv absorbs a
+capped portion. The merchant pays, because the merchant holds the loss. Coverage attaches
+per channel, never per order — nobody is at an agentic checkout to elect anything.
+Agent-side integration is kept as a strictly easier input case, not a precondition.
+
+`docs/direction-2026-09-11.md` has the request sources, the sequencing, revenue beyond the
+merchant fee, and the full criticality design.
 
 CONFIRM is now a bounded evidentiary challenge (`approv/challenge.py`), not repair advice:
 Approv names the attribute and the bar, the agent gets one round to cite a source, Approv

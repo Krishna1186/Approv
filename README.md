@@ -1,9 +1,9 @@
 # Approv
 
-The check between an agent's pick and the money, and the record that survives a dispute.
-A stated request and a product go in; per-attribute findings, one decision
-(allow/confirm/refuse) and a signed, hash-chained record come out. No model in the
-decision path.
+The dispute artifact for agent-authorised transactions. A stated request and a product go
+in; per-attribute findings, one decision (allow/confirm/refuse) and a signed, hash-chained
+record come out. The record answers one question when a refund is demanded — did the
+merchant deliver what was asked for? No model in the decision path.
 
 ```powershell
 python -m pytest -q -p no:cacheprovider

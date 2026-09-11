@@ -1,6 +1,6 @@
 # Decision records — index
 
-19 records, 23,480 words, **9 still open**. Read this
+20 records, **10 still open**. Read this
 file instead of opening them. Full text is kept for the reasoning, not for re-reading.
 
 Under the 10 September contract only a §3.8 change earns a new record: the decision path,
@@ -27,6 +27,7 @@ coverage language, or a number that will be published. Nothing else does.
 | [0017](0017-traceable-shopping-experiments.md) | Traceable shopping experiments and comparison corrections | closed |
 | [0018](0018-original-requests-and-synthetic-experiments.md) | DR 0018: Original requests and disclosed synthetic experiments | closed |
 | [0019](0019-candidate-evidence-review.md) | DR 0019: Review the retrieved shelf with explicit evidence limits | closed |
+| [0020](0020-merchant-defence-and-the-dispute-artifact.md) | Merchant defence, and the record as a dispute artifact | **OPEN** |
 
 ## The open ones, and whether they still matter
 
@@ -39,5 +40,13 @@ dropped rather than carried:
 - **0016 grounding reframe** — already adopted; it is §1 of the contract. Close it.
 - **0015 data deadlock** — answered: answer keys derive from published fields by code. Close it.
 - **0004, 0005, 0008, 0009** — written for the intent-matching framing DR 0016 replaced. Re-read against §1 before spending more on them.
-- **0012 underwriting** — self-marked not actionable without loss data. Park it.
+- **0012 underwriting** — unparked by DR 0020. The guarantee is now the product, not a
+  someday feature. Still blocked on loss data, but it is the thing to go get.
+- **0010 agent-side product** — reopened by DR 0020. Its conclusion that the agent is the
+  customer is demoted: the agent-side surface is kept as an easier input case, but the
+  merchant is the buyer.
+
+DR 0020 is the live one. Its two unmeasured numbers — the share of agent orders carrying a
+recoverable stated request, and the share of clean-record refunds provable from merchant
+fulfilment records — decide whether the product works.
 

@@ -19,6 +19,25 @@ signed record that survives a dispute.**
 Not a shopping agent, not a payments product, not a fraud tool. The check between the
 pick and the money, and the evidence that outlives it.
 
+**Who we defend, and why that decides everything (DR 0020).** Proving *the agent erred*
+needs the human's raw request, which we will never have. Proving *the merchant did not
+err* needs the agent's stated request and the merchant's own fulfilment record — both
+already merchant-side. Inverting the burden of proof removes the access problem, and it
+is why the product is merchant-facing.
+
+The merchant holds the loss: goods, revenue, return logistics, the per-dispute fee, and
+above a network's dispute-ratio threshold, their card acceptance itself. A burst of
+simultaneous agentic disputes is an existential event, not a cost line. So the merchant
+pays, coverage attaches per channel rather than per order, and no consumer-facing surface
+exists — nobody is at an agentic checkout to elect anything.
+
+**What the record is.** The dispute artifact. Its forum is the merchant's returns desk
+before any card network, because most wrong-item losses become returns, where the merchant
+is judge and payer and nobody external has to accept our format. Its strength is
+proportional to the specificity of the stated request — a vague request satisfies almost
+anything, swells the completeness vector and proves little. That is correct behaviour
+under §2.2 and it bounds coverage.
+
 **Positioning, corrected by our own data:** we sell **attribution**, not accuracy. Three
 studies showed +0.0 pp against a "look again" control, because on a task where the agent
 can already see every candidate, we add no information — only re-ranked attention. As
@@ -49,7 +68,11 @@ function *authorises*.
 5. **One function, three call sites, never averaged.** `mark` (score N results, never
    reorder) · `verify` (score one pick) · `gate` (refuse before the debit).
 6. **Errors are asymmetric.** A false allow is a wrong purchase; a false refuse is a lost
-   sale. The threshold is a business parameter, not a constant.
+   sale. The threshold is a business parameter, not a constant. Under a guarantee the two
+   land on different balance sheets — a false allow costs us a payout, a false refuse
+   costs the merchant a sale — so criticality maps to **coverage**, not only to the
+   decision: HARD satisfied is guaranteed, SOFT or unstated is out of coverage, and a soft
+   mismatch is declined insurance rather than a blocked sale.
 7. **The signed object is the comparison, not the payment.** UAP signs payments. We sign
    a comparison between a stated request and a product. Never conflate them.
 8. **The preference record.** Confirmed purchases accrue constraints the shopper holds
@@ -132,28 +155,25 @@ cost. Never state a behaviour number as an accuracy number.
 
 ---
 
-## 5. The MVP — done by Sunday
+## 5. What is built, and what is next
 
-The decision path is built: `decide()` is called from `receipts/record.py`, sessions
-gate on it, and records are signed and chained. What was missing after that is an
-*evaluation* of it — see §6.
+**Built.** The decision path: `decide()` called from `receipts/record.py`, sessions gating
+on it, Ed25519-signed hash-chained records, a standalone verifier that imports no engine
+code, the `gate` call site, and `approv/challenge.py` — one bounded evidentiary round that
+replaced repair advice.
 
-| # | Deliverable | Rough size |
-|---|---|---|
-| 1 | `completeness` — schema attributes the request never constrained | ~10 lines |
-| 2 | Call `decide()` on the verify path, carrying the floor | ~20 lines |
-| 3 | Build `ComparisonRecord` from a real session | ~40 lines |
-| 4 | `receipts/` — Ed25519 signing, hash chain, append-only store | ~120 lines |
-| 5 | `scripts/verify_receipt.py` — standalone, no engine import | ~40 lines |
-| 6 | `gate` call site — refuse before the debit fires | ~30 lines |
-| 7 | 60-second demo: request → decision → receipt → independent verification | — |
+**Next, in order (DR 0020).** Everything here serves the record as a dispute artifact.
 
-**Definition of done:** a stranger verifies a receipt with a public key and none of our
-code; `gate` refuses a wrong purchase and the refusal is a first-class record; the
-allow/confirm/refuse distribution over the large corpus is reported with its denominator.
+| # | Deliverable |
+|---|---|
+| 1 | Per-transaction criticality: request-derived, schema-derived, returns-calibrated |
+| 2 | Declared-intent intake — the field addressed to the agent, and its absence as a coverage gradient |
+| 3 | Stated-request adapters: ACP / AP2 / storefront MCP, on-site search and filter parameters |
+| 4 | The dispute artifact itself — what a merchant hands a returns desk, not a JSON dump |
+| 5 | Coverage scoping on the record: which findings are guaranteed and which are out |
 
-**Not in scope this weekend:** underwriting, pricing, live payments, the preference
-record, the merchant plugin, a new accuracy claim.
+**Not in scope:** live underwriting, priced guarantees, payment execution, the preference
+record, consumer-facing anything, a new accuracy claim.
 
 ---
 
