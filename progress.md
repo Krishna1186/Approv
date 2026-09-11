@@ -127,6 +127,23 @@ result is itself the argument for a gate that does not ask permission.
 - The extractor filed stated requirements as unverified when it had no closed list to map
   onto. Recovering them collapsed a 45-point nuisance/false-allow trade-off.
 
+## Direction
+
+Reset 11 September: agent-side integration, not merchant checkout. Only a position next to
+the agent's reasoning can see the agent misreading the human, which is the failure with no
+liable party today. `docs/direction-2026-09-11.md` has the integration surface, the
+guarantee shape, GTM sequencing and criticality inference.
+
+CONFIRM is now a bounded evidentiary challenge (`approv/challenge.py`), not repair advice:
+Approv names the attribute and the bar, the agent gets one round to cite a source, Approv
+reads it and resolves to ALLOW or REFUSE. A citation carries no value — an agent that could
+state the value could clear its own check.
+
+**The Shopify corpus cannot test it.** Of 70 CONFIRMs, 62 are one case failing the unread
+floor and 30 are `claim_more_specific` on size from the `"size 6"` artifact.
+`PRODUCT_SILENT` fires zero times: that catalogue publishes every attribute exactly, so
+there is nothing to cite. The challenge loop needs the Amazon prose corpus.
+
 ## Open
 
 - Extraction is scored against the generator's spec, not against hand labels. That
@@ -134,10 +151,10 @@ result is itself the argument for a gate that does not ask permission.
   shopper's wording is not in evidence anywhere.
 - `mark` and `verify` unscored.
 - Whether published merchant data is true. Nothing here tests that and nothing can.
-- A three-arm agent run on the fresh corpus is prepared in `output/fresh-2026-09-10/` and
-  unrun: Groq's 200k tokens/day cap. It measures persuasion, so it is no longer the
-  headline — but the arms are built and the retrieval repair is untested end to end.
-- Real integration shapes are untested. Cart submission (ACP/AP2) carries no query text at
-  all, so merchant-side Approv is blind there; MCP endpoints already expose filters, so the
-  live gap is whether the agent's filter call matches what the customer said —
-  `CheckKind.CONSISTENCY` exists for exactly this and has never been used.
+- The challenge loop is untested against any corpus. Next: build a prose-corpus pack from
+  ESCI/Amazon where `PRODUCT_SILENT` and `LOW_CERTAINTY_SOURCE` actually fire, and measure
+  what fraction of CONFIRMs a citation can resolve.
+- Criticality is still static per schema, not per transaction.
+- The agent-side SDK surface is specified, not built.
+- The three-arm agent run prepared in `output/fresh-2026-09-10/` is unrun and now demoted:
+  it measures persuasion, which is the interaction the reset killed.
