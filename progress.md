@@ -154,6 +154,42 @@ floor and 30 are `claim_more_specific` on size from the `"size 6"` artifact.
 `PRODUCT_SILENT` fires zero times: that catalogue publishes every attribute exactly, so
 there is nothing to cite. The challenge loop needs the Amazon prose corpus.
 
+## Extraction quotes, and a wrong conclusion corrected
+
+Commit f96181f concluded the corpus carried "zero hedges, zero negations, zero
+corrections" and that per-transaction criticality was therefore untestable. **That was a
+measurement of post-extraction constraints, not of the corpus.** shopper-v2's held-out
+requests carry emphasis in 26 of 42, a negation in 29, a hedge in 8.
+
+`raw_text` was the *value* quote. "It has to be in stock" was stored as `in stock`, so the
+words that made it hard were gone before `criticality.request_layer` ran — its regexes were
+reading a field that structurally could not contain what they looked for. The tell was that
+correction worked and emphasis, negation and hedging did not: correction reads the
+extractor's supersession notes rather than the quote, and it was the one signal wired to a
+field nothing truncated.
+
+PROMPT_V6 widens the quote to the whole clause, still verbatim and contiguous so the
+grounding guards hold. Same model, same pack, same split as the captured v5 run:
+
+| | v5 | v6 |
+|---|---:|---:|
+| Median quote length | 2 words | **5 words** |
+| Quotes of 1–2 words | 144/164 | **40/165** |
+| Quotes carrying a Layer 1 marker | 7 (4.3%) | **31 (18.8%)** |
+| Constraints resolving HARD | 9 (5%) | **28 (17%)** |
+| Parsed / grounding failures | 42/42, 0 | 42/42, 0 |
+
+The static table called everything but price HARD. Per transaction, 83% resolve BOUND —
+plainly stated — and 17% HARD. Both block, so no decision moves; what moves is **coverage**
+(property 6), which is where the distinction was always meant to land.
+
+Two limits. 60 of 165 constraints share a quote with another attribute, though only 2 of
+those shared quotes carry a marker, so contamination is 2 constraints rather than 60. And
+hedging still resolves nowhere: shopper-v2's hedges attach to *"Not fussed about the
+brand"* (a non-requirement) and *"eco-friendly packaging"* (outside the schema), so **no
+hedged requirement on a schema attribute exists in this corpus**. That path remains
+untested, for a corpus reason rather than a pipeline one.
+
 ## Open
 
 - Extraction is scored against the generator's spec, not against hand labels. That
@@ -161,6 +197,8 @@ there is nothing to cite. The challenge loop needs the Amazon prose corpus.
   shopper's wording is not in evidence anywhere.
 - `mark` and `verify` unscored.
 - Whether published merchant data is true. Nothing here tests that and nothing can.
+- Hedge -> SOFT is unexercised: no corpus has a hedged requirement on a schema attribute.
+- Quote bleed: one clause serving several attributes, 60 of 165, 2 of them marker-bearing.
 - The challenge loop is untested against any corpus. Next: build a prose-corpus pack from
   ESCI/Amazon where `PRODUCT_SILENT` and `LOW_CERTAINTY_SOURCE` actually fire, and measure
   what fraction of CONFIRMs a citation can resolve.

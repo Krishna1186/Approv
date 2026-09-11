@@ -86,6 +86,41 @@ schema (that has its own place in unverified already, unmarked).
 '''
 
 
+# v6 widens `quote`. Measured on the captured v5 run over shopper-v2: 144 of 164 quotes
+# were one or two words — 'Blue', 'Size 9', 'in stock' — because "exact substring of
+# request" invites the minimal span that contains the value. The requests themselves carry
+# the signal (26 of 42 held-out requests use emphasis, 29 a negation, 8 a hedge), and the
+# quote was throwing it away before anything downstream could read it.
+#
+# That truncation silently disabled two thirds of per-transaction criticality:
+# `criticality.request_layer` looks for emphasis, negation and hedging in `raw_text`, and
+# 'in stock' structurally cannot contain the "it has to be" that made it hard. The tell was
+# that correction worked and the other three did not — correction reads the supersession
+# notes rather than the quote, and it is the one signal wired to a field nothing truncates.
+#
+# A wider quote is also strictly better evidence on a dispute artifact (DR 0020). The quote
+# is provenance, not the compared value: `_value_text` already draws the comparison text
+# from the value rather than the quote, and nothing in algebra/, evaluator/ or receipts/
+# compares on `raw_text`.
+PROMPT_V6 = PROMPT_V5 + '''
+Widen every quote to the whole clause the requirement was stated in, not the bare value.
+Include the words that say how firmly it is held — "it has to be", "must", "exactly",
+"no", "not", "without", "preferably", "ideally", "around", "or similar" — and any
+negation or qualifier attached to it. Stop at the clause boundary: a comma, a full stop,
+or a conjunction joining a different requirement.
+Examples, for a request reading "Get me the laced boots in Dark brown. Size 9, and it has
+to be in stock, not backordered.":
+  availability -> "it has to be in stock, not backordered"   (not "in stock")
+  size         -> "Size 9"
+  color        -> "in Dark brown"
+Every quote must still be an exact contiguous substring of the request, copied character
+for character, and must still contain the value you extracted. Do not join text across a
+gap, do not reorder, do not paraphrase, do not add words. A quote that fails any of those
+is discarded and its requirement is lost, so prefer a shorter correct quote to a longer
+invented one.
+'''
+
+
 # Notes carrying these prefixes are the guards below reporting that a requirement they
 # could have checked was dropped: an attribute outside the schema, a value outside the
 # published vocabulary, a quote that was not in the request, a value that would not
@@ -245,8 +280,8 @@ class RequestInterpreter:
     def __init__(self, endpoint, model, key, version='v1', catalogue_names=(), vocabulary=None,
                  published=None):
         self.endpoint,self.model,self.key,self.version=endpoint.rstrip('/'),model,key,version
-        if version not in ('v1','v2','v3','v4','v5'):raise ValueError('unknown interpreter version')
-        self.prompt={'v1':PROMPT_V1,'v4':PROMPT_V4,'v5':PROMPT_V5}.get(version,PROMPT_V2)
+        if version not in ('v1','v2','v3','v4','v5','v6'):raise ValueError('unknown interpreter version')
+        self.prompt={'v1':PROMPT_V1,'v4':PROMPT_V4,'v5':PROMPT_V5,'v6':PROMPT_V6}.get(version,PROMPT_V2)
         self.catalogue_names=tuple(catalogue_names)
         # Attribute -> admissible surfaces, normally the values the catalogue publishes.
         # A request naming something outside it is unverifiable here, never a violation.
