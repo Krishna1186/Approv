@@ -297,6 +297,12 @@ class FieldProfile(BaseModel):
     liability: Liability
     certainty: Certainty
     is_advice: bool = False
+    # The merchant carries a separate SKU per value of this attribute. That is a
+    # merchandising decision they pay for in inventory, and nobody stocks twelve variants
+    # of something customers do not choose on — so it is the merchant telling us, for
+    # free and in every catalogue on every platform, which attributes are selected on.
+    # Read by `criticality.schema_layer`.
+    is_variant_axis: bool = False
 
 
 class CategorySchema(BaseModel):

@@ -100,6 +100,7 @@ def run_checks(
     claims: tuple[Claim, ...],
     evidence: tuple[Evidence, ...],
     schema: CategorySchema,
+    specs: dict[str, AttributeSpec] | None = None,
 ) -> tuple[Finding, ...]:
     """Check every attribute the schema defines, and report all outcomes.
 
@@ -110,6 +111,14 @@ def run_checks(
     names = [s.name for s in schema.attributes]
     if len(set(names)) != len(names) or not schema.floor <= set(names):
         raise ValueError("schema has duplicate attributes or an undefined floor")
+    # `specs` is the schema with criticality resolved for this transaction. The operators
+    # read `spec.criticality` and are untouched by it: per-transaction criticality is a
+    # change to how the schema is applied, not to how anything compares.
+    if specs is not None:
+        if set(specs) != set(names):
+            raise ValueError("resolved specs must cover exactly the schema's attributes")
+        schema = schema.model_copy(update={
+            "attributes": tuple(specs[name] for name in names)})
     profiles = {p.field_name: p for p in schema.field_profiles}
     if len(profiles) != len(schema.field_profiles):
         raise ValueError("duplicate field profiles")
@@ -247,11 +256,22 @@ def dimension_of(spec: AttributeSpec) -> Dimension:
 
 
 def check_constraints(constraints: tuple[Constraint, ...], evidence: tuple[Evidence, ...],
-                      schema: CategorySchema) -> tuple[Finding, ...]:
-    """Compare fixed recorded constraints to inventory. No purchase decision."""
+                      schema: CategorySchema, *,
+                      returns=None, superseded=frozenset(),
+                      per_transaction: bool = True) -> tuple[Finding, ...]:
+    """Compare fixed recorded constraints to inventory. No purchase decision.
+
+    Criticality is resolved per transaction from the shopper's own phrasing, the
+    merchant's variant axes and their return history — see `approv.criticality`. Pass
+    `per_transaction=False` to fall back to the schema's static constants, which exists
+    for comparing against the old behaviour and not for production.
+    """
+    from approv.criticality import applied
+    specs = (applied(schema, constraints, returns=returns, superseded=superseded)
+             if per_transaction else None)
     claims = tuple(Claim(attribute=c.attribute, value=c.value, channel=c.channel,
                          raw_text=c.raw_text) for c in constraints)
-    findings = run_checks(claims, evidence, schema)
+    findings = run_checks(claims, evidence, schema, specs)
     by_name = {c.attribute: c for c in constraints}
     return tuple(f.model_copy(update={"check": CheckKind.SATISFACTION,
                  "constraint": by_name.get(f.attribute)}) for f in findings)

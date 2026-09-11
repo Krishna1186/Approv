@@ -66,7 +66,14 @@ def test_conflicting_evidence_remains_unresolved():
 
 
 def test_soft_preference_cannot_rule_out_a_shelf():
-    report = check_shelf(case(), (product("other", "S"),), schema(Criticality.SOFT))
+    """A preference is now something the shopper hedges, not a constant in the schema.
+    "preferably M" is soft for this purchase; a bare "M" is not, whatever the table says.
+    That is the point of per-transaction criticality — the same attribute is trivial to
+    one shopper and the reason for the purchase to the next."""
+    hedged = case(constraints=(Constraint(attribute="size", value=Term(surface="M"),
+                                          channel=Channel.AGENT_MESSAGE,
+                                          raw_text="preferably M"),))
+    report = check_shelf(hedged, (product("other", "S"),), schema(Criticality.SOFT))
     assert not report["all_contradicted"]
     assert report["groups"]["contradicted"] == []
     assert report["groups"]["unassessed"] == ["other"]

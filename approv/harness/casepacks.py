@@ -162,8 +162,8 @@ def shopify_schema():
     ), field_profiles=(
         FieldProfile(field_name='product.vendor', attributes=('brand',), certainty=Certainty.EXACT, liability=Liability.MERCHANT_GUARANTEED),
         FieldProfile(field_name='product.product_type', attributes=('product_type',), certainty=Certainty.EXACT, liability=Liability.MERCHANT_GUARANTEED),
-        FieldProfile(field_name='variant.option_size', attributes=('size',), certainty=Certainty.EXACT, liability=Liability.MERCHANT_GUARANTEED),
-        FieldProfile(field_name='variant.option_color', attributes=('color',), certainty=Certainty.EXACT, liability=Liability.MERCHANT_GUARANTEED),
+        FieldProfile(is_variant_axis=True, field_name='variant.option_size', attributes=('size',), certainty=Certainty.EXACT, liability=Liability.MERCHANT_GUARANTEED),
+        FieldProfile(is_variant_axis=True, field_name='variant.option_color', attributes=('color',), certainty=Certainty.EXACT, liability=Liability.MERCHANT_GUARANTEED),
         FieldProfile(field_name='variant.available', attributes=('availability',), certainty=Certainty.EXACT, liability=Liability.MERCHANT_GUARANTEED),
         FieldProfile(field_name='variant.price', attributes=('price',), certainty=Certainty.EXACT, liability=Liability.MERCHANT_GUARANTEED),
     ))

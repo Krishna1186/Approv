@@ -57,10 +57,11 @@ def test_a_silent_listing_raises_a_challenge_naming_the_attribute_and_the_bar():
 
 
 def test_a_soft_attribute_is_never_challenged():
-    """It never held the decision up, so a round spent on it changes nothing."""
-    schema = SCHEMA.model_copy(update={"attributes": (
-        AttributeSpec(name="size", dimension=Dimension.NOMINAL, criticality=Criticality.SOFT),)})
-    assert challenges_for(check_constraints(WANT, (), schema), schema) == ()
+    """It never held the decision up, so a round spent on it changes nothing. Softness is
+    now per transaction: the shopper hedged, so this purchase does not turn on it."""
+    hedged = (Constraint(attribute="size", value=Term(surface="9"),
+                         channel=Channel.AGENT_MESSAGE, raw_text="ideally a 9"),)
+    assert challenges_for(check_constraints(hedged, (), SCHEMA), SCHEMA) == ()
 
 
 def test_a_settled_attribute_is_not_challenged():
