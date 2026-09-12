@@ -252,7 +252,46 @@ carry the identical decision before and after, so nuisance cannot have moved. Th
 visible in the coverage row — 98 findings, 2.0 pp, move from guaranteed to out of
 coverage. That is the price of not promising what we did not finish reading.
 
+## Intake — one normaliser, many shapes (12 September)
+
+`approv/intake.py`. Every shape agent traffic arrives in ends at the same input the engine
+already took: `tuple[Constraint, ...]`, with an honest `Channel` and a locator saying which
+part of which artifact each requirement came from.
+
+| Path | Channel | `raw_text` | Source |
+|---|---|---|---|
+| (a) structured — ACP, AP2, storefront MCP, a feed | `TOOL_ARGUMENT`, or `MANDATE` if signed | **None, correctly** | `acp.color` |
+| (b) search — query *and* filters, never merged | `TOOL_ARGUMENT` + `AGENT_MESSAGE` | filter none, query kept | `search.filters.size`, `search.query` |
+| (c) free text — declared intent, or a user message | `AGENT_MESSAGE` | kept | `declared_intent` |
+| absence — no recoverable stated request | — | — | out of coverage, stated |
+
+**Invariant 9, written with the module rather than after it.** Adding a traffic shape never
+touches `algebra/` or `evaluator/`; intake imports only `approv.types`, and the engine never
+imports intake. Both directions are AST-asserted, and the test was checked against a
+deliberate violation rather than assumed to have teeth. Free-text reading is injected as a
+callable — `harness/intent.as_extractor` — which is what lets the layer that needs a model
+stay outside the layer that may not import one.
+
+**Path (a)'s `raw_text=None` is why the quote fix that broke 31 tests was load-bearing.** A
+protocol field has no wording to quote, so the highest-fidelity channel produces the
+quoteless constraint. `request_layer` floors any constraint that exists at BOUND; had it
+returned no signal for a missing quote, §2.2's never-stated cap would have dropped every
+path (a) requirement to SOFT — out of coverage. The best input we can get would have made
+the weakest record in the system. Pinned by a test that names the path.
+
+**`Reading` carries `unread` as well as constraints.** An extractor interface returning
+constraints alone would have dropped the signal that the narrowing routing above depends
+on, and the free-text paths are exactly where narrowing happens.
+
+Nothing calls intake in the measured pipeline yet, and no number moved. It is exercised
+end to end against the real interpreter, not only a stand-in.
+
 ## Open
+
+- Two definitions of `unread` are now live: `harness.as_extractor` filters to notes that
+  mean a requirement went unchecked (`dropped_requirement`), `scripts/score_gate.py` passes
+  every interpretation note. Reconciling them changes what feeds the verification floor, so
+  it is a decision-path change and needs a DR, not a quiet edit. Unmeasured.
 
 - Extraction is scored against the generator's spec, not against hand labels. That
   measures recovery of a machine-written requirement from machine-written prose; a real

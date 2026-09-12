@@ -124,6 +124,10 @@ Violating one is a stop-work event.
 7. `mark`, `verify` and `gate` are scored separately and never combined.
 8. A change to the decision path, coverage language, or a number that will be published
    needs a decision record first. Nothing else does.
+9. Adding a new agent traffic shape never touches `algebra/` or `evaluator/`. The intake
+   layer imports only `approv.types`, and the engine never imports intake. A test asserts
+   both directions. Without it, adapter pressure leaks into the engine within a month and
+   "the engine barely changes" silently stops being true.
 
 ---
 
@@ -160,7 +164,9 @@ cost. Never state a behaviour number as an accuracy number.
 **Built.** The decision path: `decide()` called from `receipts/record.py`, sessions gating
 on it, Ed25519-signed hash-chained records, a standalone verifier that imports no engine
 code, the `gate` call site, and `approv/challenge.py` — one bounded evidentiary round that
-replaced repair advice.
+replaced repair advice. Per-transaction criticality (`approv/criticality.py`), coverage on
+the record, and `approv/intake.py` — one normaliser taking every traffic shape to the one
+input the engine already took, under invariant 9.
 
 **Next, in order (DR 0020).** Everything here serves the record as a dispute artifact.
 

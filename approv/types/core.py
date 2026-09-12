@@ -320,13 +320,21 @@ class CategorySchema(BaseModel):
 
 
 class Constraint(BaseModel):
-    """What the agent said it wanted."""
+    """What the agent said it wanted.
+
+    `channel` is the fidelity tier — how the assertion reached us. `source` is the
+    locator inside that tier: which protocol field, which filter, which page field. A
+    dispute needs both, because "the agent typed it into a structured call" and "we read
+    it out of the agent's paraphrase" are different evidentiary weights, and "which of
+    the seven ACP fields" is what a returns desk actually looks at.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
     attribute: str
     value: Value
     channel: Channel
     raw_text: str | None = None
+    source: str | None = None
 
 
 class Claim(BaseModel):

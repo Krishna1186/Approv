@@ -158,6 +158,31 @@ def dropped_requirement(note: str) -> bool:
     return isinstance(note, str) and note.startswith(DROPPED_REQUIREMENT_PREFIXES)
 
 
+def as_extractor(interpreter, *, case_id='intake', author='intake', cluster='intake'):
+    """This interpreter in the shape `approv.intake` takes, for its free-text paths.
+
+    The bridge lives here rather than there on purpose: `approv/intake.py` may import only
+    `approv.types`, so the layer that needs a model is the layer that supplies it. Adding a
+    second reader — a different provider, a rules-only one — is another function of this
+    shape and touches nothing downstream.
+
+    `unread` is filtered to notes that actually mean a requirement went unchecked, which is
+    what `dropped_requirement` is for. Note that `scripts/score_gate.py` still passes every
+    interpretation note, which is blunter; reconciling the two changes what feeds the
+    verification floor, so it is a decision-path change and needs a decision record rather
+    than a quiet edit here.
+    """
+    from approv.intake import Reading
+
+    def extract(text, schema):
+        result, _ = interpreter(
+            ShoppingCase(id=case_id, request=text, author=author, cluster=cluster), schema)
+        return Reading(constraints=result.constraints,
+                       unread=tuple(n for n in result.interpretation_notes
+                                    if dropped_requirement(n)))
+    return extract
+
+
 # Measured on the 10 September WebShop audit (scripts/audit_webshop.py, real crowd-worker
 # instructions, not generated): "non slip" was recorded as a material, on a request that
 # named no material at all. The pattern is a real English one, not a guess specific to

@@ -140,6 +140,33 @@ def test_coverage_gap_note_is_recorded_in_metadata_and_is_a_dropped_requirement(
     assert any(dropped_requirement(n) for n in result.interpretation_notes)
 
 
+def test_the_real_extractor_plugs_into_intake_path_c():
+    """Path (c) with the actual interpreter behind it, not a stand-in.
+
+    The bridge is the whole of what `approv.intake` needs to be more than a shape: one
+    function in the layer that is allowed to call a model, handing back constraints and
+    the extractor's own account of what it could not encode. Asserted end to end because
+    a layer nothing real ever calls is a layer that is quietly wrong.
+    """
+    from approv.harness.intent import as_extractor
+    from approv.intake import AgentPresence, FreeText, intake
+
+    reading = {"requirements": [{"attribute": "product_type",
+               "value": {"kind": "term", "surface": "gummy candies"},
+               "quote": "individually wrapped gummy candies"}],
+               "requested_units": None, "units_quote": "", "quantity_scope": "per_sale_unit",
+               "unverified": []}
+    interpreter = RequestInterpreter("https://example.test", "fixture", "key", "v4")
+    with patch("approv.harness.intent.post_json", return_value=response(reading)):
+        result = intake(FreeText(text="i am searching for individually wrapped gummy candies."),
+                        schema(), extract=as_extractor(interpreter))
+
+    assert [c.attribute for c in result.constraints] == ["product_type"]
+    assert [c.source for c in result.constraints] == ["declared_intent"]
+    assert result.unread == ("Text not explicitly accounted for: individually wrapped",)
+    assert result.covered and result.agent is AgentPresence.DECLARED
+
+
 # --- v5: naming what a correction discarded -----------------------------------------
 
 def test_v5_prompt_is_selected_and_differs_from_v4():
