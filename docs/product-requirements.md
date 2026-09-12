@@ -58,12 +58,29 @@ evaluator and prompt versions.
 
 `ComparisonRecord` already carries the request half well — `request_text`,
 `request_constraints`, `completeness`, `unread`, `findings`, `coverage`, `attestation`,
-`correlation_id`, the version triple and the hash chain. **The order half is missing:**
-`order_id`, variant/SKU distinct from `product_id`, quantity, price, currency, payment
-state, catalogue version. `product_snapshot` is an untyped dict, so those values *can*
-live there and nothing binds or validates them.
+`correlation_id`, the version triple and the hash chain.
 
-"The product matched" is not a dispute defence. The receipt must name the exact variant,
+**Built, 12 September.** `OrderLine` on the record carries `order_id`, `line_id`, `sku`,
+`variant_id`, quantity, `unit_price` as typed `Money`, availability and catalogue version,
+and it is inside the digest like everything else, so a price cannot be adjusted after the
+outcome is known. Two bindings, both enforced rather than conventional: `ComparisonRecord`
+rejects an order line naming a different product from the comparison, and the surface
+rejects a catalogue snapshot that identifies itself as a different product from the order.
+`availability` and `checkout_state` are the merchant's own terms, recorded verbatim and
+decided on by nothing — DR 0004's failure semantics are still open.
+
+`product_snapshot` stays an untyped dict on purpose: it is the merchant's record as it
+stood, argued against as-is, and typing it would mean re-typing every merchant's export.
+What changed is that nothing load-bearing lives in it any more.
+
+**The entry point is `approv/surface/verification.py`**, framework-free and testable with
+no server; `approv/surface/api.py` is the only module in the repo that imports FastAPI
+(`POST /v1/verify`, `GET /v1/health`). Schemas, the catalogue reader, the extractor, the
+signing key and the floor policy are deployment configuration, not request payload — a
+caller cannot supply their own schema, because the party being defended must not define
+what counts as a match.
+
+"The product matched" is not a dispute defence. The receipt now names the exact variant,
 quantity and price it checked.
 
 ## 4. Outcome semantics

@@ -1,0 +1,274 @@
+"""Merchant order verification: the entry point, with no web framework in it.
+
+PRD §3. Until now the centre of gravity was `ShoppingCase` + `Inventory` — harness objects
+built for experiments — and there was no service surface at all. That gap was the distance
+between the pitch and the build: a merchant cannot call an experiment.
+
+**The framework is not here.** Everything in this module is Pydantic and pure functions, so
+the whole request path is testable without a server, and the FastAPI router in `api.py` is
+a thin adapter over `verify_order`. §9 allows FastAPI at the surface layer only, and the
+cheapest way to keep that true is for the surface layer to be two files, one of which does
+not import it.
+
+The pipeline is assembly, not judgement. Intake normalises the stated request whatever
+shape it arrived in; the schema's own field profiles read the merchant's catalogue snapshot
+into evidence; `algebra` compares; `evaluator.decide` decides; `receipts` assembles and
+signs. Nothing here decides anything, and a caller that wanted to override the decision
+would be the decision path, which is the one thing §1 says we do not have.
+
+**`strict_unread` defaults to escalating.** It is a business parameter (§2.6) and picking
+one here is picking a merchant's risk appetite for them, so it is a constructor argument
+rather than a constant. The default is the fail-safe direction — an order whose request we
+did not finish reading is confirmed rather than authorised — and the operating points are
+measured in `receipts/record.py` and DR 0021. A merchant who would rather eat false allows
+than nuisance sets it False knowingly.
+"""
+
+from __future__ import annotations
+
+import hashlib
+from typing import Annotated, Callable, Mapping, Union
+
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+
+from approv.algebra.runner import check_constraints
+from approv.intake import (
+    AgentPresence, Artifact, Extractor, FreeText, Search, Structured, Surface, Undeclared,
+    intake,
+)
+from approv.receipts.chain import canonical_json, seal
+from approv.receipts.record import build_record
+from approv.types.core import (
+    Attestation, CategorySchema, ComparisonRecord, Count, Evidence, OrderLine, Term, Value,
+)
+
+VERSION = "surface-v1"
+
+# The same discriminated union `approv.intake` defines, told to Pydantic how to pick a
+# member off the wire. Intake keeps it as a plain Union because it never parses one from
+# JSON; a request body does.
+ArtifactBody = Annotated[
+    Union[Structured, Search, FreeText, Undeclared], Field(discriminator="shape")]
+
+# Merchant catalogue snapshot -> what the merchant's own data says. Injected for the same
+# reason the extractor is: the default below reads the schema's field profiles, which is
+# right for a merchant whose snapshot is shaped like their schema and wrong for one who
+# needs a real adapter.
+Reader = Callable[[Mapping[str, object], CategorySchema], tuple[Evidence, ...]]
+
+# The discriminated value union, for a catalogue that exports typed values.
+_VALUE_ADAPTER = TypeAdapter(Value)
+
+
+class UnknownCategory(LookupError):
+    """The request named a category this deployment has no schema for."""
+
+
+class ProductMismatch(ValueError):
+    """The catalogue snapshot and the order line name different products."""
+
+
+class VerificationRequest(BaseModel):
+    """One order line, one stated request, whatever shape it arrived in."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    merchant_id: str = Field(min_length=1)
+    # Unguessable and bound into both signed halves (DR 0016 §7). Supplied by the caller
+    # because it is the join key to the agent's half, which we may never see.
+    correlation_id: str = Field(min_length=1)
+    category_id: str = Field(min_length=1)
+    order: OrderLine
+    artifact: ArtifactBody
+    product_snapshot: dict[str, object]
+    # A merchant whose checkout detects agents says so here. Never inferred on their
+    # behalf — a guess recorded as a basis is worse than no basis.
+    agent: AgentPresence | None = None
+    surface: Surface = Surface.MERCHANT
+    attestation: Attestation = Attestation.NEITHER
+    agent_id: str | None = None
+    locale: str = "en-IN"
+    # Field-name mapping for this protocol, if the artifact needs one.
+    adapter: dict[str, str] | None = None
+
+
+class VerificationResult(BaseModel):
+    """What the caller gets back. The record is the product; the rest is about it.
+
+    Everything the PRD lists as an output — findings, completeness, decision, reason codes,
+    per-finding coverage, snapshot hash, signature, the version triple — lives on the
+    record rather than being copied out beside it, because two copies of a decision is one
+    copy too many and the record is the thing that gets disputed.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    record: ComparisonRecord
+    receipt_id: str
+    # Whether this channel earns coverage at all, and why not when it does not. Intake's
+    # verdict, kept off the record because it is policy about the channel rather than a
+    # fact about the comparison.
+    covered: bool
+    intake_notes: tuple[str, ...] = ()
+
+
+def _dig(snapshot: Mapping[str, object], field_name: str):
+    """`variant.size` as a nested lookup, falling back to the flat key.
+
+    Both spellings occur in real catalogue exports and guessing wrong loses evidence
+    silently, which routes an attribute to PRODUCT_SILENT and escalates a sale for a
+    reason that is ours rather than the merchant's.
+    """
+    if field_name in snapshot:
+        return snapshot[field_name]
+    current: object = snapshot
+    for part in field_name.split("."):
+        if not isinstance(current, Mapping) or part not in current:
+            return None
+        current = current[part]
+    return current
+
+
+def _as_value(raw) -> Value | None:
+    """A catalogue value as something the operators can compare, or nothing.
+
+    Nothing is a real answer. A field whose type we cannot honestly read produces no
+    evidence, the attribute goes UNSTATED and the decision escalates — which is §2.3 in
+    force. Coercing it into a Term instead would manufacture a comparison out of a value
+    we did not understand, and a manufactured SATISFIED is a guarantee we cannot keep.
+    """
+    if isinstance(raw, Mapping) and "kind" in raw:
+        return _VALUE_ADAPTER.validate_python(dict(raw))
+    if isinstance(raw, str):
+        return Term(surface=raw)
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, int):
+        return Count(n=raw)
+    return None
+
+
+def evidence_from_snapshot(snapshot: Mapping[str, object],
+                           schema: CategorySchema) -> tuple[Evidence, ...]:
+    """The merchant's catalogue snapshot, read through the schema's own field profiles.
+
+    No new vocabulary. `FieldProfile` already names the field, the attributes it speaks to,
+    and where it sits on both DR 0016 axes — which is exactly the mapping a product-side
+    adapter needs, and it was already being authored per category for the comparison to
+    work at all. A merchant whose export is shaped differently supplies their own `Reader`;
+    this is the case where they do not have to.
+    """
+    out = []
+    for profile in schema.field_profiles:
+        value = _as_value(_dig(snapshot, profile.field_name))
+        if value is None:
+            continue
+        for attribute in profile.attributes:
+            out.append(Evidence(attribute=attribute, value=value,
+                                field_name=profile.field_name, liability=profile.liability,
+                                certainty=profile.certainty, is_advice=profile.is_advice))
+    return tuple(out)
+
+
+def snapshot_digest(snapshot: Mapping[str, object]) -> str:
+    """The snapshot's digest, over the same canonical JSON the record is sealed with.
+
+    One dump format everywhere, so a merchant can recompute this with `json.dumps` and
+    three arguments rather than with our code — the same bar `scripts/verify_receipt.py`
+    is held to.
+    """
+    return hashlib.sha256(canonical_json(dict(snapshot)).encode("utf-8")).hexdigest()
+
+
+def verify_order(
+    request: VerificationRequest,
+    *,
+    schemas: Mapping[str, CategorySchema],
+    read_evidence: Reader = evidence_from_snapshot,
+    extract: Extractor | None = None,
+    signing_key=None,
+    prev_hash: str | None = None,
+    strict_unread: bool = True,
+    returns: Mapping[str, float] | None = None,
+) -> VerificationResult:
+    """One order line in, one signed record out.
+
+    `returns` is the merchant's calibrated differ-rate table (criticality layer 3) when
+    they have one. Absent, layers 1 and 2 carry the transaction on their own, which is the
+    cold-start case the layering exists to survive.
+    """
+    schema = schemas.get(request.category_id)
+    if schema is None:
+        raise UnknownCategory(request.category_id)
+    _bind_snapshot_to_order(request)
+
+    taken = intake(request.artifact, schema, surface=request.surface,
+                   merchant_id=request.merchant_id, adapter=request.adapter,
+                   extract=extract, agent=request.agent)
+
+    evidence = read_evidence(request.product_snapshot, schema)
+    findings = check_constraints(
+        taken.constraints, evidence, schema, returns=returns,
+        superseded=frozenset(taken.superseded))
+
+    record = build_record(
+        correlation_id=request.correlation_id,
+        request_text=_stated_text(request.artifact),
+        constraints=taken.constraints,
+        findings=findings,
+        schema=schema,
+        product_id=request.order.product_id,
+        product_snapshot=dict(request.product_snapshot),
+        snapshot_hash=snapshot_digest(request.product_snapshot),
+        model_version=VERSION,
+        prompt_version=VERSION,
+        locale=request.locale,
+        agent_id=request.agent_id,
+        merchant_id=request.merchant_id,
+        attestation=request.attestation,
+        prev_hash=prev_hash,
+        unread=taken.unread,
+        strict_unread=strict_unread,
+        order=request.order,
+    )
+    if signing_key is not None:
+        record = seal(record, signing_key, prev_hash)
+
+    return VerificationResult(record=record, receipt_id=request.correlation_id,
+                              covered=taken.covered, intake_notes=taken.notes)
+
+
+def _bind_snapshot_to_order(request: VerificationRequest) -> None:
+    """Refuse to compare a catalogue record against a different order line.
+
+    `ComparisonRecord` validates that the order and the comparison name one product, but
+    from inside this function they always would — `product_id` is taken *from* the order,
+    so the record's own check can never fire here and would be a guard proving nothing.
+    The binding that can actually fail at this surface is between the order line and the
+    **snapshot**: a merchant who posts order line A with the catalogue record for B gets a
+    record that says the wrong product matched, and it would look like evidence.
+
+    Only checked when the snapshot identifies itself. Many catalogue exports do not carry
+    an id, and rejecting those would be inventing a requirement the format does not have.
+    """
+    named = request.product_snapshot.get("product_id", request.product_snapshot.get("id"))
+    if named is not None and str(named) != request.order.product_id:
+        raise ProductMismatch(
+            "catalogue snapshot is product %r but the order line is %r"
+            % (named, request.order.product_id))
+
+
+def _stated_text(artifact: Artifact) -> str:
+    """The shopper's words where there are any, and an honest description where not.
+
+    A protocol call has no wording, so `request_text` cannot be one — and leaving it empty
+    would read, in a dispute, as the agent having said nothing. What it said is the slots
+    it filled, which `request_constraints` carries in full.
+    """
+    if isinstance(artifact, FreeText):
+        return artifact.text
+    if isinstance(artifact, Search):
+        return artifact.query
+    if isinstance(artifact, Structured):
+        return "(no wording: %s protocol call, see request_constraints)" % artifact.protocol
+    return "(no stated request accompanied this order)"

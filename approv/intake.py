@@ -166,6 +166,11 @@ class Reading(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     constraints: tuple[Constraint, ...] = ()
     unread: tuple[str, ...] = ()
+    # Attributes the shopper corrected, already parsed by the reader. Carried because
+    # `algebra.runner` needs them to make a surviving value HARD, and because DR 0021
+    # correctly stopped supersession notes counting as unread — which would otherwise have
+    # left the signal with nowhere to travel.
+    superseded: tuple[str, ...] = ()
 
 
 # Reads prose into a Reading. Supplied by the caller because it needs a model and this
@@ -195,6 +200,7 @@ class Intake(BaseModel):
     # request text it could not encode and which feeds the record's floor and its coverage.
     notes: tuple[str, ...] = ()
     unread: tuple[str, ...] = ()
+    superseded: tuple[str, ...] = ()
     # Fields the artifact carried that this schema has no attribute for.
     unmapped: tuple[str, ...] = ()
 
@@ -249,6 +255,7 @@ def intake(
     presence = agent or _implied_presence(artifact)
     notes: list[str] = []
     unread: tuple[str, ...] = ()
+    superseded: tuple[str, ...] = ()
     constraints: tuple[Constraint, ...] = ()
     unmapped: tuple[str, ...] = ()
 
@@ -271,6 +278,7 @@ def intake(
                 reading = extract(artifact.query, schema)
                 constraints += _sourced(reading.constraints, "search.query")
                 unread += reading.unread
+                superseded += reading.superseded
 
     elif isinstance(artifact, FreeText):
         if not artifact.text.strip():
@@ -281,6 +289,7 @@ def intake(
             reading = extract(artifact.text, schema)
             constraints = _sourced(reading.constraints, artifact.field_name)
             unread = reading.unread
+            superseded = reading.superseded
 
     else:
         notes.append(artifact.why)
@@ -295,7 +304,7 @@ def intake(
 
     return Intake(
         surface=surface, shape=artifact.shape, agent=presence, merchant_id=merchant_id,
-        constraints=constraints, unread=unread,
+        constraints=constraints, unread=unread, superseded=superseded,
         covered=bool(constraints) and presence is not AgentPresence.UNKNOWN,
         notes=tuple(notes), unmapped=unmapped)
 

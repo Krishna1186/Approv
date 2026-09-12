@@ -19,7 +19,7 @@ from decimal import Decimal
 from enum import Enum
 from typing import Annotated, Literal, Union
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # --------------------------------------------------------------------------------------
 # Vocabularies
@@ -419,6 +419,53 @@ class AgentTurn(BaseModel):
     constraints: tuple[Constraint, ...] = ()
 
 
+class OrderLine(BaseModel):
+    """The merchant order half of the record. PRD §3.
+
+    Until this existed the record held the request half well — the words, the constraints,
+    what was silent, what went unread, the findings and their coverage — and said of the
+    other half only `product_id` plus an untyped `product_snapshot` dict. Those values
+    *could* live in the dict and nothing bound or validated them, which is the same as not
+    having them: a returns desk cannot be handed a blob and told the right numbers are
+    somewhere inside it.
+
+    **"The product matched" is not a dispute defence.** The defence is *this line of this
+    order, this SKU, this variant, this many, at this price, in this availability state, as
+    the catalogue stood.* Everything here is bound into the digest with the rest of the
+    record, so a field cannot be adjusted after the outcome is known.
+
+    Required is what the artifact cannot argue without. `unit_price` is required because a
+    refund is denominated in it and a record that cannot say what was charged cannot
+    contest one. `availability`, `variant_id`, `catalogue_version` and `checkout_state` are
+    optional because not every merchant has them and rejecting an order for missing one
+    would buy accuracy in the record at the cost of having no record.
+
+    `availability` and `checkout_state` are the merchant's own terms, recorded verbatim
+    rather than mapped onto a vocabulary of ours. Nothing decides on them — they are
+    recorded because a dispute turns on what was true at decision time, and DR 0004's
+    failure semantics are a separate decision that has not been made.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    order_id: str = Field(min_length=1)
+    # Which line of the order. An order with two lines produces two records, and without
+    # this they are distinguishable only by product, which fails on a reorder of the same
+    # item in two variants.
+    line_id: str | None = None
+    # The same identity the comparison ran against. `ComparisonRecord` validates that
+    # these agree, which is what makes the record provably about this order line rather
+    # than merely about a product that happens to share an id.
+    product_id: str = Field(min_length=1)
+    sku: str = Field(min_length=1)
+    variant_id: str | None = None
+    quantity: int = Field(ge=1, strict=True)
+    unit_price: Money
+    availability: str | None = None
+    catalogue_version: str | None = None
+    checkout_state: str | None = None
+
+
 class ComparisonRecord(BaseModel):
     """The signed object. §2.7, extended for DR 0016's two-halves construction.
 
@@ -452,6 +499,12 @@ class ComparisonRecord(BaseModel):
     product_id: str
     product_snapshot: dict[str, object]
     snapshot_hash: str
+    # The order half. Optional because a comparison can be run at shelf time, before any
+    # order exists, and that is a real call site (`mark`). A record that carries one is a
+    # merchant order verification; a record without one is a comparison about a product.
+    # Only the first is a dispute defence, and the difference is now visible in the record
+    # instead of being a matter of what the caller happened to mean.
+    order: OrderLine | None = None
 
     findings: tuple[Finding, ...]
     completeness: tuple[str, ...] = ()
@@ -483,6 +536,23 @@ class ComparisonRecord(BaseModel):
     prev_hash: str | None = None
     hash: str | None = None
     signature: str | None = None
+
+    @model_validator(mode="after")
+    def _the_comparison_is_about_this_order_line(self):
+        """The binding, enforced by the type rather than by convention.
+
+        `correlation_id` already joins the agent's signed half to the merchant's. What was
+        missing is that the comparison is provably about *this order line* and not merely
+        about a product id that appears in both — a record whose order names one SKU and
+        whose findings were computed against another is worse than no record, because it
+        looks like evidence. Checked here so it cannot be assembled wrong anywhere, and
+        the digest covers both fields so it cannot be edited apart afterwards.
+        """
+        if self.order is not None and self.order.product_id != self.product_id:
+            raise ValueError(
+                "order line names product %r but the comparison ran against %r"
+                % (self.order.product_id, self.product_id))
+        return self
 
 
 # --------------------------------------------------------------------------------------

@@ -18,7 +18,7 @@ from approv.criticality import coverage_of, narrowed_attributes
 from approv.evaluator import VERSION as EVALUATOR_VERSION, decide
 from approv.types.core import (
     AgentTurn, Attestation, CategorySchema, Claim, ComparisonRecord, Constraint,
-    Criticality, Finding, ReasonCode,
+    Criticality, Finding, OrderLine, ReasonCode,
 )
 
 VERSION = "receipt-v1"
@@ -120,8 +120,14 @@ def build_record(
     # `types.core.dropped_requirement` is the one definition. DR 0021.
     unread: tuple[str, ...] = (),
     strict_unread: bool = True,
+    order: OrderLine | None = None,
 ) -> ComparisonRecord:
     """Assemble one unsigned ComparisonRecord and decide it.
+
+    `order` is the merchant order line this comparison is a defence of, and passing it is
+    what turns a comparison about a product into a verification of a purchase. It is
+    validated against `product_id` by `ComparisonRecord` itself, so a record cannot be
+    assembled that names one SKU in the order and compares another.
 
     `product_snapshot` is the catalogue record as it stood when the comparison ran, and
     `snapshot_hash` is its digest. Both are kept: the hash proves the listing has not
@@ -153,6 +159,7 @@ def build_record(
         product_id=product_id,
         product_snapshot=product_snapshot,
         snapshot_hash=snapshot_hash,
+        order=order,
         findings=findings,
         coverage=tuple(coverage_of(f, narrowed=f.attribute in narrowed) for f in findings),
         completeness=completeness(schema, constraints),

@@ -147,9 +147,12 @@ def as_extractor(interpreter, *, case_id='intake', author='intake', cluster='int
     def extract(text, schema):
         result, _ = interpreter(
             ShoppingCase(id=case_id, request=text, author=author, cluster=cluster), schema)
+        from approv.criticality import superseded_attributes
         return Reading(constraints=result.constraints,
                        unread=tuple(n for n in result.interpretation_notes
-                                    if dropped_requirement(n)))
+                                    if dropped_requirement(n)),
+                       superseded=tuple(sorted(
+                           superseded_attributes(result.interpretation_notes))))
     return extract
 
 

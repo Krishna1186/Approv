@@ -5,8 +5,11 @@ requires-python = ">=3.11"
 dependencies = ["pydantic>=2.0,<3"]
 
 [project.optional-dependencies]
-test = ["pytest>=8,<10"]
+test = ["pytest>=8,<10", "httpx>=0.27"]
 study = ["pyarrow>=18"]
+# The HTTP surface only. approv.surface.verification, the engine and the record all work
+# without it, and the test suite skips the router tests when it is absent.
+api = ["fastapi>=0.115"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

@@ -321,6 +321,60 @@ Nuisance at 75.5% is still far too high for any merchant to run the strict floor
 does not fix that. It removes the part of it that was measuring the extractor's honesty
 rather than the request's completeness.
 
+## The merchant order verification object (12 September)
+
+PRD §3's headline gap. The request half of the record was strong and the order half did
+not exist — `product_id` plus an untyped `product_snapshot` dict, in which the right
+numbers *could* live with nothing binding or validating them, which is the same as not
+having them.
+
+**`OrderLine` on the record**: `order_id`, `line_id`, `product_id`, `sku`, `variant_id`,
+`quantity`, `unit_price` as typed `Money`, `availability`, `catalogue_version`,
+`checkout_state`. Inside the digest with everything else, so a price cannot be adjusted
+after the outcome is known — asserted by tampering with a sealed record and watching the
+hash check fail. Optional on the record, because `mark` runs at shelf time before any order
+exists: a record with an order is a verification of a purchase, one without is a comparison
+about a product, and that difference is now in the record rather than in what the caller
+meant.
+
+Required is what the artifact cannot argue without — a refund is denominated in the price,
+so a record that cannot say what was charged cannot contest one. `availability` and
+`checkout_state` are the merchant's own terms, recorded verbatim; nothing decides on them,
+and DR 0004's failure semantics stay open.
+
+**Two bindings, both enforced.** `ComparisonRecord` rejects an order line naming a
+different product from the comparison. That one cannot fire at the surface — `product_id`
+is taken *from* the order — so the surface enforces the binding that can actually fail
+there: a catalogue snapshot identifying itself as a different product from the order line.
+Checked only when the snapshot carries an id, because many exports do not and rejecting
+those would invent a requirement the format does not have.
+
+**The entry point.** `approv/surface/verification.py` is the whole request path with no web
+framework in it: intake normalises the stated request whatever shape it arrived in, the
+schema's own `field_profiles` read the merchant's snapshot into evidence, `algebra`
+compares, `evaluator.decide` decides, `receipts` assembles and signs. `approv/surface/api.py`
+is the only module in the repo that imports FastAPI — `POST /v1/verify`, `GET /v1/health`,
+an optional dependency, and the framework-free tests are skipped per test rather than per
+module so they go on proving they need no server.
+
+Three things that fell out and are worth keeping:
+
+- **The product-side adapter needed no new vocabulary.** `FieldProfile` already names the
+  field, the attributes it speaks to and both DR 0016 axes, and it was being authored per
+  category anyway. `evidence_from_snapshot` is that mapping read in the other direction.
+- **A value we cannot honestly read produces no evidence.** A float where a size belongs
+  yields nothing, the attribute goes UNSTATED and the sale escalates. Coercing it to a Term
+  would manufacture a comparison out of a value we did not understand, and a manufactured
+  SATISFIED is a guarantee we cannot keep.
+- **A refusal is a 200.** An error status invites a caller to treat it as a transport
+  failure and retry until it goes away.
+
+Schemas, the catalogue reader, the extractor, the signing key and the floor policy are
+deployment configuration rather than request payload. A caller supplying their own schema
+would let the party being defended define what counts as a match.
+
+396 tests. Nothing measured moved: no study path calls the surface.
+
 ## Open
 
 - Extraction is scored against the generator's spec, not against hand labels. That
@@ -328,6 +382,9 @@ rather than the request's completeness.
   shopper's wording is not in evidence anywhere.
 - `mark` and `verify` unscored.
 - Whether published merchant data is true. Nothing here tests that and nothing can.
+- `strict_unread` defaults to escalating at the surface, and the strict floor's nuisance is
+  75.5% on the v3 pack. No merchant would run that. Either the floor moves or the nuisance
+  does, and neither has been decided.
 - Value narrowing in extraction still happens; it is now routed out of coverage rather
   than repaired. Attribution is scoped to the constraint's own quote, and a v6 quote is
   a whole clause, so a gap belonging to no single attribute marks every attribute read

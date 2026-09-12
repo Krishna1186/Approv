@@ -100,6 +100,8 @@ approv/
   algebra/      typed comparison operators -> findings.
   evaluator/    pure functions. findings -> allow|confirm|refuse.
   receipts/     record assembly, Ed25519 signing, hash chain.
+  intake.py     any agent traffic shape -> constraints. Imports only approv.types.
+  surface/      verification.py (framework-free) and api.py (the only FastAPI import).
   harness/      extraction (intent.py), catalogue filter, sessions, storefront, metrics.
 
 Extraction lives in `harness/intent.py` and the storefront in `harness/storefront.py`.
@@ -166,7 +168,10 @@ on it, Ed25519-signed hash-chained records, a standalone verifier that imports n
 code, the `gate` call site, and `approv/challenge.py` — one bounded evidentiary round that
 replaced repair advice. Per-transaction criticality (`approv/criticality.py`), coverage on
 the record, and `approv/intake.py` — one normaliser taking every traffic shape to the one
-input the engine already took, under invariant 9.
+input the engine already took, under invariant 9. The order half of the record
+(`OrderLine`: order, SKU, variant, quantity, price, availability, catalogue version, bound
+into the digest) and the verification entry point — `approv/surface/verification.py`, with
+FastAPI confined to `approv/surface/api.py`.
 
 **Next, in order (DR 0020).** Everything here serves the record as a dispute artifact.
 
