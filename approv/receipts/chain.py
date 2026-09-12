@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
@@ -28,6 +29,7 @@ from pydantic import BaseModel
 from approv.types.core import ComparisonRecord
 
 VERSION = "chain-v1"
+SIGNATURE_VERSION = "ed25519-sha256-v1"
 
 # The three fields that are *about* the record rather than *in* it. They are excluded
 # from the digest because two of them are derived from it and the third signs it, so
@@ -65,7 +67,14 @@ def canonical(value) -> str:
                       ensure_ascii=False, allow_nan=False)
 
 
-def sealed_bytes(record: ComparisonRecord, prev_hash: str | None) -> bytes:
+def record_json(record: ComparisonRecord | Mapping) -> dict:
+    """Preserve the fields actually signed, including records from older schemas."""
+    if isinstance(record, ComparisonRecord):
+        return json.loads(record.model_dump_json(exclude_unset=bool(record.signature)))
+    return dict(record)
+
+
+def sealed_bytes(record: ComparisonRecord | Mapping, prev_hash: str | None) -> bytes:
     """Exactly what gets hashed and signed: the record's content plus its link.
 
     Defined over the record's **JSON** form, not its Python objects. That is not a detail.
@@ -80,7 +89,7 @@ def sealed_bytes(record: ComparisonRecord, prev_hash: str | None) -> bytes:
     signature, a record could be lifted out of one chain and pasted into another with its
     signature still valid, which is the whole attack the chain exists to stop.
     """
-    payload = json.loads(record.model_dump_json(exclude=set(_UNSEALED)))
+    payload = {k: v for k, v in record_json(record).items() if k not in _UNSEALED}
     return canonical_json({"prev_hash": prev_hash, "record": payload}).encode("utf-8")
 
 
@@ -94,7 +103,7 @@ def canonical_json(value) -> str:
                       ensure_ascii=False, allow_nan=False)
 
 
-def record_hash(record: ComparisonRecord, prev_hash: str | None) -> str:
+def record_hash(record: ComparisonRecord | Mapping, prev_hash: str | None) -> str:
     return hashlib.sha256(sealed_bytes(record, prev_hash)).hexdigest()
 
 
@@ -110,6 +119,25 @@ def public_key_hex(private_key: Ed25519PrivateKey) -> str:
     ).hex()
 
 
+def key_id_for(public_hex: str) -> str:
+    """A content-addressed ID; publication cannot silently reassign an ID to a key."""
+    raw = bytes.fromhex(public_hex)
+    Ed25519PublicKey.from_public_bytes(raw)
+    return "ed25519:" + hashlib.sha256(raw).hexdigest()
+
+
+def public_key_for(record: Mapping, trusted_keys: str | Mapping[str, str]) -> str:
+    if isinstance(trusted_keys, str):
+        return trusted_keys
+    key_id = record.get("key_id")
+    if not key_id or key_id not in trusted_keys:
+        raise ValueError("unknown signing key; legacy receipts require an explicitly pinned public key")
+    public_hex = trusted_keys[key_id]
+    if key_id_for(public_hex) != key_id:
+        raise ValueError("published key does not match its key_id")
+    return public_hex
+
+
 def seal(record: ComparisonRecord, private_key: Ed25519PrivateKey,
          prev_hash: str | None = None) -> ComparisonRecord:
     """Return the record with its link, digest and signature filled in.
@@ -117,31 +145,50 @@ def seal(record: ComparisonRecord, private_key: Ed25519PrivateKey,
     A new object rather than a mutation, because `ComparisonRecord` is frozen and because
     a half-sealed record should never exist: either it carries all three fields or none.
     """
+    if record.hash or record.signature:
+        raise ValueError("record is already sealed; retain its original signature and link")
+    if record.signature_version != SIGNATURE_VERSION:
+        raise ValueError("unsupported signature_version")
+    key_id = key_id_for(public_key_hex(private_key))
+    if record.key_id not in (None, key_id):
+        raise ValueError("key_id does not identify the signing key")
+    # Materialise all defaults before signing. On subsequent reads the exact signed
+    # field set survives, even if a future schema acquires new defaulted fields.
+    record = ComparisonRecord.model_validate_json(record.model_dump_json())
+    record = record.model_copy(update={"key_id": key_id})
     digest = record_hash(record, prev_hash)
     signature = private_key.sign(digest.encode("utf-8")).hex()
     return record.model_copy(update={"prev_hash": prev_hash, "hash": digest,
                                      "signature": signature})
 
 
-def verify(record: ComparisonRecord, public_key_hex_value: str) -> None:
+def verify(record: ComparisonRecord | Mapping, public_key_hex_value: str | Mapping[str, str]) -> None:
     """Raise unless this record hashes and verifies as sealed. Returns None on success.
 
     Raising rather than returning False: a verifier whose failure path is a falsy value
     is one call site away from being ignored, and this one gates whether a piece of
     evidence is admissible.
     """
-    if not record.hash or not record.signature:
+    payload = record_json(record)
+    if not payload.get("hash") or not payload.get("signature"):
         raise ValueError("record is unsealed")
-    if record_hash(record, record.prev_hash) != record.hash:
+    if record_hash(payload, payload.get("prev_hash")) != payload["hash"]:
         raise ValueError("record content does not match its hash")
-    key = Ed25519PublicKey.from_public_bytes(bytes.fromhex(public_key_hex_value))
+    version = payload.get("signature_version")
+    if "signature_version" in payload and version != SIGNATURE_VERSION:
+        raise ValueError("unsupported signature_version")
+    public_hex = public_key_for(payload, public_key_hex_value)
+    if payload.get("key_id") and (version != SIGNATURE_VERSION or
+                                   payload["key_id"] != key_id_for(public_hex)):
+        raise ValueError("signature does not verify: signing key or version mismatch")
+    key = Ed25519PublicKey.from_public_bytes(bytes.fromhex(public_hex))
     try:
-        key.verify(bytes.fromhex(record.signature), record.hash.encode("utf-8"))
+        key.verify(bytes.fromhex(payload["signature"]), payload["hash"].encode("utf-8"))
     except InvalidSignature as error:
         raise ValueError("signature does not verify under this key") from error
 
 
-def verify_chain(records: list[ComparisonRecord], public_key_hex_value: str) -> None:
+def verify_chain(records: list[ComparisonRecord | Mapping], public_key_hex_value: str | Mapping[str, str]) -> None:
     """Raise unless the whole chain is intact, in order, from a null-linked genesis.
 
     Checked as a sequence and not per record, because the per-record check cannot see a
@@ -150,12 +197,16 @@ def verify_chain(records: list[ComparisonRecord], public_key_hex_value: str) -> 
     previous = None
     seen = set()
     for index, record in enumerate(records):
-        if record.prev_hash != previous:
-            raise ValueError(f"chain broken at index {index} ({record.correlation_id})")
+        payload = record_json(record)
+        if payload.get("prev_hash") != previous:
+            raise ValueError(f"chain broken at index {index} ({payload.get('correlation_id')})")
         # A reused correlation id means the same session was decided twice, which is the
         # replay in the error catalogue, and it is invisible to hashing.
-        if record.correlation_id in seen:
+        correlation = payload.get("correlation_id")
+        if not isinstance(correlation, str) or not correlation.strip():
+            raise ValueError("record needs a nonempty correlation_id")
+        if correlation in seen:
             raise ValueError(f"correlation id reused at index {index}")
-        seen.add(record.correlation_id)
+        seen.add(correlation)
         verify(record, public_key_hex_value)
-        previous = record.hash
+        previous = payload["hash"]
