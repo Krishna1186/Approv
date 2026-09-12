@@ -447,7 +447,8 @@ DISTRACTOR_CLAUSES = (
 )
 
 
-def shopify_shopper_pack_v2(raw, captured_at, catalogue=25000, cases=120, seed=20260913):
+def shopify_shopper_pack_v2(raw, captured_at, catalogue=25000, cases=120, seed=20260913,
+                            extra_templates=()):
     """Same answer-key method as v1, harder sentences to recover it from.
 
     v1's five templates (plain/budget/casual/terse/impossible) are close to a declarative
@@ -497,8 +498,11 @@ def shopify_shopper_pack_v2(raw, captured_at, catalogue=25000, cases=120, seed=2
     for product in frozen.products:
         by_kind[(product.details.get('product_type') or '').strip().lower()].append(product)
 
+    # `extra_templates` is empty for v2 and stays empty, so the template tuple, the
+    # modulus that assigns them and every rng draw are unchanged and the published pack
+    # hash still reproduces. v3 passes the hedged families through it.
     templates = ('plain', 'budget', 'casual', 'terse', 'correction', 'negation',
-                 'question', 'indirect', 'hedge', 'impossible')
+                 'question', 'indirect', 'hedge', 'impossible') + tuple(extra_templates)
     tasks = []
     for index, kind in enumerate(usable):
         if len(tasks) >= cases: break
@@ -540,8 +544,20 @@ def shopify_shopper_pack_v2(raw, captured_at, catalogue=25000, cases=120, seed=2
             request = (f"I'm a size {size} and I've had my eye on a {colour} {kind} — "
                        f'is one in stock?')
         elif template == 'hedge':
+            # Hedges the speaker's confidence, not any one requirement, which is why it
+            # never produced a SOFT: "pretty sure" attaches to the whole sentence and to
+            # no attribute. The three below hedge an attribute instead.
             request = (f'Pretty sure I need a {colour} {kind}, size {size} — go with that '
                        f'unless it is out of stock, in which case never mind.')
+        elif template == 'hedge_colour':
+            request = (f'I need a {kind} in size {size}, preferably in {colour}. '
+                       f'It has to be in stock.')
+        elif template == 'hedge_size':
+            request = (f'Looking for a {colour} {kind}, around size {size} or similar. '
+                       f'It has to be in stock.')
+        elif template == 'hedge_both':
+            request = (f'A {kind} please — ideally {colour}, roughly size {size}. '
+                       f'It has to be in stock.')
         else:  # impossible
             absent = [p for p in members if field(p, 'availability') == 'out_of_stock']
             if not absent: continue
@@ -582,6 +598,29 @@ def shopify_shopper_pack_v2(raw, captured_at, catalogue=25000, cases=120, seed=2
             'shopify_shopper_pack, ten sentence shapes instead of five, plus off-schema '
             'distractor clauses drawn independently of shape.'}
 
+
+
+def shopify_shopper_pack_v3(raw, captured_at, catalogue=25000, cases=120, seed=20260914):
+    """v2's sentences plus three families that hedge a requirement rather than the speaker.
+
+    Every stated constraint in both captured extractor runs resolved BOUND or HARD — SOFT
+    occurred zero times out of 165. That makes `criticality.coverage_of` untestable rather
+    than merely unexercised: coverage maps SOFT and unstated alike to out-of-coverage, so
+    with no SOFT in existence coverage collapses into "did the shopper state it", which is
+    the completeness vector the record already carries.
+
+    v2's own `hedge` family does not produce one, and the reason is precise: "pretty sure
+    I need a blue shirt" hedges the speaker's confidence in the whole sentence and attaches
+    to no attribute. These three attach the hedge to an attribute — "preferably in navy",
+    "around size 10 or similar" — which is what `request_layer` reads.
+
+    The answer key is unchanged and stays strict: "preferably navy" still means navy is
+    what was asked for. What changes is what a mismatch *costs*, which is the distinction
+    coverage exists to draw, and it only becomes visible once a SOFT finding exists.
+    """
+    return shopify_shopper_pack_v2(raw, captured_at, catalogue, cases, seed,
+                                   extra_templates=('hedge_colour', 'hedge_size',
+                                                    'hedge_both'))
 
 def published_vocabulary(inventory, limit=60):
     """Attribute -> the values this catalogue actually publishes, when that set is small.

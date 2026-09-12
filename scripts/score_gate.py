@@ -42,6 +42,7 @@ from approv.harness.coverage import wilson
 from approv.harness.review import check_product
 from approv.harness.shopping import Inventory, ShoppingCase, digest
 from approv.receipts.record import build_record
+from approv.criticality import GUARANTEED
 from approv.types.core import Decision, Finding
 
 
@@ -71,6 +72,38 @@ def pairs_for(task, products_by_id, families, rng, near=8, far=8):
     for pid in rng.sample(everything, min(far, len(everything))):
         out.append((pid, "far"))
     return out
+
+
+def failing_attributes(task, product):
+    """Which of the key's required attributes this product does not meet.
+
+    The same published-field comparison the answer key itself uses, so "wrong product"
+    can be attributed to the attribute that made it wrong. Without that the exposure
+    split below cannot be computed: a record almost always carries some guaranteed
+    finding about an attribute that is fine, and asking only whether the record contains
+    the word "guaranteed" counts every one of those as a payout.
+    """
+    spec = dict(task["gold"].get("spec") or {})
+    if task["gold"].get("kind"):
+        spec["kind"] = task["gold"]["kind"]
+    detail = product.details
+    failing = set()
+    for key, wanted in spec.items():
+        if key == "price_lte":
+            price = (detail.get("price") or "").split()[0] or "0"
+            try:
+                if float(price) > float(wanted):
+                    failing.add("price")
+            except ValueError:
+                failing.add("price")
+            continue
+        attribute = {"kind": "product_type"}.get(key, key)
+        got = (detail.get(attribute) or "").strip().lower()
+        if attribute == "availability":
+            got = got.replace(" ", "_")
+        if got != str(wanted).strip().lower():
+            failing.add(attribute)
+    return failing
 
 
 def truth(task, product_id):
@@ -113,6 +146,9 @@ def main() -> int:
 
     # decision x truth x population
     matrix: Counter = Counter()
+    coverage: Counter = Counter()
+    exposure: Counter = Counter()
+    exposure_attrs: Counter = Counter()
     rows = []
     skipped = 0
 
@@ -142,8 +178,21 @@ def main() -> int:
                 strict_unread=not args.lenient_unread)
             satisfies = truth(task, pid)
             matrix[(built.decision.value, satisfies, population)] += 1
+            coverage.update(built.coverage)
+            # A false allow that is out of coverage costs nothing — we authorised it and
+            # promised nothing about it. One that is guaranteed costs a payout. Property 6
+            # says those land on different balance sheets, so counting them together
+            # hides the only number the guarantee is priced against.
+            if built.decision is Decision.ALLOW and not satisfies:
+                covered = {f.attribute: c for f, c in zip(built.findings, built.coverage)}
+                broke = failing_attributes(task, product)
+                paid = any(covered.get(a) == GUARANTEED for a in broke)
+                exposure["guaranteed" if paid else "uncovered"] += 1
+                exposure_attrs.update(
+                    "%s:%s" % (a, covered.get(a, "not_checked")) for a in broke)
             rows.append({"case": cid, "product": pid, "population": population,
                          "decision": built.decision.value, "satisfies": satisfies,
+                         "coverage": list(built.coverage),
                          "reasons": list(built.decision_reasons)})
 
     total = len(rows)
@@ -184,6 +233,21 @@ def main() -> int:
     print("escalated    (wrong product confirmed)       %s" % rate(count("confirm", False), bad))
     print("nuisance     (right product confirmed)       %s" % rate(count("confirm", True), good))
     print("clean allow  (right product authorised)      %s" % rate(count("allow", True), good))
+    print()
+    total_findings = sum(coverage.values())
+    print("coverage over %d findings — what the record actually promises (property 6)"
+          % total_findings)
+    for label in ("guaranteed", "refused", "out_of_coverage"):
+        print("  %-16s %s" % (label, rate(coverage[label], total_findings)))
+    print()
+    false_allows = exposure["guaranteed"] + exposure["uncovered"]
+    print("false allows split by exposure — %d total" % false_allows)
+    print("  guaranteed (a payout)      %d" % exposure["guaranteed"])
+    print("  out of coverage (no cost)  %d" % exposure["uncovered"])
+    if exposure_attrs:
+        print("  the attribute that made it wrong, and what we promised about it:")
+        for label, count in exposure_attrs.most_common(8):
+            print("    %-34s %d" % (label, count))
     print()
     print("by population — near-misses are the failure this exists for; far pairs are easy")
     for population in ("gold", "near", "far"):

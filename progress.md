@@ -190,6 +190,42 @@ brand"* (a non-requirement) and *"eco-friendly packaging"* (outside the schema),
 hedged requirement on a schema attribute exists in this corpus**. That path remains
 untested, for a corpus reason rather than a pipeline one.
 
+## Coverage, and what a false allow actually costs
+
+`coverage_of` reached nothing until now — it was called from its own test and no further,
+so per-transaction criticality had no observable effect anywhere. It is now per-finding on
+`ComparisonRecord` and reported with its denominator.
+
+It could not be shown to do anything until SOFT existed, and SOFT occurred **zero times in
+165** across both captured extractor runs. v2's `hedge` family hedges the speaker
+(*"pretty sure I need…"*), which attaches to no attribute. `shopify_shopper_pack_v3` adds
+three families that hedge an attribute — *"preferably in Tan"*, *"around size M or
+similar"*. v2 is provably untouched: regenerated at the same seed, its tasks are
+byte-identical to the committed pack.
+
+**One deviation from the specified `max`, forced by measurement.** With plain `max` the
+hedged families still produced zero SOFT: `request_layer` returned SOFT for every one, and
+`max` raised them back to BOUND because colour and size are variant axes. Layers 2 and 3
+are priors; Layer 1 is direct evidence about this transaction, and `max` cannot represent a
+signal that points down. An explicit hedge now caps. After it: **hard 18%, bound 72%, soft
+10%** of 176.
+
+| v3 pack, 1,244 pairs | |
+|---|---:|
+| False allow, headline | 7.3% [5.9, 8.9] |
+| **of which guaranteed — an actual payout** | **1** |
+| of which out of coverage — authorised, nothing promised | 82 |
+| Coverage over 4,828 findings | 44.0% guaranteed · 42.9% refused · 13.1% out |
+
+Read without coverage, adding hedges looks like the gate got seven points worse. Read with
+it, the gate declined to insure 82 things the shopper said it could and mispriced one —
+**1 in 1,244**. That is the number a guarantee prices against, and it is not the headline.
+
+The single payout is an extraction defect, not a gate defect: the request said *"Tandem
+Stripe in Frost"* and the extractor recorded colour as *"Frost"*, which matched the
+product's *"Frost"* exactly. Same class as the earlier `"L || 2"` narrowed to `"L"`.
+**Value narrowing in extraction is the one failure mode that costs money.**
+
 ## Open
 
 - Extraction is scored against the generator's spec, not against hand labels. That
@@ -197,7 +233,8 @@ untested, for a corpus reason rather than a pipeline one.
   shopper's wording is not in evidence anywhere.
 - `mark` and `verify` unscored.
 - Whether published merchant data is true. Nothing here tests that and nothing can.
-- Hedge -> SOFT is unexercised: no corpus has a hedged requirement on a schema attribute.
+- Value narrowing in extraction: the only guaranteed false allow measured, twice now.
+- Layer 3 has never run on real returns data; the highest-fidelity channels will depend on it.
 - Quote bleed: one clause serving several attributes, 60 of 165, 2 of them marker-bearing.
 - The challenge loop is untested against any corpus. Next: build a prose-corpus pack from
   ESCI/Amazon where `PRODUCT_SILENT` and `LOW_CERTAINTY_SOURCE` actually fire, and measure

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from approv.criticality import coverage_of
 from approv.evaluator import VERSION as EVALUATOR_VERSION, decide
 from approv.types.core import (
     AgentTurn, Attestation, CategorySchema, Claim, ComparisonRecord, Constraint,
@@ -131,6 +132,7 @@ def build_record(
         product_snapshot=product_snapshot,
         snapshot_hash=snapshot_hash,
         findings=findings,
+        coverage=tuple(coverage_of(f) for f in findings),
         completeness=completeness(schema, constraints),
         unread=unread,
         decision=decision,

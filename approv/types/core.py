@@ -460,6 +460,12 @@ class ComparisonRecord(BaseModel):
     # constraint from inside the engine, so without this field an extraction miss is
     # recorded as the shopper having said nothing and absolves everyone.
     unread: tuple[str, ...] = ()
+    # Per-finding coverage, aligned with `findings` by index: guaranteed / refused /
+    # out_of_coverage. On a dispute artifact (DR 0020) what is covered is load-bearing
+    # rather than a derived nicety — a returns desk reading this needs to see which
+    # findings carry a promise and which do not, without running our engine to recompute
+    # it. `criticality.coverage_of` is the mapping.
+    coverage: tuple[str, ...] = ()
 
     model_version: str
     evaluator_version: str

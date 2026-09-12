@@ -156,12 +156,37 @@ def test_no_returns_data_is_no_signal_rather_than_evidence_of_unimportance():
 
 # --- combination ----------------------------------------------------------------------
 
-def test_the_strongest_layer_wins():
-    """A hedged request against an attribute returns data says decides purchases: the
-    returns evidence outranks the hedge."""
-    level = resolve("size", constraint=want(quote="ideally a 9"), profiles=(VARIANT,),
+def test_the_strongest_layer_wins_when_they_point_up():
+    """`max` across the layers, for the raising direction."""
+    level = resolve("size", constraint=want(quote="size 9"), profiles=(VARIANT,),
                     returns={"size": 0.9})
     assert level is Criticality.HARD
+
+
+def test_an_explicit_hedge_caps_rather_than_contributing():
+    """The deviation from plain `max`, and it was forced by measurement.
+
+    Layers 2 and 3 are priors — customers in general choose on this axis, this attribute
+    in general drives returns. Layer 1 is direct evidence about this transaction. `max`
+    treats all three as equally authoritative, so a signal pointing *down* cannot survive
+    it. On the v3 pack every hedged request produced "preferably in Tan" and "around size
+    M or similar" in the quote, `request_layer` returned SOFT for each, and `max` raised
+    all of them back to BOUND because colour and size are variant axes. SOFT stayed at
+    zero of 176 — the exact outcome the hedged families were added to prevent.
+
+    A merchant's merchandising cannot outrank this shopper saying "preferably" about the
+    thing being merchandised. Under the guarantee the result is coherent: we neither block
+    the sale nor insure the attribute, which is what the shopper asked for by hedging."""
+    level = resolve("size", constraint=want(quote="ideally a 9"), profiles=(VARIANT,),
+                    returns={"size": 0.9})
+    assert level is Criticality.SOFT
+
+
+def test_only_a_hedge_caps_not_every_low_signal():
+    """`request_layer` returns SOFT for a hedge and nothing else, so the cap tests exactly
+    that case. A plainly stated value still takes the strongest layer."""
+    assert request_layer(want(quote="size 9")) is not Criticality.SOFT
+    assert resolve("size", constraint=want(quote="size 9"), returns={"size": 0.9}) is Criticality.HARD
 
 
 def test_an_attribute_the_shopper_never_mentioned_is_never_hard():

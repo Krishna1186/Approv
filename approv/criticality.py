@@ -250,11 +250,26 @@ def resolve(
     merchandises it or however often it drives returns, because silence is nobody's fault
     and refusing a sale over it would attribute a failure to a party that did not fail.
     """
+    stated = request_layer(constraint, superseded=attribute in superseded) if constraint else None
     level = _strongest(
-        request_layer(constraint, superseded=attribute in superseded) if constraint else None,
+        stated,
         schema_layer(attribute, profiles, in_floor=in_floor),
         returns_layer(attribute, returns, hard_at=hard_at, bound_at=bound_at),
     )
+    # An explicit hedge caps rather than merely contributing, and this is the second cap
+    # for the same reason as the first. Layers 2 and 3 are priors — customers in general
+    # choose on this axis, this attribute in general drives returns. Layer 1 is direct
+    # evidence about this transaction. `max` treats all three as equally authoritative, so
+    # a signal that points *down* cannot survive it: measured on the v3 pack, every one of
+    # the hedged requests produced "preferably in Tan" and "around size M or similar" in
+    # the quote, `request_layer` correctly returned SOFT, and `max` then raised all of them
+    # back to BOUND because colour and size are variant axes. SOFT stayed at zero of 176.
+    #
+    # A merchant's merchandising cannot outrank the shopper saying "preferably" about the
+    # thing being merchandised. `request_layer` returns SOFT only for a hedge, so this
+    # tests exactly that case and nothing else.
+    if stated is Criticality.SOFT:
+        return Criticality.SOFT
     if constraint is None and level is Criticality.HARD:
         level = Criticality.BOUND
     return level if level is not None else Criticality.SOFT
