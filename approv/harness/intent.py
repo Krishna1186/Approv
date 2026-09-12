@@ -10,7 +10,9 @@ import time
 from approv.algebra.term import normalize_term, _tokens
 from approv.harness.adapters import AdapterError, post_json
 from approv.harness.shopping import ShoppingCase, canonical, digest
-from approv.types.core import Channel, Constraint, Bound, Claim, Count, Evidence, Certainty, Liability, Term
+from approv.types.core import (COVERAGE_GAP_PREFIX, DESCRIPTOR_PREFIX, DUPLICATE_PREFIX,
+    DROPPED_REQUIREMENT_PREFIXES, dropped_requirement,
+    Channel, Constraint, Bound, Claim, Count, Evidence, Certainty, Liability, Term)
 
 PROMPT_V1 = '''Extract only explicit shopping requirements from the original request.
 Return one JSON object, no markdown:
@@ -121,41 +123,9 @@ invented one.
 '''
 
 
-# Notes carrying these prefixes are the guards below reporting that a requirement they
-# could have checked was dropped: an attribute outside the schema, a value outside the
-# published vocabulary, a quote that was not in the request, a value that would not
-# validate. They mean the reading of the request is incomplete in a way better extraction
-# could fix.
-#
-# They are different in kind from the model's free-text `unverified` list, which is mostly
-# the request naming a product type this schema has no attribute for — "chelsea boots",
-# "bath mats". That is unverifiable in principle against this catalogue, not a gap in the
-# reading, and on the 10 September pack it is true of 35 of 46 requests. Treating the two
-# alike makes any rule that keys on "was anything left unread" fire on almost everything.
-DESCRIPTOR_PREFIX = 'Descriptive property, not a named value, left unverified: '
-# One definition, in approv/criticality.py: extraction writes this note, coverage reads
-# it, and the two have to agree on the string.
-from approv.criticality import COVERAGE_GAP_PREFIX
-DUPLICATE_PREFIX = 'Duplicate requirement for a stated attribute, second value discarded: '
-
-DROPPED_REQUIREMENT_PREFIXES = (
-    'Unsupported requirement: ',
-    'Value outside the published vocabulary, left unverified: ',
-    'Ungrounded interpretation discarded: ',
-    'Malformed requirement value discarded: ',
-    'Invalid typed requirement discarded: ',
-    # Not attribute-shaped and so carries no colon, but the same thing: the shopper asked
-    # for a number of packs, the quote did not ground it, and the count was discarded.
-    'Sale-unit interpretation has no original quote',
-    DESCRIPTOR_PREFIX,
-    COVERAGE_GAP_PREFIX,
-    DUPLICATE_PREFIX,
-)
-
-
-def dropped_requirement(note: str) -> bool:
-    """True when this note means a checkable requirement was not checked."""
-    return isinstance(note, str) and note.startswith(DROPPED_REQUIREMENT_PREFIXES)
+# The note vocabulary is `approv.types.core`'s: extraction authors these strings, the
+# record reads them, and `harness/shopping.py` needs them too but cannot import this
+# module without a cycle. Re-exported here so the guards below read as they always did.
 
 
 def as_extractor(interpreter, *, case_id='intake', author='intake', cluster='intake'):

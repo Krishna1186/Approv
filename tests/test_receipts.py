@@ -7,7 +7,8 @@ import pytest
 from approv.receipts.chain import (
     generate_key, public_key_hex, record_hash, seal, verify, verify_chain,
 )
-from approv.criticality import COVERAGE_GAP_PREFIX, GUARANTEED, OUT_OF_COVERAGE
+from approv.criticality import GUARANTEED, OUT_OF_COVERAGE
+from approv.types.core import COVERAGE_GAP_PREFIX, dropped_requirement
 from approv.receipts.record import build_record, completeness, floor_is_met
 from approv.types.core import (
     AttributeSpec, CategorySchema, Channel, CheckKind, Constraint, Criticality,
@@ -45,6 +46,22 @@ def record(findings=None, constraints=None, **kw):
         product_snapshot={"title": "Magut", "size": "9"}, snapshot_hash="abc123",
         model_version="m-1", prompt_version="p-1",
         timestamp=datetime(2026, 9, 10, tzinfo=timezone.utc), **kw)
+
+
+# --- what `unread` means, and it means one thing -----------------------------------------
+
+def test_unread_is_a_dropped_requirement_and_not_merely_a_note():
+    """DR 0021. `unread` feeds the verification floor, so two definitions of it meant two
+    different decision paths. These four are the cases that separated them on the v3 pack.
+
+    The supersession is the one that settles it: the extractor read the correction
+    perfectly and logged what it discarded. Counting that as an unread request escalates a
+    shopper for having changed their mind.
+    """
+    assert dropped_requirement(COVERAGE_GAP_PREFIX + "tandem stripe")
+    assert dropped_requirement("Unsupported requirement: gift_wrap")
+    assert not dropped_requirement("Superseded, discarded: Black (color)")
+    assert not dropped_requirement("My last order took forever to arrive.")
 
 
 # --- narrowing: the guarantee withdrawn where the reading did not finish ----------------

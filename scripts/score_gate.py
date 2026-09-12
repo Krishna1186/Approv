@@ -43,7 +43,7 @@ from approv.harness.review import check_product
 from approv.harness.shopping import Inventory, ShoppingCase, digest
 from approv.receipts.record import build_record
 from approv.criticality import GUARANTEED
-from approv.types.core import Decision, Finding
+from approv.types.core import Decision, Finding, dropped_requirement
 
 
 def pairs_for(task, products_by_id, families, rng, near=8, far=8):
@@ -106,6 +106,20 @@ def failing_attributes(task, product):
     return failing
 
 
+def unread_notes(notes, definition):
+    """Which interpretation notes mean the request was not fully read. DR 0021.
+
+    Two definitions were live at once and both fed the verification floor, which is the
+    decision path, so a number produced under one did not mean what a number produced
+    under the other said. `dropped_requirement` is the narrower and the honest one: it
+    asks whether a *checkable requirement* went unchecked rather than whether the model
+    wrote anything down at all.
+    """
+    if definition == "all":
+        return tuple(notes)
+    return tuple(n for n in notes if dropped_requirement(n))
+
+
 def truth(task, product_id):
     """Does this product satisfy the request, per the answer key alone.
 
@@ -130,6 +144,10 @@ def main() -> int:
     parser.add_argument("--lenient-unread", action="store_true",
                         help="do not fail the floor when the request was not fully read; "
                              "the other operating point of the section 2.6 trade")
+    parser.add_argument("--unread", choices=("dropped", "all"), default="dropped",
+                        help="which interpretation notes count as an unread request. "
+                             "'all' is every note; 'dropped' is only those meaning a "
+                             "checkable requirement went unchecked. DR 0021.")
     args = parser.parse_args()
 
     pack = json.loads(Path(args.pack).read_text(encoding="utf-8"))
@@ -174,7 +192,7 @@ def main() -> int:
                 constraints=case.constraints, findings=findings, schema=schema,
                 product_id=pid, product_snapshot=snapshot, snapshot_hash=digest(snapshot),
                 model_version="offline", prompt_version="score-gate-v1",
-                unread=tuple(case.interpretation_notes),
+                unread=unread_notes(case.interpretation_notes, args.unread),
                 strict_unread=not args.lenient_unread)
             satisfies = truth(task, pid)
             matrix[(built.decision.value, satisfies, population)] += 1
@@ -215,6 +233,8 @@ def main() -> int:
     print("Gate scored as a classifier. No agent, no model call at evaluation time.")
     print("pack        %s" % args.pack)
     print("constraints %s (extractor output, never the answer key)" % args.constraints)
+    print("floor       unread=%s, %s" % (args.unread,
+                                         "lenient" if args.lenient_unread else "strict"))
     print("cases %d scored, %d skipped for no extracted requirements; %d pairs"
           % (len(tasks) - skipped, skipped, total))
     print()

@@ -67,13 +67,22 @@ def floor_is_met(findings: tuple[Finding, ...], unread: tuple[str, ...] = ()) ->
         strict_unread=True    false allow  0.0% [0.0, 0.4]   nuisance confirm  48.4%
         strict_unread=False   false allow  0.3% [0.1, 0.9]   nuisance confirm   3.3%
 
+    Both were measured before DR 0021, when `unread` still meant every interpretation
+    note. Under the definition that survived it — notes meaning a *checkable requirement*
+    went unchecked — the strict point is better than those figures show; on the v3 pack the
+    same narrowing moved nuisance from 84.3% to 75.5% with nothing else changing.
+
     Neither is obviously right and picking one here would be picking a merchant's risk
     appetite for them. What the numbers do say is that the gate is the wrong place to fix
     this: 35 of the 44 nuisance confirms are one request whose unread note was "not
     backordered", which is a restatement of the availability requirement the extractor had
     already captured. Nothing was lost and the gate escalated anyway. The repair belongs in
     extraction — a note that duplicates a constraint should not be recorded as a note —
-    and until that lands this parameter is how a merchant chooses which error to eat.
+    and until that lands this parameter is how a merchant chooses which error to eat. DR
+    0021 did that repair at the definition instead: "not backordered" is a free-text
+    `unverified` entry, not a dropped requirement, so it no longer reaches the floor at
+    all. The fresh corpus has not been re-run under the new definition, so the 48.4% above
+    stands as measured rather than as corrected.
 
     Coverage has since narrowed what this parameter has to carry. The case it existed to
     catch — a requirement read too narrowly and then guaranteed — is now handled by
@@ -106,6 +115,9 @@ def build_record(
     attestation: Attestation = Attestation.NEITHER,
     prev_hash: str | None = None,
     timestamp: datetime | None = None,
+    # Notes meaning a checkable requirement went unchecked, and only those. The producer
+    # filters, because the record records what it is told rather than second-guessing it —
+    # `types.core.dropped_requirement` is the one definition. DR 0021.
     unread: tuple[str, ...] = (),
     strict_unread: bool = True,
 ) -> ComparisonRecord:

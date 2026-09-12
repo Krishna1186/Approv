@@ -19,7 +19,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from approv.harness.review import check_product, check_shelf
 from approv.types.core import (
     AgentTurn, Bound, CategorySchema, Certainty, Channel, Claim, Constraint, Decision,
-    Evidence, Finding, Liability,
+    Evidence, Finding, Liability, dropped_requirement,
 )
 
 VERSION = "shopping-v1"
@@ -270,7 +270,10 @@ class Session:
             snapshot_hash=digest(snapshot),
             model_version=self.binding["implementation"]["source_hash"][:16],
             prompt_version=VERSION,
-            unread=tuple(self.case.interpretation_notes),
+            # DR 0021: `unread` is notes that mean a checkable requirement went
+            # unchecked, not every note the extractor wrote.
+            unread=tuple(n for n in self.case.interpretation_notes
+                         if dropped_requirement(n)),
             turns=tuple(AgentTurn(tool=e["payload"]["action"]["type"],
                                   raw_arguments=e["payload"]["action"])
                         for e in self.events if e["kind"] == "action"),

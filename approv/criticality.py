@@ -44,8 +44,8 @@ from collections.abc import Iterable, Mapping
 
 from approv.algebra.term import normalize_term
 from approv.types.core import (
-    AttributeSpec, Bound, CategorySchema, Constraint, Count, Criticality, FieldProfile,
-    Money, Quantity, Support, Term, Finding,
+    COVERAGE_GAP_PREFIX, AttributeSpec, Bound, CategorySchema, Constraint, Count,
+    Criticality, FieldProfile, Money, Quantity, Support, Term, Finding,
 )
 
 VERSION = "criticality-v1"
@@ -305,13 +305,6 @@ def applied(schema: CategorySchema, constraints: Iterable[Constraint],
 GUARANTEED = "guaranteed"
 OUT_OF_COVERAGE = "out_of_coverage"
 REFUSED = "refused"
-
-# Written by `harness/intent.py` when a reading leaves request words carried forward by no
-# constraint value and no note. Defined here rather than there because the note is only
-# half of the mechanism: extraction authors it, coverage reads it, and two copies of the
-# string would drift the moment either side was edited.
-COVERAGE_GAP_PREFIX = "Text not explicitly accounted for: "
-
 
 def _words(text: str) -> frozenset[str]:
     return frozenset(normalize_term(text or "").split())

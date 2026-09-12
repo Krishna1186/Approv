@@ -483,3 +483,51 @@ class ComparisonRecord(BaseModel):
     prev_hash: str | None = None
     hash: str | None = None
     signature: str | None = None
+
+
+# --------------------------------------------------------------------------------------
+# The reading vocabulary — note prefixes extraction writes and the record reads
+# --------------------------------------------------------------------------------------
+#
+# Here rather than in `harness/intent.py`, where they were authored, because three layers
+# have to agree on them and the top layer is the one layer the others cannot import.
+# `harness/shopping.py` could not reach `dropped_requirement` without a cycle, which is
+# the smell that said the vocabulary was in the wrong place: two producers of `unread`
+# then had two different ideas of what it meant. DR 0021.
+
+# The guards reporting that a requirement they could have checked was dropped: an
+# attribute outside the schema, a value outside the published vocabulary, a quote that was
+# not in the request, a value that would not validate. They mean the reading of the request
+# is incomplete in a way better extraction could fix.
+DESCRIPTOR_PREFIX = "Descriptive property, not a named value, left unverified: "
+# Request words carried forward by no constraint value and no note. Extraction writes it;
+# `criticality.narrowed_attributes` reads it to find a value narrower than its own quote.
+COVERAGE_GAP_PREFIX = "Text not explicitly accounted for: "
+DUPLICATE_PREFIX = "Duplicate requirement for a stated attribute, second value discarded: "
+
+DROPPED_REQUIREMENT_PREFIXES = (
+    "Unsupported requirement: ",
+    "Value outside the published vocabulary, left unverified: ",
+    "Ungrounded interpretation discarded: ",
+    "Malformed requirement value discarded: ",
+    "Invalid typed requirement discarded: ",
+    # Not attribute-shaped and so carries no colon, but the same thing: the shopper asked
+    # for a number of packs, the quote did not ground it, and the count was discarded.
+    "Sale-unit interpretation has no original quote",
+    DESCRIPTOR_PREFIX,
+    COVERAGE_GAP_PREFIX,
+    DUPLICATE_PREFIX,
+)
+
+
+def dropped_requirement(note: str) -> bool:
+    """True when this note means a checkable requirement was not checked.
+
+    The definition of `unread`, and the whole of it (DR 0021). It is deliberately narrower
+    than "the extractor wrote something down": the model's free-text `unverified` list is
+    mostly the request naming a product type this schema has no attribute for — "chelsea
+    boots", "women's", "kid's shoes" — which is unverifiable in principle against this
+    catalogue rather than a gap in the reading, and it is true of 35 of 46 requests on the
+    10 September pack. A floor that fires on those fires on almost everything.
+    """
+    return isinstance(note, str) and note.startswith(DROPPED_REQUIREMENT_PREFIXES)

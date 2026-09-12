@@ -286,12 +286,42 @@ on, and the free-text paths are exactly where narrowing happens.
 Nothing calls intake in the measured pipeline yet, and no number moved. It is exercised
 end to end against the real interpreter, not only a stand-in.
 
-## Open
+## DR 0021 — `unread` had two definitions; now it has one (12 September)
 
-- Two definitions of `unread` are now live: `harness.as_extractor` filters to notes that
-  mean a requirement went unchecked (`dropped_requirement`), `scripts/score_gate.py` passes
-  every interpretation note. Reconciling them changes what feeds the verification floor, so
-  it is a decision-path change and needs a DR, not a quiet edit. Unmeasured.
+Both fed the verification floor, which is the decision path, so a number produced by one
+did not mean what a number produced by the other said. Measured before deciding.
+
+| v3 pack, 1,244 pairs, strict floor | `all` notes | `dropped` only |
+|---|---:|---:|
+| False allow, of 1,142 | 0.1% [0.0, 0.5] | 0.1% [0.0, 0.5] |
+| False refuse, of 102 | 0.0% [0.0, 3.6] | 0.0% [0.0, 3.6] |
+| Caught · escalated | 90.9% · 9.0% | 90.9% · 9.0% |
+| **Nuisance, of 102** | **84.3% [76.0, 90.1]** | **75.5% [66.3, 82.8]** |
+| Guaranteed false allow | 0 | 0 |
+| Coverage: guaranteed / refused / out | 42.0 / 42.9 / 15.1% | 42.0 / 42.9 / 15.1% |
+
+Under the lenient floor the two are identical in every cell — `strict_unread=False` never
+reads `unread`, so the definition can only bite where the floor is enforced.
+
+**Not a trade-off, a defect.** The narrower definition costs 8.8 pp of nuisance and buys
+nothing back. The notes it stops counting are the model's free-text `unverified` list
+(*women's*, *casual*, *kid's shoes*), shipping chatter (*"My last order took forever to
+arrive"*), and — the case that settles it — `Superseded, discarded: Black (color)`. That
+last is the extractor reading a correction *perfectly* and logging what it discarded.
+Under the old definition a shopper who changed their mind got escalated for it, and the
+better the extractor reported what it did, the worse the gate behaved.
+
+The vocabulary moved to `approv/types/core.py`, the one module every layer may import.
+`harness/shopping.py` could not reach `dropped_requirement` without a cycle, and a producer
+that cannot reach the definition invents one — that cycle is why the two existed. All three
+producers now filter identically; `score_gate --unread all` keeps the losing definition
+runnable so this table can be reproduced rather than trusted.
+
+Nuisance at 75.5% is still far too high for any merchant to run the strict floor. DR 0021
+does not fix that. It removes the part of it that was measuring the extractor's honesty
+rather than the request's completeness.
+
+## Open
 
 - Extraction is scored against the generator's spec, not against hand labels. That
   measures recovery of a machine-written requirement from machine-written prose; a real

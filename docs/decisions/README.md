@@ -1,6 +1,6 @@
 # Decision records — index
 
-20 records, **10 still open**. Read this
+21 records, **10 still open**. Read this
 file instead of opening them. Full text is kept for the reasoning, not for re-reading.
 
 Under the 10 September contract only a §3.8 change earns a new record: the decision path,
@@ -28,6 +28,7 @@ coverage language, or a number that will be published. Nothing else does.
 | [0018](0018-original-requests-and-synthetic-experiments.md) | DR 0018: Original requests and disclosed synthetic experiments | closed |
 | [0019](0019-candidate-evidence-review.md) | DR 0019: Review the retrieved shelf with explicit evidence limits | closed |
 | [0020](0020-merchant-defence-and-the-dispute-artifact.md) | Merchant defence, and the record as a dispute artifact | **OPEN** |
+| [0021](0021-what-unread-means.md) | What `unread` means, and why two definitions were live | closed |
 
 ## The open ones, and whether they still matter
 
