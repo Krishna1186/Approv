@@ -531,6 +531,8 @@ class ComparisonRecord(BaseModel):
     model_version: str
     evaluator_version: str
     prompt_version: str
+    key_id: str | None = None
+    signature_version: str = "ed25519-sha256-v1"
     timestamp: datetime
 
     prev_hash: str | None = None
