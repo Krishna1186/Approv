@@ -210,21 +210,47 @@ are priors; Layer 1 is direct evidence about this transaction, and `max` cannot 
 signal that points down. An explicit hedge now caps. After it: **hard 18%, bound 72%, soft
 10%** of 176.
 
-| v3 pack, 1,244 pairs | |
-|---|---:|
-| False allow, headline | 7.3% [5.9, 8.9] |
-| **of which guaranteed — an actual payout** | **1** |
-| of which out of coverage — authorised, nothing promised | 82 |
-| Coverage over 4,828 findings | 44.0% guaranteed · 42.9% refused · 13.1% out |
+| v3 pack, heldout split, 46 cases, 1,244 pairs | before narrowing routed | after |
+|---|---:|---:|
+| False allow, of 1,142 non-satisfying pairs | 7.3% [5.9, 8.9] | 7.3% [5.9, 8.9] |
+| **of which guaranteed — an actual payout** | **1** | **0** |
+| of which out of coverage — authorised, nothing promised | 82 | 83 |
+| Nuisance confirm, of 102 satisfying pairs | 16.7% [10.7, 25.1] | 16.7% [10.7, 25.1] |
+| Coverage, of 4,828 findings — guaranteed | 44.0% [42.6, 45.4] | 42.0% [40.6, 43.4] |
+| — refused | 42.9% [41.5, 44.3] | 42.9% [41.5, 44.3] |
+| — out of coverage | 13.1% [12.2, 14.1] | 15.1% [14.1, 16.2] |
+| **Payout rate, per authorised transaction** | 1 of 168, 0.6% [0.1, 3.3] | **0 of 168, 0.0% [0.0, 2.2]** |
 
 Read without coverage, adding hedges looks like the gate got seven points worse. Read with
-it, the gate declined to insure 82 things the shopper said it could and mispriced one —
-**1 in 1,244**. That is the number a guarantee prices against, and it is not the headline.
+it, the gate declined to insure 83 things the shopper said it could. The denominator that
+matters is **authorisations, not pairs**: a payout can only happen on a transaction we
+allowed, and there were 168 of those. Quoting it per pair understates the price by an
+order of magnitude. An earlier draft of this file said "1 in 1,244"; the correct before
+figure is 1 in 168.
 
-The single payout is an extraction defect, not a gate defect: the request said *"Tandem
-Stripe in Frost"* and the extractor recorded colour as *"Frost"*, which matched the
-product's *"Frost"* exactly. Same class as the earlier `"L || 2"` narrowed to `"L"`.
-**Value narrowing in extraction is the one failure mode that costs money.**
+The one payout was an extraction defect, not a gate defect: the request said *"Tandem
+Stripe in Frost"*, the extractor recorded colour as *"Frost"*, and that matched the
+product's published *"Frost"* exactly. Same class as the earlier `"L || 2"` narrowed to
+`"L"`. **Value narrowing in extraction was the only failure mode measured to cost money.**
+
+**It is routed rather than blocked.** The detector already existed — `coverage_gap` emits
+*"Text not explicitly accounted for: tandem stripe"* — and the only lever it had was
+`strict_unread`, which chooses between failing the floor (0.0% false allow at 48.4%
+nuisance) and guaranteeing the sale anyway (0.3% at 3.3%). Coverage is the third option
+that choice did not contain: `criticality.narrowed_attributes` attributes the gap to the
+constraint whose own quote carries the unaccounted tokens, and that attribute's finding
+goes out of coverage. The sale proceeds and nothing we could not finish reading is
+promised.
+
+Attribution is set arithmetic, no model call: quote tokens minus value tokens minus layer-1
+marker words, intersected with the gap tokens. It is possible only because v6 widened
+`raw_text` from the value to the whole clause — before that the quote *was* the value and
+the difference was empty by construction. A second, unplanned payoff from that change.
+
+The decision path is untouched, and that is checked rather than asserted: all 1,244 pairs
+carry the identical decision before and after, so nuisance cannot have moved. The cost is
+visible in the coverage row — 98 findings, 2.0 pp, move from guaranteed to out of
+coverage. That is the price of not promising what we did not finish reading.
 
 ## Open
 
@@ -233,7 +259,10 @@ product's *"Frost"* exactly. Same class as the earlier `"L || 2"` narrowed to `"
   shopper's wording is not in evidence anywhere.
 - `mark` and `verify` unscored.
 - Whether published merchant data is true. Nothing here tests that and nothing can.
-- Value narrowing in extraction: the only guaranteed false allow measured, twice now.
+- Value narrowing in extraction still happens; it is now routed out of coverage rather
+  than repaired. Attribution is scoped to the constraint's own quote, and a v6 quote is
+  a whole clause, so a gap belonging to no single attribute marks every attribute read
+  from that clause. Conservative in the right direction, blunt.
 - Layer 3 has never run on real returns data; the highest-fidelity channels will depend on it.
 - Quote bleed: one clause serving several attributes, 60 of 165, 2 of them marker-bearing.
 - The challenge loop is untested against any corpus. Next: build a prose-corpus pack from

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from approv.criticality import coverage_of
+from approv.criticality import coverage_of, narrowed_attributes
 from approv.evaluator import VERSION as EVALUATOR_VERSION, decide
 from approv.types.core import (
     AgentTurn, Attestation, CategorySchema, Claim, ComparisonRecord, Constraint,
@@ -74,6 +74,12 @@ def floor_is_met(findings: tuple[Finding, ...], unread: tuple[str, ...] = ()) ->
     already captured. Nothing was lost and the gate escalated anyway. The repair belongs in
     extraction — a note that duplicates a constraint should not be recorded as a note —
     and until that lands this parameter is how a merchant chooses which error to eat.
+
+    Coverage has since narrowed what this parameter has to carry. The case it existed to
+    catch — a requirement read too narrowly and then guaranteed — is now handled by
+    `criticality.narrowed_attributes`, which routes that attribute out of coverage and
+    costs no nuisance at all because it never touches the decision. What is left here is
+    the genuinely unattributable gap: dropped text belonging to no constraint's quote.
     """
     if unread:
         return False
@@ -116,6 +122,10 @@ def build_record(
     """
     decision, reasons = decide(
         findings, floor_met=floor_is_met(findings, unread if strict_unread else ()))
+    # Computed here and not passed in, so that a caller cannot forget it. `unread` is
+    # already the record's honest account of what went unread; this reads it rather than
+    # asking for the same thing twice.
+    narrowed = narrowed_attributes(constraints, unread)
     return ComparisonRecord(
         correlation_id=correlation_id,
         agent_id=agent_id,
@@ -132,7 +142,7 @@ def build_record(
         product_snapshot=product_snapshot,
         snapshot_hash=snapshot_hash,
         findings=findings,
-        coverage=tuple(coverage_of(f) for f in findings),
+        coverage=tuple(coverage_of(f, narrowed=f.attribute in narrowed) for f in findings),
         completeness=completeness(schema, constraints),
         unread=unread,
         decision=decision,

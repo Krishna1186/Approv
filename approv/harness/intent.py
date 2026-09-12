@@ -133,7 +133,9 @@ invented one.
 # reading, and on the 10 September pack it is true of 35 of 46 requests. Treating the two
 # alike makes any rule that keys on "was anything left unread" fire on almost everything.
 DESCRIPTOR_PREFIX = 'Descriptive property, not a named value, left unverified: '
-COVERAGE_GAP_PREFIX = 'Text not explicitly accounted for: '
+# One definition, in approv/criticality.py: extraction writes this note, coverage reads
+# it, and the two have to agree on the string.
+from approv.criticality import COVERAGE_GAP_PREFIX
 DUPLICATE_PREFIX = 'Duplicate requirement for a stated attribute, second value discarded: '
 
 DROPPED_REQUIREMENT_PREFIXES = (

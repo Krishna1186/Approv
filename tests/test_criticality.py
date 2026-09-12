@@ -2,8 +2,9 @@
 import pytest
 
 from approv.criticality import (
-    GUARANTEED, OUT_OF_COVERAGE, REFUSED, applied, calibrate_returns, coverage_of,
-    request_layer, resolve, returns_layer, schema_layer, superseded_attributes,
+    COVERAGE_GAP_PREFIX, GUARANTEED, OUT_OF_COVERAGE, REFUSED, applied, calibrate_returns,
+    coverage_of, narrowed_attributes, request_layer, resolve, returns_layer, schema_layer,
+    superseded_attributes,
 )
 from approv.types.core import (
     AttributeSpec, Bound, BoundOp, CategorySchema, Certainty, Channel, CheckKind,
@@ -245,6 +246,67 @@ def test_a_soft_mismatch_is_declined_insurance_not_a_blocked_sale():
 def test_an_unstated_attribute_is_out_of_coverage_even_when_satisfied():
     """The record cannot claim to have honoured a requirement nobody made."""
     assert coverage_of(finding(Criticality.HARD, Support.UNSTATED)) == OUT_OF_COVERAGE
+
+
+# --- narrowing: a value read from more words than it kept ------------------------------
+
+def gap(text):
+    return (COVERAGE_GAP_PREFIX + text,)
+
+
+def test_a_value_narrower_than_its_own_quote_is_detected():
+    """The one measured failure mode that costs money, and the case it was measured on.
+
+    `shopper2-78-plain` asked for "a Tandem Stripe in Frost", the extractor recorded
+    colour as "Frost", the catalogue publishes colour "Frost", so the comparison was
+    SATISFIED and the record guaranteed it. The product was the wrong line. Set
+    arithmetic on the quote finds it with no model call:
+
+        {a, tandem, stripe, in, frost} - {frost} intersects {tandem, stripe}
+    """
+    constraint = want("color", "Frost", quote="a Tandem Stripe in Frost")
+    assert narrowed_attributes((constraint,), gap("tandem stripe")) == {"color"}
+
+
+def test_a_hedge_in_the_gap_is_not_a_narrowing():
+    """Six of the twenty-four gap notes on the v3 pack were nothing but hedge words.
+    "preferably" carries no value, so it reaches no constraint and the gap names it — but
+    it was read, by `request_layer`, and it is the reason the finding is SOFT. Counting it
+    as dropped text would put every hedged attribute out of coverage for the wrong
+    reason."""
+    constraint = want("color", "Tan", quote="preferably in Tan")
+    assert narrowed_attributes((constraint,), gap("preferably")) == frozenset()
+
+
+def test_a_split_marker_phrase_is_still_a_marker():
+    """The gap residual is a bag of words with stopwords stripped, so "or similar" arrives
+    as "similar". The quote still has the phrase intact, which is why markers are read off
+    the quote rather than off the note."""
+    constraint = want("size", "M", quote="around size M or similar")
+    assert narrowed_attributes((constraint,), gap("around similar")) == frozenset()
+
+
+def test_a_gap_belonging_to_another_clause_marks_nothing():
+    """Scoping to the constraint's own quote is what keeps this from being global. "no
+    rush" is genuinely dropped and genuinely uncoverable, but it says nothing about
+    whether the colour was read correctly."""
+    constraint = want("color", "Tan", quote="a Tan jacket")
+    assert narrowed_attributes((constraint,), gap("delivery speed rush")) == frozenset()
+
+
+def test_a_constraint_with_no_quote_is_not_narrowed():
+    """A structured channel that carries no wording cannot have narrowed the wording.
+    Absent evidence of a gap is not evidence of one."""
+    assert narrowed_attributes((want("color", "Frost"),), gap("tandem stripe")) == frozenset()
+
+
+def test_narrowing_withdraws_the_guarantee_and_nothing_else():
+    """It changes what the record promises, never what it decides. Relabelling a REFUSED
+    finding would report that we made no claim when in fact we blocked the sale."""
+    assert coverage_of(finding(Criticality.HARD, Support.SATISFIED),
+                       narrowed=True) == OUT_OF_COVERAGE
+    assert coverage_of(finding(Criticality.HARD, Support.VIOLATED),
+                       narrowed=True) == REFUSED
 
 
 def test_a_budget_cap_is_a_bound_even_though_it_is_phrased_as_a_negation():

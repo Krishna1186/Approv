@@ -13,14 +13,23 @@ of the merchant's own schema, or of the merchant's own return history.
     2. schema-derived    structural, free, sector-agnostic
     3. returns-calibrated  per merchant x category, calibrated on human returns
 
-Combination is `max`, with one cap and one floor:
+Combination is `max` over the upward signals, then the caps, then the floor:
 
     cap    never stated by the shopper -> never HARD, under any circumstance (2.2)
+    cap    hedged by the shopper       -> SOFT, whatever the priors say
     floor  no signal anywhere          -> SOFT, never HARD
 
-Both defaults run the same way: a missed check costs nothing until it is tested, and a
-wrongly-hard check blocks a real sale immediately, so every ambiguity resolves toward not
-blocking.
+**`max` is monotone, so it can only combine signals that point the same way** — each term
+evidence that the attribute matters *more*. A hedge is evidence it matters *less*, and
+downward evidence cannot survive a max: it is dominated by construction. A downward signal
+therefore has to be a cap rather than a term, and never-stated and explicit-hedge are the
+same shape for the same reason. The second was found by measuring rather than by assuming
+— with `max` alone, requests saying "preferably in Tan" produced zero SOFT findings out of
+176, because colour is a variant axis and layer 2 raised every one of them back to BOUND.
+
+All three defaults run the same way: a missed check costs nothing until it is tested, and
+a wrongly-hard check blocks a real sale immediately, so every ambiguity resolves toward
+not blocking.
 
 **Criticality maps to coverage, not only to the decision** (property 6, DR 0020). Under a
 guarantee a false SOFT costs us a payout and a false HARD costs the merchant a sale, so
@@ -33,9 +42,10 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable, Mapping
 
+from approv.algebra.term import normalize_term
 from approv.types.core import (
-    AttributeSpec, Bound, CategorySchema, Constraint, Criticality, FieldProfile, Money,
-    Quantity, Support, Finding,
+    AttributeSpec, Bound, CategorySchema, Constraint, Count, Criticality, FieldProfile,
+    Money, Quantity, Support, Term, Finding,
 )
 
 VERSION = "criticality-v1"
@@ -245,10 +255,11 @@ def resolve(
 ) -> Criticality:
     """One attribute, one transaction, one answer.
 
-    `max` across the layers, then the cap, then the floor. The cap is §2.2 in force: an
-    attribute the shopper never mentioned can never be HARD however the merchant
-    merchandises it or however often it drives returns, because silence is nobody's fault
-    and refusing a sale over it would attribute a failure to a party that did not fail.
+    `max` across the layers, then the caps, then the floor. The never-stated cap is §2.2
+    in force: an attribute the shopper never mentioned can never be HARD however the
+    merchant merchandises it or however often it drives returns, because silence is
+    nobody's fault and refusing a sale over it would attribute a failure to a party that
+    did not fail.
     """
     stated = request_layer(constraint, superseded=attribute in superseded) if constraint else None
     level = _strongest(
@@ -256,18 +267,11 @@ def resolve(
         schema_layer(attribute, profiles, in_floor=in_floor),
         returns_layer(attribute, returns, hard_at=hard_at, bound_at=bound_at),
     )
-    # An explicit hedge caps rather than merely contributing, and this is the second cap
-    # for the same reason as the first. Layers 2 and 3 are priors — customers in general
-    # choose on this axis, this attribute in general drives returns. Layer 1 is direct
-    # evidence about this transaction. `max` treats all three as equally authoritative, so
-    # a signal that points *down* cannot survive it: measured on the v3 pack, every one of
-    # the hedged requests produced "preferably in Tan" and "around size M or similar" in
-    # the quote, `request_layer` correctly returned SOFT, and `max` then raised all of them
-    # back to BOUND because colour and size are variant axes. SOFT stayed at zero of 176.
-    #
-    # A merchant's merchandising cannot outrank the shopper saying "preferably" about the
-    # thing being merchandised. `request_layer` returns SOFT only for a hedge, so this
-    # tests exactly that case and nothing else.
+    # The hedge cap (see the module docstring for why a downward signal cannot be a term
+    # in a `max`). Layers 2 and 3 are priors — customers in general choose on this axis,
+    # this attribute in general drives returns — and a merchant's merchandising cannot
+    # outrank the shopper saying "preferably" about the thing being merchandised.
+    # `request_layer` returns SOFT only for a hedge, so this tests that case and no other.
     if stated is Criticality.SOFT:
         return Criticality.SOFT
     if constraint is None and level is Criticality.HARD:
@@ -302,8 +306,81 @@ GUARANTEED = "guaranteed"
 OUT_OF_COVERAGE = "out_of_coverage"
 REFUSED = "refused"
 
+# Written by `harness/intent.py` when a reading leaves request words carried forward by no
+# constraint value and no note. Defined here rather than there because the note is only
+# half of the mechanism: extraction authors it, coverage reads it, and two copies of the
+# string would drift the moment either side was edited.
+COVERAGE_GAP_PREFIX = "Text not explicitly accounted for: "
 
-def coverage_of(finding: Finding) -> str:
+
+def _words(text: str) -> frozenset[str]:
+    return frozenset(normalize_term(text or "").split())
+
+
+def _value_words(value) -> frozenset[str]:
+    """The words that actually survived into something the operators will compare."""
+    if isinstance(value, Bound):
+        return _value_words(value.limit)
+    if isinstance(value, Term):
+        return _words(value.surface)
+    if isinstance(value, Count):
+        return _words(str(value.n))
+    return _words("%s %s" % (getattr(value, "magnitude", getattr(value, "amount", "")),
+                             getattr(value, "unit", getattr(value, "currency", ""))))
+
+
+def _marker_words(quote: str) -> frozenset[str]:
+    """Words layer 1 read as a marker rather than as content.
+
+    A hedge is not dropped text. "preferably" and "or similar" carry no value, so they
+    never reach a constraint and the gap note names them — on the v3 pack six of the
+    twenty-four gap notes were nothing but hedge words. They were read, by `request_layer`,
+    and they are why the finding is SOFT. Subtracting them here is what keeps a hedge from
+    being mistaken for a narrowing.
+    """
+    found: set[str] = set()
+    for pattern in (_EMPHASIS, _NEGATION, _HEDGE):
+        for match in pattern.finditer(quote or ""):
+            found |= _words(match.group(0))
+    return frozenset(found)
+
+
+def narrowed_attributes(constraints: Iterable[Constraint],
+                        notes: Iterable[str]) -> frozenset[str]:
+    """Attributes whose recorded value is narrower than the words it was read from.
+
+    A constraint whose own quote carries tokens the gap note says are unaccounted for has
+    had its value narrowed: the extractor read a phrase and kept part of it. Set
+    arithmetic, three lines, no model call.
+
+        quote "a Tandem Stripe in Frost" minus value "Frost"
+            intersected with gap "tandem stripe"   -> non-empty -> narrowed
+
+    This became possible only when the v6 prompt widened `raw_text` from the value to the
+    whole clause. Before that the quote *was* the value, the difference was empty by
+    construction, and no amount of arithmetic could have attributed a gap to an attribute.
+    The widening was done for a different reason; this falls out of it.
+
+    Deliberately not a criticality signal. Narrowing changes what the record *promises*,
+    never what it *decides* — see `coverage_of`.
+    """
+    gap: set[str] = set()
+    for note in notes or ():
+        text = str(note)
+        if text.startswith(COVERAGE_GAP_PREFIX):
+            gap |= _words(text[len(COVERAGE_GAP_PREFIX):])
+    if not gap:
+        return frozenset()
+    return frozenset(
+        constraint.attribute for constraint in constraints
+        if constraint.raw_text
+        and (_words(constraint.raw_text)
+             - _value_words(constraint.value)
+             - _marker_words(constraint.raw_text)) & gap
+    )
+
+
+def coverage_of(finding: Finding, *, narrowed: bool = False) -> str:
     """What this finding is worth in a dispute. Property 6, DR 0020.
 
     The point of the mapping is that a soft mismatch is never a blocked sale — it is
@@ -312,10 +389,23 @@ def coverage_of(finding: Finding) -> str:
 
     An unstated attribute is out of coverage even when satisfied, because the record
     cannot claim to have honoured a requirement nobody made.
+
+    **A narrowed reading is the same case.** If part of the phrase this value came from
+    went unaccounted for, we did not finish reading the requirement, and a guarantee over
+    a requirement we did not finish reading is a promise about words we never saw. Until
+    coverage existed the only lever for this was `strict_unread`, which had to choose
+    between guaranteeing the sale anyway and escalating it — measured at 0.3% false allow
+    / 3.3% nuisance against 0.0% / 48.4%. Routing to OUT_OF_COVERAGE is the third option
+    that the choice did not contain: the sale proceeds, nuisance does not move, and we
+    promise nothing we could not fully read.
+
+    Only GUARANTEED is withdrawn. REFUSED is not a promise, it is a decision that already
+    happened, and relabelling it would report that we made no claim when in fact we
+    blocked the sale.
     """
     if finding.criticality in (Criticality.HARD, Criticality.BOUND):
         if finding.support is Support.VIOLATED:
             return REFUSED
-        if finding.support is Support.SATISFIED:
+        if finding.support is Support.SATISFIED and not narrowed:
             return GUARANTEED
     return OUT_OF_COVERAGE

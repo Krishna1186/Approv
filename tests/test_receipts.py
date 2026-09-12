@@ -7,6 +7,7 @@ import pytest
 from approv.receipts.chain import (
     generate_key, public_key_hex, record_hash, seal, verify, verify_chain,
 )
+from approv.criticality import COVERAGE_GAP_PREFIX, GUARANTEED, OUT_OF_COVERAGE
 from approv.receipts.record import build_record, completeness, floor_is_met
 from approv.types.core import (
     AttributeSpec, CategorySchema, Channel, CheckKind, Constraint, Criticality,
@@ -44,6 +45,41 @@ def record(findings=None, constraints=None, **kw):
         product_snapshot={"title": "Magut", "size": "9"}, snapshot_hash="abc123",
         model_version="m-1", prompt_version="p-1",
         timestamp=datetime(2026, 9, 10, tzinfo=timezone.utc), **kw)
+
+
+# --- narrowing: the guarantee withdrawn where the reading did not finish ----------------
+
+def test_a_narrowed_requirement_is_authorised_but_not_guaranteed():
+    """The third option `strict_unread` did not contain, wired end to end.
+
+    Before coverage existed the only lever for a partly-read requirement was the floor,
+    which had to choose between escalating the sale (0.0% false allow at 48.4% nuisance)
+    and guaranteeing it anyway (0.3% at 3.3%). Routing the affected attribute out of
+    coverage is neither: the decision is untouched, so nuisance cannot move, and the
+    record promises nothing about words it did not finish reading.
+    """
+    narrowed = Constraint(attribute="color", value=Term(surface="Frost"),
+                          channel=Channel.AGENT_MESSAGE,
+                          raw_text="a Tandem Stripe in Frost")
+    built = record(
+        findings=(finding("size", Support.SATISFIED),
+                  finding("color", Support.SATISFIED)),
+        constraints=(constraint("size", "9"), narrowed),
+        unread=(COVERAGE_GAP_PREFIX + "tandem stripe",),
+        strict_unread=False)
+
+    covered = dict(zip((f.attribute for f in built.findings), built.coverage))
+    assert covered == {"size": GUARANTEED, "color": OUT_OF_COVERAGE}
+    assert built.decision is Decision.ALLOW
+
+
+def test_narrowing_is_computed_from_the_record_rather_than_passed_in():
+    """A caller that has to remember to pass it is a caller that will forget. `unread` is
+    already the record's account of what went unread, so this reads that rather than
+    asking for the same fact twice — the wiring failure coverage itself had the first
+    time round."""
+    import inspect
+    assert "narrowed" not in inspect.signature(build_record).parameters
 
 
 # --- completeness: the field that makes fault attributable -----------------------------

@@ -241,13 +241,22 @@ def main() -> int:
         print("  %-16s %s" % (label, rate(coverage[label], total_findings)))
     print()
     false_allows = exposure["guaranteed"] + exposure["uncovered"]
+    allows = count("allow")
     print("false allows split by exposure — %d total" % false_allows)
     print("  guaranteed (a payout)      %d" % exposure["guaranteed"])
     print("  out of coverage (no cost)  %d" % exposure["uncovered"])
     if exposure_attrs:
         print("  the attribute that made it wrong, and what we promised about it:")
-        for label, count in exposure_attrs.most_common(8):
-            print("    %-34s %d" % (label, count))
+        for label, n in exposure_attrs.most_common(8):
+            print("    %-34s %d" % (label, n))
+    # The number a guarantee is priced against, and it needs its denominator stated
+    # rather than inferred. A payout can only happen on a transaction we authorised, so
+    # the rate is per authorisation; the per-pair rate is given too because the two
+    # differ by an order of magnitude and quoting the wrong one understates the price.
+    print("  payout rate  per authorised transaction  %s  of %d allows"
+          % (rate(exposure["guaranteed"], allows), allows))
+    print("  payout rate  per pair scored             %s  of %d pairs"
+          % (rate(exposure["guaranteed"], total), total))
     print()
     print("by population — near-misses are the failure this exists for; far pairs are easy")
     for population in ("gold", "near", "far"):
