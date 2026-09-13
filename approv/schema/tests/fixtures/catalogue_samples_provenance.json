@@ -1,0 +1,20 @@
+{
+  "selection_version": "host-and-sibling-sample-v1",
+  "source_sha256": {
+    "shopping-study/shopper-v3.json": "c4818c7b8817c0b1edb2d5e1113aec1d8adcf1b03898b9660bffddd40378c6bf",
+    "shopify-raw.json": "59a5d4c423ace64c50d8de46e00906286cf25f69d176970e40ff2471e7b67cea"
+  },
+  "samples": {
+    "cached": {
+      "selected_listings": 50,
+      "source_listings": 33485
+    },
+    "raw": {
+      "selected_listings": 103,
+      "source_listings": 74858
+    }
+  },
+  "model_version": "none-deterministic",
+  "prompt_version": "none",
+  "purpose": "regression fixtures; not a statistical sample or published performance estimate"
+}
