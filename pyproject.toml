@@ -13,4 +13,4 @@ api = ["fastapi>=0.115"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
-testpaths = ["tests", "approv/schema/tests"]
+testpaths = ["tests", "approv"]
