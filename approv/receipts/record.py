@@ -17,8 +17,8 @@ from datetime import datetime, timezone
 from approv.criticality import coverage_of, narrowed_attributes, unread_requirements
 from approv.evaluator import VERSION as EVALUATOR_VERSION, decide
 from approv.types.core import (
-    AgentTurn, Attestation, CategorySchema, Claim, ComparisonRecord, Constraint,
-    Criticality, Finding, OrderLine, ReasonCode, UnreadPolicy,
+    AgentTurn, Attestation, CategorySchema, Claim, ComparisonRecord, Completion,
+    Constraint, Criticality, Finding, OrderLine, ReasonCode, UnreadPolicy,
 )
 
 VERSION = "receipt-v1"
@@ -125,6 +125,11 @@ def build_record(
     # pausing the merchant's checkout over it charges them for it.
     unread_policy: UnreadPolicy = UnreadPolicy.WITHDRAW,
     order: OrderLine | None = None,
+    # DR 0004. A verification that did not run to a conclusion never authorises and never
+    # carries coverage; it says so in the record rather than being indistinguishable from
+    # a clean allow.
+    completion: Completion = Completion.COMPLETED,
+    completion_detail: str | None = None,
 ) -> ComparisonRecord:
     """Assemble one unsigned ComparisonRecord and decide it.
 
@@ -147,7 +152,15 @@ def build_record(
     # no unread requirement, and storing it would say we failed to read something we read.
     unread = unread_requirements(constraints, unread)
     escalate = unread if unread_policy is UnreadPolicy.ESCALATE else ()
-    decision, reasons = decide(findings, floor_met=floor_is_met(findings, escalate))
+    # An incomplete check is the clearest possible case of the floor not being met — the
+    # preconditions for verification were not there — so the failure is expressed in the
+    # input `decide` already takes rather than by overriding its answer. `decide` cannot
+    # return ALLOW with `floor_met=False`, which is the property that matters: today
+    # `decide(())` returns ALLOW, so an extractor that fails and yields no constraints
+    # authorises the purchase. That is the fail-open bypass, reachable without an attacker.
+    incomplete = completion is not Completion.COMPLETED
+    decision, reasons = decide(
+        findings, floor_met=not incomplete and floor_is_met(findings, escalate))
     # Computed here and not passed in, so that a caller cannot forget it. `unread` is
     # already the record's honest account of what went unread; this reads it rather than
     # asking for the same thing twice.
@@ -171,9 +184,12 @@ def build_record(
         product_snapshot=product_snapshot,
         snapshot_hash=snapshot_hash,
         order=order,
+        completion=completion,
+        completion_detail=completion_detail,
         findings=findings,
         coverage=tuple(coverage_of(f, narrowed=f.attribute in narrowed,
-                                   request_unread=request_unread) for f in findings),
+                                   request_unread=request_unread, incomplete=incomplete)
+                       for f in findings),
         completeness=completeness(schema, constraints),
         unread=unread,
         decision=decision,

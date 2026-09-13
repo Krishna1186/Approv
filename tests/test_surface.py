@@ -12,7 +12,8 @@ from approv.surface.verification import (
 )
 from approv.types.core import (
     AttributeSpec, CategorySchema, Certainty, Channel, Constraint, Criticality, Decision,
-    Dimension, FieldProfile, Liability, Money, OrderLine, Support, Term, UnreadPolicy,
+    Completion, Dimension, FieldProfile, Liability, Money, OrderLine, Support, Term,
+    UnreadPolicy,
 )
 
 SCHEMA = CategorySchema(
@@ -351,6 +352,110 @@ def test_the_signing_key_seals_on_the_way_out():
     verify(result.record, public_key_hex(key))
 
 
+# --- DR 0004: a verification that did not complete -----------------------------------------
+
+def failing(error):
+    def extract(text, schema):
+        raise error
+    return extract
+
+
+def incomplete(extract=None, **kw):
+    return verify_order(request(artifact=FreeText(text="a Frost duvet in M")),
+                        schemas=SCHEMAS,
+                        extract=extract or failing(TimeoutError("read timed out")), **kw)
+
+
+def test_a_provider_that_did_not_answer_never_authorises():
+    """The bug this closes is live, not hypothetical: `decide(())` returns ALLOW, so an
+    extractor that failed and yielded no constraints authorised the purchase. That is the
+    fail-open bypass DR 0004's own attack section describes, reachable without an
+    attacker."""
+    result = incomplete()
+
+    assert result.record.decision is Decision.CONFIRM
+    assert result.record.completion is Completion.PROVIDER_UNAVAILABLE
+    assert "timed out" in result.record.completion_detail
+    assert not result.covered
+
+
+def test_a_failure_confirms_rather_than_refusing():
+    """A failed check is not evidence the product is wrong. Refusing on our own outage
+    bills the merchant for it — a lost sale caused by our vendor — and `confirm` is the
+    recoverable branch."""
+    assert incomplete().record.decision is not Decision.REFUSE
+
+
+def test_a_malformed_response_is_told_apart_from_an_absent_one():
+    result = incomplete(extract=failing(ValueError("expected object, got list")))
+    assert result.record.completion is Completion.UNREADABLE_RESPONSE
+
+
+def test_our_vendor_being_down_is_told_apart_from_the_catalogue_being_wrong():
+    """The two sentences a merchant needs told apart. One refusal covering both tells them
+    neither, which is why `catalogue_unreadable` is its own value."""
+    def unreadable(snapshot, schema):
+        raise KeyError("variant")
+
+    result = verify_order(request(), schemas=SCHEMAS, read_evidence=unreadable)
+    assert result.record.completion is Completion.CATALOGUE_UNREADABLE
+    assert "catalogue snapshot" in result.record.completion_detail
+    # However the merchant's snapshot failed to read, it is the merchant's snapshot. The
+    # parse/no-answer split belongs to the reader boundary, where it means something.
+    assert not result.covered
+
+
+def test_an_unreadable_request_is_told_apart_from_an_absent_one():
+    """`Undeclared` means the order carried no stated request, which is merchant channel
+    policy. A failed read means we could not read the one it carried, which is ours.
+    `covered` is False either way, so `completion` is the only thing that separates them."""
+    absent = verify_order(request(artifact=Undeclared()), schemas=SCHEMAS)
+    unread = incomplete()
+
+    assert not absent.covered and not unread.covered
+    assert absent.record.completion is Completion.COMPLETED
+    assert unread.record.completion is Completion.PROVIDER_UNAVAILABLE
+
+
+def test_a_blown_budget_cannot_authorise_even_when_everything_matched():
+    """The safety property, not the latency one. Every finding here is SATISFIED and the
+    record still neither authorises nor guarantees, because the answer arrived too late to
+    be usable."""
+    result = verify_order(request(), schemas=SCHEMAS, budget_seconds=0.0)
+
+    assert result.record.decision is Decision.CONFIRM
+    assert result.record.completion is Completion.BUDGET_EXCEEDED
+    assert "budget" in result.record.completion_detail
+    assert [f.support for f in result.record.findings].count(Support.SATISFIED) == 2
+    assert "guaranteed" not in result.record.coverage
+
+
+def test_no_budget_set_is_no_abort():
+    assert verify_order(request(), schemas=SCHEMAS).record.completion is Completion.COMPLETED
+
+
+def test_the_completion_state_is_inside_the_signature():
+    """An abort that can be edited afterwards is an abort that never happened. The point of
+    recording it is the receipt chain, so it has to be sealed like everything else."""
+    key = generate_key()
+    sealed = seal(incomplete().record, key)
+    verify(sealed, public_key_hex(key))
+
+    tampered = sealed.model_copy(update={"completion": Completion.COMPLETED})
+    with pytest.raises(ValueError, match="does not match its hash"):
+        verify(tampered, public_key_hex(key))
+
+
+def test_a_bug_in_our_own_assembly_still_raises():
+    """Only the two injected boundaries are caught. Laundering a programming error into a
+    signed `confirm` record would hide it behind a plausible-looking artifact, which is
+    worse than a 500 nobody can miss."""
+    with pytest.raises(UnknownCategory):
+        verify_order(request(), schemas={})
+    with pytest.raises(ProductMismatch):
+        verify_order(request(snapshot={**SNAPSHOT, "id": "prod-2"}), schemas=SCHEMAS)
+
+
 # --- the HTTP router ----------------------------------------------------------------------
 
 # Skipped per test, never per module: the framework-free half above is meant to run with
@@ -409,6 +514,22 @@ def test_a_caller_cannot_supply_their_own_schema():
     counts as a match, the record would be worth nothing."""
     response = client().post("/v1/verify", json=body(schema={"anything": True}))
     assert response.status_code == 422
+
+
+@requires_api
+def test_a_verification_that_did_not_complete_is_a_200_with_the_record():
+    """A 5xx hands the merchant nothing to keep, and their integration's most likely
+    response to one is to ship anyway — failing open through the error handler rather than
+    through the gate."""
+    def boom(text, schema):
+        raise TimeoutError("read timed out")
+
+    response = client(extract=boom).post("/v1/verify", json=body(
+        artifact={"shape": "free_text", "text": "a Frost duvet in M"}))
+
+    assert response.status_code == 200
+    assert response.json()["record"]["completion"] == "provider_unavailable"
+    assert response.json()["record"]["decision"] == "confirm"
 
 
 @requires_api

@@ -1,6 +1,6 @@
 # DR 0004 — Latency budget, and which way we fail when it runs out
 
-- **Status:** OPEN — founder decides
+- **Status:** CLOSED 2026-09-13 — see *Decision* at the foot of this file
 - **Raised:** 2026-09-03, by the founder
 - **Touches:** all three call sites in §2.5, the record, §6
 - **Blocks:** nothing yet, but it constrains every operator's implementation
@@ -248,6 +248,88 @@ product snapshot hash, so a catalogue edit invalidates the entry rather than ser
 verdict computed against a listing that no longer exists.
 
 
-## Decision
+## Decision — 2026-09-13
 
-*(founder — fill in, then set Status to CLOSED and record the date)*
+Option 2 as recommended, plus the part this DR never named: **a verification that did not
+complete is a different event from one that completed and found a problem, and the record
+has to say which.** Everything below follows from one rule.
+
+> **No coverage may ever be inferred from a verification that did not complete.**
+
+### It is a second axis, not a fourth state
+
+`allow` / `confirm` / `refuse` stay exactly as they are. A fourth transaction state has
+been proposed and killed before, and it would be wrong here for a specific reason: a
+provider outage is not a *verdict about the purchase*, it is a fact about *us*. Putting it
+in the same enum would force every consumer to handle "the shop is on fire" in a switch
+about whether the duvet is the right colour.
+
+So `ComparisonRecord` gains `completion`, orthogonal to `decision`:
+
+| `completion` | What it means | Whose problem |
+|---|---|---|
+| `completed` | The check ran to a conclusion. | — |
+| `provider_unavailable` | The reader did not answer. | ours |
+| `unreadable_response` | It answered with something we could not parse. | ours |
+| `budget_exceeded` | It answered, too late to be usable. | ours |
+| `catalogue_unreadable` | The merchant's snapshot could not be read. | **the merchant's** |
+| `internal_error` | Anything else, named rather than hidden. | ours |
+
+`catalogue_unreadable` earns its own value because of the founder-facing distinction the
+PRD names: *"your catalogue is wrong"* and *"our vendor is down"* are the two sentences a
+merchant needs told apart, and collapsing them into one refusal tells them neither.
+`completion_detail` carries the specific, verbatim — which reader, how long it took.
+
+### It never authorises, and it routes through the floor
+
+An incomplete verification sets `floor_met=False` and `evaluator.decide` does the rest.
+Nothing overrides the decision function; the failure is expressed in the input it already
+takes, because a check that did not finish is the clearest possible case of *"the
+preconditions for verification were not there"* (DR 0007).
+
+The result is `confirm`, and deliberately **not** `refuse`. A failed check is not evidence
+the product is wrong, and refusing on our own outage bills the merchant for it — a lost
+sale caused by our vendor. `confirm` is the recoverable branch (§2.6): the purchase is
+paused, not blocked.
+
+Today this is not merely undecided, it is **backwards**. `decide(())` returns ALLOW, so an
+extractor that fails and yields zero constraints currently authorises the purchase. That is
+the fail-open bypass this DR's own attack section describes, reachable without an attacker.
+
+### Coverage is withdrawn entirely
+
+Every finding on an incomplete record is `out_of_coverage`. Not the attribute-scoped
+withdrawal of narrowing, and not for the same reason as DR 0022's unread request — those
+are both *readings* we can characterise. This is the absence of a reading. Whatever the
+findings happen to say, they were produced by a check that did not run to a conclusion, and
+a promise resting on them would be a promise about nothing.
+
+`coverage_of` therefore takes `incomplete` as a parameter distinct from `request_unread`,
+rather than folding them together. They withdraw the same guarantee for different reasons,
+and a dispute artifact that cannot say which of the two happened is worse at its only job.
+
+### An abort is recorded, never a 5xx
+
+The original text is right that an unrecorded abort is indistinguishable from a successful
+`allow` in the receipt chain. So `POST /v1/verify` answers **200** with the record, exactly
+as a refusal does. A 5xx hands the merchant nothing to keep, and their integration's most
+likely response to one is to ship anyway — which is failing open through the error handler
+rather than through the gate.
+
+Only the two injected, fallible boundaries are caught this way: the extractor and the
+catalogue reader. A bug in our own assembly still raises, because laundering a programming
+error into a signed `confirm` record would hide it behind a plausible-looking artifact.
+
+### The budget is a mechanism here, not a number
+
+Elapsed time is measured around each fallible stage and recorded. When a budget is set and
+exceeded, the verification is `budget_exceeded` and cannot authorise.
+
+**This does not cut the call short**, and pretending otherwise would be the more dangerous
+error. Cancelling in flight requires cooperation from the adapter that owns the HTTP
+client; what is guaranteed here is the safety property — *we never authorise on a call that
+blew its budget* — not the latency property. The millisecond figures remain Stage E work
+against a real page load, as the founder said.
+
+`mark` failing open is unchanged and unimplemented: there is no `mark` surface to fail open
+on yet, and writing one to satisfy a table would be building ahead.

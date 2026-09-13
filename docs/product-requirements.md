@@ -89,10 +89,24 @@ quantity and price it checked.
 engine, the tests and every decision record for nothing. The merchant-facing labels are a
 presentation concern and may differ.
 
-**One genuine gap: `system_failure`.** A provider timeout, a malformed model response and
-a real product mismatch are materially different events and must not collapse into one
-refusal. Nothing currently routes them apart. **No coverage may ever be inferred from a
-verification that did not complete.** This is DR 0004, still open.
+**Closed, 13 September (DR 0004).** `system_failure` is a *second axis*, not a fourth
+state: `ComparisonRecord.completion` is one of `completed`, `provider_unavailable`,
+`unreadable_response`, `budget_exceeded`, `catalogue_unreadable`, `internal_error`, with
+`completion_detail` carrying the specific. `catalogue_unreadable` is separate because
+*"your catalogue is wrong"* and *"our vendor is down"* are the two sentences a merchant
+needs told apart.
+
+An incomplete verification sets `floor_met=False`, so `evaluator.decide` returns `confirm`
+and nothing overrides the decision function — and deliberately not `refuse`, because a
+failed check is not evidence the product is wrong and refusing on our own outage bills the
+merchant for it. **No coverage may ever be inferred from a verification that did not
+complete:** every finding on such a record is `out_of_coverage`, and the result's `covered`
+is false whatever the channel would otherwise have earned. The abort is a 200 with the
+record, because a 5xx hands the merchant nothing to keep and invites their integration to
+ship anyway.
+
+This closed a live fail-open: `decide(())` returns `allow`, so an extractor that failed and
+yielded no constraints was authorising the purchase.
 
 ## 5. Input fidelity decides the product and the price
 

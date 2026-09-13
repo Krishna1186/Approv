@@ -39,6 +39,7 @@ def create_app(
     signing_key=None,
     unread_policy: UnreadPolicy = UnreadPolicy.WITHDRAW,
     returns: Mapping[str, float] | None = None,
+    budget_seconds: float | None = None,
     title: str = "Approv order verification",
 ):
     """One endpoint, and its configuration bound once rather than per request.
@@ -61,11 +62,18 @@ def create_app(
         A refusal is a successful verification with an unwelcome answer, so it is a 200
         with `decision: refuse`. Returning an error status would invite a caller to treat
         it as a transport failure and retry until it went away.
+
+        **A verification that did not complete is also a 200** (DR 0004), carrying
+        `completion` and `completion_detail` and a `confirm` decision. A 5xx would hand the
+        merchant nothing to keep, and their integration's most likely response to one is to
+        ship anyway — which is failing open through the error handler rather than through
+        the gate. The record is what makes the abort auditable instead of invisible.
         """
         try:
             return verify_order(request, schemas=schemas, read_evidence=read_evidence,
                                 extract=extract, signing_key=signing_key,
-                                unread_policy=unread_policy, returns=returns)
+                                unread_policy=unread_policy, returns=returns,
+                                budget_seconds=budget_seconds)
         except UnknownCategory as error:
             raise HTTPException(status_code=404,
                                 detail="unknown category: %s" % error) from error

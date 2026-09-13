@@ -28,20 +28,21 @@ business parameter, not a constant.
 from __future__ import annotations
 
 import hashlib
+import time
 from typing import Annotated, Callable, Mapping, Union
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 from approv.algebra.runner import check_constraints
 from approv.intake import (
-    AgentPresence, Artifact, Extractor, FreeText, Search, Structured, Surface, Undeclared,
-    intake,
+    AgentPresence, Artifact, Extractor, FreeText, Intake, Search, Structured, Surface,
+    Undeclared, intake,
 )
 from approv.receipts.chain import canonical_json, seal
 from approv.receipts.record import build_record
 from approv.types.core import (
-    Attestation, CategorySchema, ComparisonRecord, Count, Evidence, OrderLine, Term,
-    UnreadPolicy, Value,
+    Attestation, CategorySchema, ComparisonRecord, Completion, Count, Evidence, Finding,
+    OrderLine, Term, UnreadPolicy, Value,
 )
 
 VERSION = "surface-v1"
@@ -192,26 +193,51 @@ def verify_order(
     prev_hash: str | None = None,
     unread_policy: UnreadPolicy = UnreadPolicy.WITHDRAW,
     returns: Mapping[str, float] | None = None,
+    budget_seconds: float | None = None,
 ) -> VerificationResult:
     """One order line in, one signed record out.
 
     `returns` is the merchant's calibrated differ-rate table (criticality layer 3) when
     they have one. Absent, layers 1 and 2 carry the transaction on their own, which is the
     cold-start case the layering exists to survive.
+
+    `budget_seconds` is DR 0004's abort, as a safety property rather than a latency one: a
+    verification that blew its budget cannot authorise. It does **not** cut the call short,
+    because cancelling in flight needs cooperation from the adapter that owns the HTTP
+    client, and claiming otherwise would be the more dangerous error.
     """
     schema = schemas.get(request.category_id)
     if schema is None:
         raise UnknownCategory(request.category_id)
     _bind_snapshot_to_order(request)
 
-    taken = intake(request.artifact, schema, surface=request.surface,
-                   merchant_id=request.merchant_id, adapter=request.adapter,
-                   extract=extract, agent=request.agent)
+    started = time.monotonic()
+    completion, detail = Completion.COMPLETED, None
+    findings: tuple[Finding, ...] = ()
 
-    evidence = read_evidence(request.product_snapshot, schema)
-    findings = check_constraints(
-        taken.constraints, evidence, schema, returns=returns,
-        superseded=frozenset(taken.superseded))
+    taken, failure = _run(
+        lambda: intake(request.artifact, schema, surface=request.surface,
+                       merchant_id=request.merchant_id, adapter=request.adapter,
+                       extract=extract, agent=request.agent),
+        Completion.PROVIDER_UNAVAILABLE, "reading the stated request",
+        parse_failure=Completion.UNREADABLE_RESPONSE)
+    if failure is None:
+        evidence, failure = _run(
+            lambda: read_evidence(request.product_snapshot, schema),
+            Completion.CATALOGUE_UNREADABLE, "reading the catalogue snapshot")
+    if failure is None:
+        findings = check_constraints(
+            taken.constraints, evidence, schema, returns=returns,
+            superseded=frozenset(taken.superseded))
+    else:
+        completion, detail = failure
+        taken = taken if taken is not None else _nothing_read(request, schema)
+
+    elapsed = time.monotonic() - started
+    if completion is Completion.COMPLETED and budget_seconds is not None             and elapsed > budget_seconds:
+        completion = Completion.BUDGET_EXCEEDED
+        detail = "verification took %.0f ms against a %.0f ms budget" % (
+            elapsed * 1000, budget_seconds * 1000)
 
     record = build_record(
         correlation_id=request.correlation_id,
@@ -232,12 +258,61 @@ def verify_order(
         unread=taken.unread,
         unread_policy=unread_policy,
         order=request.order,
+        completion=completion,
+        completion_detail=detail,
     )
     if signing_key is not None:
         record = seal(record, signing_key, prev_hash)
 
-    return VerificationResult(record=record, receipt_id=request.correlation_id,
-                              covered=taken.covered, intake_notes=taken.notes)
+    # No coverage may ever be inferred from a verification that did not complete (DR
+    # 0004). Intake's verdict is about the channel and knows nothing about whether the
+    # check finished, so the two are combined here rather than leaving a caller to read
+    # `covered: true` beside a provider outage.
+    return VerificationResult(
+        record=record, receipt_id=request.correlation_id,
+        covered=taken.covered and completion is Completion.COMPLETED,
+        intake_notes=taken.notes)
+
+
+# A malformed answer and no answer at all are different events on the reader boundary —
+# "it replied with something we could not parse" against "it did not reply". On the
+# catalogue boundary there is no such split: however the merchant's snapshot failed to
+# read, it is the merchant's snapshot, and that is the distinction worth keeping.
+_PARSE_ERRORS = (ValueError, TypeError, KeyError, AttributeError, IndexError)
+
+
+def _run(step, failure: Completion, what: str, *, parse_failure: Completion | None = None):
+    """Run one fallible boundary. Returns (value, None) or (None, (completion, detail)).
+
+    Only the two *injected* boundaries go through this — the extractor and the catalogue
+    reader. They are somebody else's code reaching somebody else's network, and DR 0004 is
+    explicit that an abort is a recorded outcome rather than a silent skip: an unrecorded
+    one is indistinguishable from a successful allow in the receipt chain.
+
+    A bug in our own assembly deliberately still raises. Laundering a programming error
+    into a signed `confirm` record would hide it behind a plausible-looking artifact, which
+    is a worse failure than a 500 nobody can miss.
+    """
+    try:
+        return step(), None
+    except Exception as error:  # noqa: BLE001 - the boundary is the point
+        kind = failure
+        if parse_failure is not None and isinstance(error, _PARSE_ERRORS):
+            kind = parse_failure
+        return None, (kind, "%s: %s: %s" % (what, type(error).__name__, error))
+
+
+def _nothing_read(request: VerificationRequest, schema: CategorySchema) -> Intake:
+    """The empty reading, for a record whose reading never happened.
+
+    Not an `Undeclared` intake: that means the order carried no stated request, which is
+    the merchant's channel policy. This means we could not read the one it carried, which
+    is ours. `covered` is False either way and `completion` is what tells them apart.
+    """
+    return Intake(surface=request.surface, shape=request.artifact.shape,
+                  agent=request.agent or AgentPresence.UNKNOWN,
+                  merchant_id=request.merchant_id, covered=False,
+                  notes=("the stated request could not be read; see completion_detail",))
 
 
 def _bind_snapshot_to_order(request: VerificationRequest) -> None:

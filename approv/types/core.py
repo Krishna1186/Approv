@@ -102,6 +102,28 @@ class Decision(str, Enum):
     REFUSE = "refuse"
 
 
+class Completion(str, Enum):
+    """Whether the verification ran to a conclusion, and if not, whose problem it was.
+
+    DR 0004. Orthogonal to `Decision` on purpose: a provider outage is not a verdict about
+    the purchase, it is a fact about us, and putting it in the same enum would force every
+    consumer to handle "the shop is on fire" inside a switch about whether the duvet is the
+    right colour. A fourth transaction state has been proposed and killed before; this is
+    the axis that was actually missing.
+
+    `CATALOGUE_UNREADABLE` is separate from the rest because *"your catalogue is wrong"*
+    and *"our vendor is down"* are the two sentences a merchant needs told apart, and one
+    refusal covering both tells them neither.
+    """
+
+    COMPLETED = "completed"
+    PROVIDER_UNAVAILABLE = "provider_unavailable"
+    UNREADABLE_RESPONSE = "unreadable_response"
+    BUDGET_EXCEEDED = "budget_exceeded"
+    CATALOGUE_UNREADABLE = "catalogue_unreadable"
+    INTERNAL_ERROR = "internal_error"
+
+
 class UnreadPolicy(str, Enum):
     """What a request we did not finish reading does to the answer. DR 0022.
 
@@ -522,6 +544,12 @@ class ComparisonRecord(BaseModel):
     product_id: str
     product_snapshot: dict[str, object]
     snapshot_hash: str
+    # Whether this verification ran to a conclusion at all, and the specific detail — which
+    # reader, how long it took. DR 0004: an abort is a recorded outcome, never a silent
+    # skip, because an unrecorded abort is indistinguishable from a successful allow in the
+    # receipt chain, which makes the chain useless for the dispute it exists to survive.
+    completion: Completion = Completion.COMPLETED
+    completion_detail: str | None = None
     # The order half. Optional because a comparison can be run at shelf time, before any
     # order exists, and that is a real call site (`mark`). A record that carries one is a
     # merchant order verification; a record without one is a comparison about a product.

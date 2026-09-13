@@ -433,6 +433,62 @@ anyway; what changed is that the record now says which ones we can stand behind.
 bound the product, and the larger of the two ways out is schema expressiveness rather than
 extraction: most surviving gaps are requirements the category has no attribute for.
 
+## DR 0004 — a verification that did not complete (13 September)
+
+Closed. A provider timeout, a malformed response, an unreadable catalogue and a genuine
+product mismatch collapsed into one refusal, and one of them was worse than collapsed.
+
+**It was failing open.** `decide(())` returns ALLOW, so an extractor that failed and
+yielded no constraints *authorised the purchase*. DR 0004's own attack section describes
+that bypass as something an attacker induces with latency; it was reachable without one.
+
+**A second axis, not a fourth state.** `Decision` is untouched — a fourth transaction state
+has been proposed and killed before, and it would be wrong here anyway: a provider outage
+is not a verdict about the purchase, it is a fact about us, and putting it in the same enum
+forces every consumer to handle "the shop is on fire" inside a switch about whether the
+duvet is the right colour. `ComparisonRecord.completion` is the axis that was missing:
+
+| | whose problem |
+|---|---|
+| `completed` | — |
+| `provider_unavailable` · `unreadable_response` · `budget_exceeded` | ours |
+| `catalogue_unreadable` | **the merchant's** |
+| `internal_error` | ours, named rather than hidden |
+
+`catalogue_unreadable` earns its own value because *"your catalogue is wrong"* and *"our
+vendor is down"* are the two sentences a merchant needs told apart. On the reader boundary
+a parse failure and no answer at all are also told apart; on the catalogue boundary they
+are not, because however the merchant's snapshot failed to read, it is the merchant's
+snapshot.
+
+**It routes through the floor, so nothing overrides the evaluator.** An incomplete check
+sets `floor_met=False` — the clearest possible case of the preconditions not being there —
+and `decide` cannot return ALLOW from that. The answer is `confirm` and deliberately not
+`refuse`: a failed check is not evidence the product is wrong, and refusing on our own
+outage bills the merchant for it.
+
+**Coverage is withdrawn entirely**, and `incomplete` is its own parameter on `coverage_of`
+rather than folded in with narrowing and DR 0022's unread request. Those two are readings
+we can characterise; this is the absence of a reading. A dispute artifact that cannot say
+which of the three happened is worse at its only job. `VerificationResult.covered` is
+gated on completion too — intake's channel verdict knows nothing about whether the check
+finished, and `covered: true` beside a provider outage is exactly the seam worth closing.
+
+**An abort is a 200 with the record.** A 5xx hands the merchant nothing to keep, and their
+integration's most likely response to one is to ship anyway — failing open through the
+error handler rather than through the gate. Only the two *injected* boundaries are caught
+this way; a bug in our own assembly still raises, because laundering a programming error
+into a signed `confirm` would hide it behind a plausible-looking artifact.
+
+**The budget is a mechanism, not a number.** `budget_seconds` guarantees the safety
+property — we never authorise on a call that blew its budget — and explicitly not the
+latency one: it does not cut the call short, because cancelling in flight needs cooperation
+from the adapter that owns the HTTP client. The millisecond figures stay Stage E work
+against a real page load. `mark` failing open is unchanged and unimplemented: there is no
+`mark` surface yet, and writing one to satisfy a table would be building ahead.
+
+562 tests. Nothing measured moved.
+
 ## Open
 
 - Extraction is scored against the generator's spec, not against hand labels. That
@@ -440,6 +496,9 @@ extraction: most surviving gaps are requirements the category has no attribute f
   shopper's wording is not in evidence anywhere.
 - `mark` and `verify` unscored.
 - Whether published merchant data is true. Nothing here tests that and nothing can.
+- `approv/artifact/` renders a record for a returns desk and does not yet know about
+  `completion`, so an incomplete verification reads there as an ordinary confirm. Not my
+  file; flagged rather than edited.
 - Coverage is bounded by schema expressiveness: 43% of held-out requests still carry an
   unread note after the marker fix, and most of those name something this category has no
   attribute for. Selling a guarantee on under half of traffic is a product limit, not a

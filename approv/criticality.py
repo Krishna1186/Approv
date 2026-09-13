@@ -411,7 +411,7 @@ def narrowed_attributes(constraints: Iterable[Constraint],
 
 
 def coverage_of(finding: Finding, *, narrowed: bool = False,
-                request_unread: bool = False) -> str:
+                request_unread: bool = False, incomplete: bool = False) -> str:
     """What this finding is worth in a dispute. Property 6, DR 0020.
 
     The point of the mapping is that a soft mismatch is never a blocked sale — it is
@@ -437,13 +437,22 @@ def coverage_of(finding: Finding, *, narrowed: bool = False,
     that this order was as asked; a request we did not finish reading cannot support that
     promise about any attribute, however cleanly the attributes we did read compare.
 
-    Only GUARANTEED is withdrawn, in both cases. REFUSED is not a promise, it is a decision
-    that already happened, and relabelling it would report that we made no claim when in
-    fact we blocked the sale.
+    **`incomplete` is the third, and it is not the same fact** (DR 0004). Narrowing and an
+    unread request are both *readings* we can characterise. This is the absence of a
+    reading: the check did not run to a conclusion, so whatever the findings happen to say
+    was produced by something that did not finish, and a promise resting on them would be a
+    promise about nothing. Kept as its own parameter rather than folded in with the others
+    because a dispute artifact that cannot say which of the three happened is worse at its
+    only job.
+
+    Only GUARANTEED is withdrawn, in all three cases. REFUSED is not a promise, it is a
+    decision that already happened, and relabelling it would report that we made no claim
+    when in fact we blocked the sale.
     """
     if finding.criticality in (Criticality.HARD, Criticality.BOUND):
         if finding.support is Support.VIOLATED:
             return REFUSED
-        if finding.support is Support.SATISFIED and not (narrowed or request_unread):
+        if finding.support is Support.SATISFIED and not (
+                narrowed or request_unread or incomplete):
             return GUARANTEED
     return OUT_OF_COVERAGE

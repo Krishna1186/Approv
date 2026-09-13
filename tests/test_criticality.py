@@ -354,6 +354,16 @@ def test_an_unread_request_withdraws_the_guarantee_from_the_whole_record():
                        request_unread=True) == REFUSED
 
 
+def test_a_verification_that_did_not_complete_carries_no_guarantee(): 
+    """DR 0004, and it is not the same fact as the other two. Narrowing and an unread
+    request are readings we can characterise; this is the absence of a reading. Whatever
+    the findings say, they came from a check that did not finish."""
+    assert coverage_of(finding(Criticality.HARD, Support.SATISFIED),
+                       incomplete=True) == OUT_OF_COVERAGE
+    assert coverage_of(finding(Criticality.HARD, Support.VIOLATED),
+                       incomplete=True) == REFUSED
+
+
 def test_narrowing_withdraws_the_guarantee_and_nothing_else():
     """It changes what the record promises, never what it decides. Relabelling a REFUSED
     finding would report that we made no claim when in fact we blocked the sale."""

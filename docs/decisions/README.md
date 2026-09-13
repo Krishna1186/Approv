@@ -1,6 +1,6 @@
 # Decision records — index
 
-22 records, **10 still open**. Read this
+22 records, **9 still open**. Read this
 file instead of opening them. Full text is kept for the reasoning, not for re-reading.
 
 Under the 10 September contract only a §3.8 change earns a new record: the decision path,
@@ -11,7 +11,7 @@ coverage language, or a number that will be published. Nothing else does.
 | [0001](0001-unstated-vs-unavailable.md) | Does the ternary need a fourth value? | closed |
 | [0002](0002-where-comparison-lives.md) | Where do the comparison operators live? | closed |
 | [0003](0003-taxonomy-shape.md) | Taxonomy shape, entity linking, and who may edit the taxonomy | closed |
-| [0004](0004-latency-budget-and-degradation.md) | Latency budget, and which way we fail when it runs out | **OPEN** |
+| [0004](0004-latency-budget-and-degradation.md) | Latency budget, and which way we fail when it runs out | closed |
 | [0005](0005-request-side-provenance.md) | Constraints carry provenance too | **OPEN** |
 | [0006](0006-ontology-vs-lexicon.md) | One ontology, many lexicons | on hold |
 | [0007](0007-verification-floor.md) | The verification floor: minimum data per category | closed |
