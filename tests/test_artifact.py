@@ -358,9 +358,18 @@ def test_an_authorised_order_with_a_contradicted_preference_says_so_at_the_top()
 def test_the_verification_floor_is_not_printed_as_an_attribute():
     """`decide` returns `verification_floor` in place of an attribute name when the floor
     was not met. It is a state of the check, not something the shopper asked for, and a
-    row labelled with it would read as a requirement nobody can find in the request."""
-    doc = build(record(unread=("Unsupported requirement: hotel weight",),
-                       findings=(found("size", Support.SATISFIED, Criticality.HARD),)))
+    row labelled with it would read as a requirement nobody can find in the request.
+
+    The floor is reached through a finding's own reason code rather than through an unread
+    request, deliberately: what an unread request does to the decision is a business
+    parameter under active measurement (DR 0021, DR 0022), and a rendering test that moved
+    with it would be pinning someone else's tuning.
+    """
+    # `decide` substitutes the pseudo-attribute only when the floor fails and no blocking
+    # attribute is itself unresolved, so the finding that fails the floor is a preference.
+    floored = found("weave", Support.UNSTATED, Criticality.SOFT,
+                    reasons=(ReasonCode.FLOOR_NOT_MET,))
+    doc = build(record(findings=(floored,)))
     assert FLOOR_REASON in doc.record.decision_reasons
     assert any("did not have what it needed" in a.text for a in doc.alerts)
     assert FLOOR_REASON not in render_text(doc.record)
@@ -494,6 +503,37 @@ def test_the_printed_instructions_use_none_of_our_code():
         elif isinstance(node, ast.Import):
             imported.update(alias.name.split(".")[0] for alias in node.names)
     assert imported <= {"hashlib", "json", "cryptography"}
+
+
+def test_the_document_names_which_published_key_signed_it(tmp_path):
+    """"Approv's public key" stopped being a single thing when rotation landed.
+
+    A receipt stays verifiable under the key that signed it, so a reader handed today's
+    key for a receipt signed under last quarter's would check it against the wrong one
+    and conclude the record was forged. The record names its key; the page prints it.
+    """
+    sealed, key_hex, _ = seal_to_disk(tmp_path, record(sign=False))
+    text = render_text(sealed, public_key=key_hex)
+
+    assert sealed.key_id and sealed.key_id in text
+    assert sealed.signature_version in text
+
+
+def test_the_printed_procedure_checks_the_key_and_the_format_not_only_the_digest(tmp_path):
+    """Parity with `scripts/verify_receipt.py`, which checks both.
+
+    Two published procedures that differ let a counterparty reach two answers about one
+    record, and the one they would quote is whichever suits them. A record verified under
+    a key that is not the key it names is inconsistent with itself however well the
+    signature checks out.
+    """
+    sealed, key_hex, path = seal_to_disk(tmp_path, record(sign=False))
+    printed = signature.snippet(key_hex, path.as_posix())
+    assert "signature_version" in printed and "key_id" in printed
+
+    stranger = public_key_hex(generate_key())
+    with pytest.raises(AssertionError, match="different published key"):
+        exec(compile(signature.snippet(stranger, path.as_posix()), "<printed>", "exec"), {})
 
 
 def test_an_unsigned_record_says_so_and_offers_no_procedure():

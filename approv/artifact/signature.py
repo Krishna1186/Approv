@@ -11,6 +11,11 @@ minus three fields, wrapped with the link it claims, dumped with sorted keys and
 whitespace — so the whole procedure is load, drop three keys, re-dump, SHA-256, verify.
 Anyone can reimplement that in an afternoon in another language, which is what makes the
 record evidence rather than an assertion.
+
+**It has to agree with `scripts/verify_receipt.py` exactly.** Two published procedures
+that differ let a counterparty reach two answers about the same record, and the one they
+would trust is whichever says what suits them. The key-id and signature-format checks here
+mirror that file's, and `tests/test_end_to_end.py` runs both against the same receipts.
 """
 
 from __future__ import annotations
@@ -38,10 +43,18 @@ STEPS = (
     "digest must equal the record digest printed above. If it does not, the record has "
     "been altered since it was signed.",
     "Check the signature field, read as hex, as an Ed25519 signature over the ASCII "
-    "bytes of that hex digest, using Approv's published public key.",
+    "bytes of that hex digest, using the published Approv key whose id matches the "
+    "signing key printed above. Keys rotate, and a receipt stays verifiable under the "
+    "key that signed it, so the published key list carries retired keys too.",
+    "Check that signature format above is the one you expect, and that the signing key "
+    "id is the SHA-256 of the published key you used, spelled ed25519:<hex>. A record "
+    "naming one key and verifying under another is inconsistent with itself.",
     "If this record follows another, the prev_hash above is the previous record's "
     "digest. Checking a run of records in order is what catches a deleted one: each "
     "surviving record still passes on its own, and only the links notice a gap.",
+    "A run of records checks out on its own terms even if the whole run is an older "
+    "copy. Only a checkpoint retained outside Approv's systems shows that: ask for the "
+    "signed checkpoint alongside the export, and compare it with the one you kept.",
 )
 
 CANNOT_PROVE = (
@@ -65,6 +78,10 @@ blob = json.dumps({"prev_hash": record.get("prev_hash"), "record": body},
                   ensure_ascii=False, allow_nan=False)
 digest = hashlib.sha256(blob.encode("utf-8")).hexdigest()
 assert digest == record["hash"], "this record has been altered since it was signed"
+
+assert record.get("signature_version", "ed25519-sha256-v1") == "ed25519-sha256-v1"
+key_id = "ed25519:" + hashlib.sha256(bytes.fromhex(PUBLIC_KEY)).hexdigest()
+assert record.get("key_id") in (None, key_id), "signed by a different published key"
 
 Ed25519PublicKey.from_public_bytes(bytes.fromhex(PUBLIC_KEY)).verify(
     bytes.fromhex(record["signature"]), digest.encode("utf-8"))

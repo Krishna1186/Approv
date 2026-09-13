@@ -361,6 +361,13 @@ def integrity_rows(record: ComparisonRecord) -> tuple[Row, ...]:
     else:
         rows.append(Row("Follows record", "", missing=True))
     rows.extend((
+        # Which published key, not merely that one exists. Keys rotate, a receipt stays
+        # verifiable under the key that signed it, and a reader handed "Approv's public
+        # key" during a later rotation would check this record against the wrong one and
+        # conclude it was forged.
+        Row("Signing key", record.key_id or "", missing=record.key_id is None,
+            note="the published Approv key that signed this record."),
+        Row("Signature format", record.signature_version),
         Row("Who signed which half", lang.ATTESTATION[record.attestation]),
         Row("Engine version", record.evaluator_version),
         Row("Reading version", "%s, prompt %s" % (record.model_version,
