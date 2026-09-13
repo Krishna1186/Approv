@@ -130,6 +130,10 @@ def build_record(
     # a clean allow.
     completion: Completion = Completion.COMPLETED,
     completion_detail: str | None = None,
+    # DR 0023. Intake's verdict on whether this channel earns coverage, and why not. The
+    # record carries it because the dispute artifact reads the record and nothing else.
+    covered: bool = True,
+    coverage_notes: tuple[str, ...] = (),
 ) -> ComparisonRecord:
     """Assemble one unsigned ComparisonRecord and decide it.
 
@@ -187,8 +191,11 @@ def build_record(
         completion=completion,
         completion_detail=completion_detail,
         findings=findings,
+        covered=covered,
+        coverage_notes=coverage_notes,
         coverage=tuple(coverage_of(f, narrowed=f.attribute in narrowed,
-                                   request_unread=request_unread, incomplete=incomplete)
+                                   request_unread=request_unread, incomplete=incomplete,
+                                   uncovered_channel=not covered)
                        for f in findings),
         completeness=completeness(schema, constraints),
         unread=unread,

@@ -411,7 +411,8 @@ def narrowed_attributes(constraints: Iterable[Constraint],
 
 
 def coverage_of(finding: Finding, *, narrowed: bool = False,
-                request_unread: bool = False, incomplete: bool = False) -> str:
+                request_unread: bool = False, incomplete: bool = False,
+                uncovered_channel: bool = False) -> str:
     """What this finding is worth in a dispute. Property 6, DR 0020.
 
     The point of the mapping is that a soft mismatch is never a blocked sale — it is
@@ -445,7 +446,17 @@ def coverage_of(finding: Finding, *, narrowed: bool = False,
     because a dispute artifact that cannot say which of the three happened is worse at its
     only job.
 
-    Only GUARANTEED is withdrawn, in all three cases. REFUSED is not a promise, it is a
+    **`uncovered_channel` is the fourth** (DR 0023). The order arrived through a channel
+    that earns no coverage at all — DR 0020's gradient, *no declaration, no coverage*.
+    Without it a record could say the channel earned nothing and, three fields later, that
+    six findings are guaranteed; a renderer picking either would be right, which means
+    neither is.
+
+    Four reasons, kept distinct at the call site because they are different facts and each
+    has its own field on the record: a narrowed reading (one attribute), an unread request,
+    an incomplete verification, an uncovered channel.
+
+    Only GUARANTEED is withdrawn, in all four cases. REFUSED is not a promise, it is a
     decision that already happened, and relabelling it would report that we made no claim
     when in fact we blocked the sale.
     """
@@ -453,6 +464,6 @@ def coverage_of(finding: Finding, *, narrowed: bool = False,
         if finding.support is Support.VIOLATED:
             return REFUSED
         if finding.support is Support.SATISFIED and not (
-                narrowed or request_unread or incomplete):
+                narrowed or request_unread or incomplete or uncovered_channel):
             return GUARANTEED
     return OUT_OF_COVERAGE

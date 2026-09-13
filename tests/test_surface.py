@@ -249,6 +249,64 @@ def test_a_typed_catalogue_value_is_taken_as_typed():
     assert evidence[0].value.n == 6
 
 
+# --- seam 4: coverage is on the record, inside the digest ---------------------------------
+
+def test_the_channel_verdict_is_on_the_record_not_beside_it():
+    """DR 0023. The dispute artifact renders the record and nothing else, so a verdict
+    kept beside it was dropped the moment the record was stored or rendered — and the
+    document printed "Covered" for an order intake had ruled out."""
+    result = verify_order(request(artifact=Undeclared()), schemas=SCHEMAS)
+
+    assert result.record.covered is False
+    assert any("out of coverage" in note for note in result.record.coverage_notes)
+    # The result still answers, as a view onto the record rather than a second copy.
+    assert result.covered is result.record.covered
+    assert result.intake_notes == result.record.coverage_notes
+
+
+def test_an_uncovered_channel_guarantees_nothing():
+    """Otherwise the record says the channel earned no coverage and, three fields later,
+    that six findings are guaranteed. A renderer picking either would be right, which
+    means neither is."""
+    uncovered = verify_order(
+        request(artifact=Search(query="frost duvet", filters={"size": "M"})),
+        schemas=SCHEMAS, extract=colour_only)
+
+    assert uncovered.record.covered is False
+    assert "guaranteed" not in uncovered.record.coverage
+
+
+def test_a_covered_channel_still_guarantees():
+    """Stated so the rule is not read as withdrawing coverage from everything."""
+    covered = verify_order(request(), schemas=SCHEMAS)
+
+    assert covered.record.covered is True
+    assert "guaranteed" in covered.record.coverage
+
+
+def test_the_channel_verdict_is_inside_the_signature():
+    """A coverage claim that can be edited after a dispute opens is not a claim, and the
+    party with the motive to edit it is us."""
+    key = generate_key()
+    sealed = seal(verify_order(request(artifact=Undeclared()), schemas=SCHEMAS).record, key)
+    verify(sealed, public_key_hex(key))
+
+    with pytest.raises(ValueError, match="does not match its hash"):
+        verify(sealed.model_copy(update={"covered": True}), public_key_hex(key))
+
+
+def test_coverage_never_gates_the_decision():
+    """An uncovered order is authorised or refused on its merits. Coupling the two would
+    turn a commercial eligibility rule into a reason to block a sale, which is the
+    confusion property 6 exists to prevent."""
+    uncovered = verify_order(
+        request(artifact=Search(query="frost duvet", filters={"size": "M"})),
+        schemas=SCHEMAS, extract=colour_only)
+
+    assert uncovered.record.covered is False
+    assert uncovered.record.decision is Decision.ALLOW
+
+
 # --- invariant 10: no personal data in the record -----------------------------------------
 
 def test_the_record_declares_no_field_that_could_hold_a_person():

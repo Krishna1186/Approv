@@ -122,9 +122,9 @@ class VerificationResult(BaseModel):
 
     record: ComparisonRecord
     receipt_id: str
-    # Whether this channel earns coverage at all, and why not when it does not. Intake's
-    # verdict, kept off the record because it is policy about the channel rather than a
-    # fact about the comparison.
+    # Views onto the record, not a second copy of the fact (DR 0023). They were the fact
+    # once, which is how the artifact came to print "Covered" for an order intake had
+    # ruled out — it renders the record and could not see them.
     covered: bool
     intake_notes: tuple[str, ...] = ()
 
@@ -383,18 +383,18 @@ def verify_order(
         order=request.order,
         completion=completion,
         completion_detail=detail,
+        # No coverage may ever be inferred from a verification that did not complete (DR
+        # 0004), and intake's channel verdict knows nothing about whether the check
+        # finished, so the two are combined once, here, on the way onto the record.
+        covered=taken.covered and completion is Completion.COMPLETED,
+        coverage_notes=taken.notes,
     )
     if signing_key is not None:
         record = seal(record, signing_key, prev_hash)
 
-    # No coverage may ever be inferred from a verification that did not complete (DR
-    # 0004). Intake's verdict is about the channel and knows nothing about whether the
-    # check finished, so the two are combined here rather than leaving a caller to read
-    # `covered: true` beside a provider outage.
-    return VerificationResult(
-        record=record, receipt_id=request.correlation_id,
-        covered=taken.covered and completion is Completion.COMPLETED,
-        intake_notes=taken.notes)
+    return VerificationResult(record=record, receipt_id=request.correlation_id,
+                              covered=record.covered,
+                              intake_notes=record.coverage_notes)
 
 
 # A malformed answer and no answer at all are different events on the reader boundary —

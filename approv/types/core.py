@@ -572,6 +572,15 @@ class ComparisonRecord(BaseModel):
     # constraint from inside the engine, so without this field an extraction miss is
     # recorded as the shopper having said nothing and absolves everyone.
     unread: tuple[str, ...] = ()
+    # Whether the channel this order arrived through earns coverage at all (DR 0020's
+    # gradient), and why not when it does not. On the record rather than beside it, and
+    # inside the digest, because the dispute artifact renders the record and nothing else:
+    # kept outside, it printed "Covered" for an order intake had ruled out, which is the
+    # exact failure the document exists to prevent (DR 0023). A coverage claim that can be
+    # edited after a dispute opens is not a claim, and the party with the motive to edit it
+    # is us.
+    covered: bool = True
+    coverage_notes: tuple[str, ...] = ()
     # Per-finding coverage, aligned with `findings` by index: guaranteed / refused /
     # out_of_coverage. On a dispute artifact (DR 0020) what is covered is load-bearing
     # rather than a derived nicety — a returns desk reading this needs to see which

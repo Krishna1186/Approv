@@ -1,6 +1,6 @@
 # Decision records — index
 
-22 records, **9 still open**. Read this
+23 records, **9 still open**. Read this
 file instead of opening them. Full text is kept for the reasoning, not for re-reading.
 
 Under the 10 September contract only a §3.8 change earns a new record: the decision path,
@@ -30,6 +30,7 @@ coverage language, or a number that will be published. Nothing else does.
 | [0020](0020-merchant-defence-and-the-dispute-artifact.md) | Merchant defence, and the record as a dispute artifact | **OPEN** |
 | [0021](0021-what-unread-means.md) | What `unread` means, and why two definitions were live | closed |
 | [0022](0022-what-an-unread-request-does.md) | What an unread request does to the answer | closed |
+| [0023](0023-coverage-belongs-on-the-record.md) | Coverage belongs on the record | closed |
 
 ## The open ones, and whether they still matter
 
