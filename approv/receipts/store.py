@@ -20,6 +20,7 @@ from approv.receipts.chain import (
     record_json, seal, verify, verify_chain,
 )
 from approv.types.core import ComparisonRecord
+from approv.receipts.migrations import check_schema, migrate as migrate_store
 
 
 class ReplayError(ValueError):
@@ -75,31 +76,23 @@ def _content_hash(payload: dict) -> str:
 
 
 class ReceiptStore:
-    def __init__(self, path: str | Path):
+    def __init__(self, path: str | Path, *, create: bool = True, migrate: bool = True):
         self.path = Path(path).resolve()
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self._connection() as db:
-            version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1):
-                raise ValueError("unsupported receipt store version")
-            db.execute("PRAGMA journal_mode=WAL")
-            db.executescript(_SCHEMA)
-            # These fire for ordinary SQL as well as calls through this Python API.
-            # The INSERT guards above also stop INSERT OR REPLACE's implicit delete.
-            for table in ("receipts", "checkpoints", "public_keys", "metadata"):
-                for operation in ("UPDATE", "DELETE"):
-                    db.execute(f"""CREATE TRIGGER IF NOT EXISTS {table}_no_{operation.lower()}
-                        BEFORE {operation} ON {table} BEGIN
-                        SELECT RAISE(ABORT, 'append-only ledger'); END""")
-            db.execute("BEGIN IMMEDIATE")
-            if not db.execute("SELECT 1 FROM metadata").fetchone():
-                db.execute("INSERT INTO metadata VALUES (1, ?)", (str(uuid.uuid4()),))
-            db.execute("PRAGMA user_version=1")
-            db.commit()
+        if not create and not self.path.is_file():
+            raise ValueError("receipt store is missing; initialize it explicitly")
+        if create:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+        with self._connection(_create=create) as db:
+            if migrate:
+                migrate_store(db, _SCHEMA)
+                db.execute("PRAGMA journal_mode=WAL")
+            else:
+                check_schema(db)
 
     @contextmanager
-    def _connection(self):
-        db = sqlite3.connect(self.path, timeout=30, isolation_level=None)
+    def _connection(self, *, timeout: float = 30, _create: bool = False):
+        uri = self.path.as_uri() + ("?mode=rwc" if _create else "?mode=rw")
+        db = sqlite3.connect(uri, uri=True, timeout=timeout, isolation_level=None)
         db.row_factory = sqlite3.Row
         try:
             db.execute("PRAGMA foreign_keys=ON")
@@ -156,9 +149,27 @@ class ReceiptStore:
                     checkpoint.get("format") != "approv-receipt-checkpoint-v1"):
                 raise ValueError("checkpoint does not match stored chain")
             verify(checkpoint, keys)
+        for row in db.execute("SELECT * FROM deployments"):
+            if hashlib.sha256(row["body"].encode()).hexdigest() != row["hash"]:
+                raise ValueError("deployment manifest digest mismatch")
+        submissions = db.execute("SELECT * FROM submissions").fetchall()
+        if {r["sequence"] for r in submissions} != {
+                r["sequence"] for r in rows if "context" in json.loads(r["body"])}:
+            raise ValueError("signed submission context is missing from store")
+        for row in submissions:
+            response = json.loads(row["response_body"])
+            checkpoint = json.loads(rows[row["sequence"] - 1]["body"])
+            if (response["record"] != records[row["sequence"] - 1] or
+                    row["correlation_id"] != response["record"]["correlation_id"] or
+                    not db.execute("SELECT 1 FROM deployments WHERE hash=?", (row["deployment_hash"],)).fetchone() or
+                    checkpoint.get("context") != {
+                        "request_hash": row["request_hash"], "deployment_hash": row["deployment_hash"],
+                        "response_hash": hashlib.sha256(row["response_body"].encode()).hexdigest()}):
+                raise ValueError("submission does not match signed checkpoint")
         return records, json.loads(rows[-1]["body"]) if rows else None
 
-    def append(self, record: ComparisonRecord, signing_key: Ed25519PrivateKey) -> ComparisonRecord:
+    def append(self, record: ComparisonRecord, signing_key: Ed25519PrivateKey, *,
+               _submission: dict | None = None) -> ComparisonRecord:
         """Atomically sign/append, or return the identical existing receipt on retry.
 
         A pre-signed receipt is verified and retained verbatim, never re-signed. Its
@@ -174,6 +185,11 @@ class ReceiptStore:
         with self._connection() as db:
             db.execute("BEGIN IMMEDIATE")
             records, _ = self._read(db)
+            if _submission is not None:
+                existing = self._lookup(db, record.correlation_id, _submission["request_hash"])
+                if existing is not None:
+                    db.commit()
+                    return ComparisonRecord.model_validate(existing["record"])
             public = public_key_hex(signing_key)
             key_id = self._register(db, public)
             if record.signature:
@@ -183,6 +199,8 @@ class ReceiptStore:
             existing = db.execute("SELECT body, content_hash FROM receipts WHERE correlation_id=?",
                                   (record.correlation_id,)).fetchone()
             if existing:
+                if _submission is not None:
+                    raise ReplayError("correlation id already belongs to a different receipt path")
                 if ((record.signature and canonical_json(payload) != existing["body"]) or
                         (not record.signature and _content_hash(payload) != existing["content_hash"])):
                     raise ReplayError("correlation id reused with a different receipt")
@@ -207,6 +225,17 @@ class ReceiptStore:
             checkpoint = {"format": "approv-receipt-checkpoint-v1", "store_id": store_id,
                           "count": sequence, "head_hash": sealed.hash, "key_id": key_id,
                           "signature_version": SIGNATURE_VERSION}
+            if _submission is not None:
+                deployment = canonical_json(_submission["deployment"])
+                deployment_hash = hashlib.sha256(deployment.encode()).hexdigest()
+                if not db.execute("SELECT 1 FROM deployments WHERE hash=?", (deployment_hash,)).fetchone():
+                    db.execute("INSERT INTO deployments VALUES (?, ?)", (deployment_hash, deployment))
+                response = canonical_json({**_submission["response"], "record": body})
+                db.execute("INSERT INTO submissions VALUES (?, ?, ?, ?, ?)",
+                           (sealed.correlation_id, sequence, _submission["request_hash"], deployment_hash, response))
+                checkpoint["context"] = {"request_hash": _submission["request_hash"],
+                                         "deployment_hash": deployment_hash,
+                                         "response_hash": hashlib.sha256(response.encode()).hexdigest()}
             digest = record_hash(checkpoint, None)
             checkpoint.update(hash=digest, signature=signing_key.sign(digest.encode("utf-8")).hex())
             db.execute("INSERT INTO checkpoints VALUES (?, ?)", (sequence, canonical_json(checkpoint)))
@@ -214,12 +243,47 @@ class ReceiptStore:
             # Copy out of caller-owned nested dictionaries as well as the DB transaction.
             return ComparisonRecord.model_validate(body)
 
+    @staticmethod
+    def _lookup(db, correlation_id: str, request_hash: str) -> dict | None:
+        row = db.execute("SELECT * FROM submissions WHERE correlation_id=?", (correlation_id,)).fetchone()
+        if row is None:
+            return None
+        if row["request_hash"] != request_hash:
+            raise ReplayError("correlation id reused with a different verification request")
+        return json.loads(row["response_body"])
+
+    def lookup_verification(self, correlation_id: str, request_hash: str) -> dict | None:
+        with self._connection() as db:
+            db.execute("BEGIN")
+            self._read(db)
+            return self._lookup(db, correlation_id, request_hash)
+
+    def commit_verification(self, response: dict, request_hash: str,
+                            deployment: dict, signing_key) -> dict:
+        """Bind the API retry identity and deployment to the receipt in one commit."""
+        record = ComparisonRecord.model_validate(response["record"])
+        self.append(record, signing_key, _submission={"response": response,
+                    "request_hash": request_hash, "deployment": deployment})
+        return self.lookup_verification(record.correlation_id, request_hash)
+
+    def probe_writable(self) -> None:
+        """A real committed write, in a separate operational table, never a fake receipt."""
+        with self._connection(timeout=1) as db:
+            check_schema(db)
+            db.execute("BEGIN IMMEDIATE")
+            db.execute("UPDATE ops_write_probe SET value=? WHERE singleton=1", (str(uuid.uuid4()),))
+            if db.execute("SELECT changes()").fetchone()[0] != 1:
+                raise ValueError("store write probe is missing")
+            db.commit()
+
     def export(self) -> dict:
         """Self-contained chain and signed manifest; public keys are published separately."""
         with self._connection() as db:
             db.execute("BEGIN")
             records, checkpoint = self._read(db)
-            return {"format": "approv-receipt-export-v1", "records": records, "checkpoint": checkpoint}
+            return {"format": "approv-receipt-export-v1", "records": records, "checkpoint": checkpoint,
+                    "deployments": {r["hash"]: json.loads(r["body"]) for r in db.execute("SELECT * FROM deployments")},
+                    "submissions": [dict(r) for r in db.execute("SELECT * FROM submissions ORDER BY sequence")]}
 
     def public_keys(self) -> dict:
         with self._connection() as db:
