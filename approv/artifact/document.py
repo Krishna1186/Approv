@@ -113,6 +113,7 @@ class Document:
     identity: tuple[Row, ...] = ()
     request_text: str = ""
     request_text_missing: bool = False
+    request_text_note: str | None = None
     requirements: tuple[Requirement, ...] = ()
     unread: tuple[str, ...] = ()
     never_asked: tuple[str, ...] = ()
@@ -251,6 +252,28 @@ def requirements(record: ComparisonRecord) -> tuple[Requirement, ...]:
         )
         for c in record.request_constraints
     )
+
+
+NO_WORDING = (
+    "No free-text wording accompanied this request. Every requirement below arrived as a "
+    "field the agent filled in, so the line above is whatever the channel recorded rather "
+    "than anything the requester typed."
+)
+
+
+def request_text_note(record: ComparisonRecord) -> str | None:
+    """Whether the words above are anybody's words at all.
+
+    A protocol call carries no wording, and `surface.verification` writes a note in its
+    place so the field is not empty — but under a heading saying "in the requester's own
+    words" that note reads as a quotation. Derived from the constraints rather than from
+    the shape of that string: if not one requirement carried a quote, there was no
+    wording, whatever the sentence above happens to say.
+    """
+    if record.request_constraints and not any(
+            c.raw_text for c in record.request_constraints):
+        return NO_WORDING
+    return None
 
 
 def order_rows(record: ComparisonRecord) -> tuple[Row, ...]:
@@ -448,6 +471,7 @@ def build(record: ComparisonRecord) -> Document:
         identity=identity_rows(record),
         request_text=text,
         request_text_missing=not text,
+        request_text_note=request_text_note(record),
         requirements=requirements(record),
         unread=tuple(record.unread),
         never_asked=tuple(lang.attribute(a) for a in record.completeness),

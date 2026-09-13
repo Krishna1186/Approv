@@ -281,6 +281,25 @@ def test_a_request_with_nothing_recoverable_says_so_before_anything_else():
     assert flat(NO_REQUIREMENTS) in flat(render_text(doc.record))
 
 
+def test_a_protocol_call_is_not_presented_as_the_requesters_words():
+    """A structured call carries no wording, and `surface.verification` writes a note in
+    place of it so the field is not empty. Under a heading saying "in the requester's own
+    words" that note reads as a quotation, which is the one place this document could put
+    words in a person's mouth without printing anything untrue."""
+    fields = (Constraint(attribute="size", value=Term(surface="King"),
+                         channel=Channel.TOOL_ARGUMENT, source="acp.size"),)
+    doc = build(record(constraints=fields, findings=(
+        found("size", Support.SATISFIED, Criticality.HARD, constraint=fields[0],
+              evidence=(saw("size", "King"),)),),
+        request_text="(no wording: acp protocol call, see request_constraints)"))
+
+    assert doc.request_text_note is not None
+    for rendering in (render_text(doc.record), render_html(doc.record)):
+        assert "No free-text wording accompanied this request" in flat(rendering)
+    # And it is derived from the constraints, not from the shape of that sentence.
+    assert build(record()).request_text_note is None
+
+
 # --- never put words in anyone's mouth ---------------------------------------------------
 
 def test_a_satisfaction_finding_never_quotes_the_agent():

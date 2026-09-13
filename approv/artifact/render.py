@@ -173,6 +173,8 @@ def to_text(document: Document, *, public_key: str | None = None,
         out.append("  (nothing was recorded)")
     else:
         out.append(_wrap(f'"{document.request_text}"', "  "))
+    if document.request_text_note:
+        out.append(_wrap(document.request_text_note, "  "))
 
     out += ["", "As Approv read it:"]
     if document.requirements:
@@ -246,7 +248,10 @@ def to_text(document: Document, *, public_key: str | None = None,
     out += ["-" * WIDTH, DETAILS_HEADING, "-" * WIDTH, ""]
     for row in document.identity:
         out += _row_lines(row)
-    return "\n".join(out).rstrip() + "\n"
+    # No trailing whitespace on any line: the verification snippet is meant to be copied
+    # out of this document, and an indented blank line inside it arrives as four spaces.
+    page = "\n".join(out).rstrip() + "\n"
+    return "\n".join(line.rstrip() for line in page.split("\n"))
 
 
 # --------------------------------------------------------------------------------------
@@ -405,6 +410,8 @@ def _request_html(document: Document) -> str:
         out.append('<p class="missing">Nothing was recorded.</p>')
     else:
         out.append(f"<blockquote>{_e(document.request_text)}</blockquote>")
+    if document.request_text_note:
+        out.append(f"<p>{_e(document.request_text_note)}</p>")
 
     out.append("<h3>As Approv read it</h3>")
     if document.requirements:
