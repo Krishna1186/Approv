@@ -39,7 +39,7 @@ from approv.intake import (
     AgentPresence, Artifact, Extractor, FreeText, Intake, Search, Structured, Surface,
     Undeclared, intake,
 )
-from approv.receipts.chain import canonical_json, seal
+from approv.receipts.chain import canonical_json
 from approv.receipts.record import build_record
 from approv.types.core import (
     Attestation, CategorySchema, ComparisonRecord, Completion, Count, Dimension, Evidence,
@@ -310,13 +310,17 @@ def verify_order(
     schemas: Mapping[str, CategorySchema],
     read_evidence: Reader = evidence_from_snapshot,
     extract: Extractor | None = None,
-    signing_key=None,
-    prev_hash: str | None = None,
     unread_policy: UnreadPolicy = UnreadPolicy.WITHDRAW,
     returns: Mapping[str, float] | None = None,
     budget_seconds: float | None = None,
 ) -> VerificationResult:
-    """One order line in, one signed record out.
+    """One order line in, one unsealed record out.
+
+    **The surface does not sign.** Only the store knows the chain head, and a signature
+    over `prev_hash=None` is a receipt that can be appended exactly once per ledger — the
+    first order succeeds and the second raises a chain conflict. Two modules owning sealing
+    and neither knowing about the other is not a tuning problem; it is one owner too many.
+    So this returns an unsealed record and `ReceiptStore.append` seals it into place.
 
     `returns` is the merchant's calibrated differ-rate table (criticality layer 3) when
     they have one. Absent, layers 1 and 2 carry the transaction on their own, which is the
@@ -377,7 +381,6 @@ def verify_order(
         agent_id=request.agent_id,
         merchant_id=request.merchant_id,
         attestation=request.attestation,
-        prev_hash=prev_hash,
         unread=taken.unread,
         unread_policy=unread_policy,
         order=request.order,
@@ -389,9 +392,6 @@ def verify_order(
         covered=taken.covered and completion is Completion.COMPLETED,
         coverage_notes=taken.notes,
     )
-    if signing_key is not None:
-        record = seal(record, signing_key, prev_hash)
-
     return VerificationResult(record=record, receipt_id=request.correlation_id,
                               covered=record.covered,
                               intake_notes=record.coverage_notes)

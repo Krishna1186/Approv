@@ -36,7 +36,6 @@ def create_app(
     *,
     read_evidence=evidence_from_snapshot,
     extract=None,
-    signing_key=None,
     unread_policy: UnreadPolicy = UnreadPolicy.WITHDRAW,
     returns: Mapping[str, float] | None = None,
     budget_seconds: float | None = None,
@@ -44,10 +43,13 @@ def create_app(
 ):
     """One endpoint, and its configuration bound once rather than per request.
 
-    Schemas, the catalogue reader, the extractor, the signing key and the floor policy are
-    deployment configuration, not request payload. Taking them here is what stops a caller
-    supplying their own schema — which would let the party being defended define what
-    counts as a match, and the record would be worth nothing.
+    Schemas, the catalogue reader, the extractor and the floor policy are deployment
+    configuration, not request payload. Taking them here is what stops a caller supplying
+    their own schema — which would let the party being defended define what counts as a
+    match, and the record would be worth nothing.
+
+    No signing key. The record this returns is **unsealed**: only the store knows the chain
+    head, so the store signs. A deployment that wants a receipt appends what it gets back.
     """
     app = FastAPI(title=title, version=VERSION)
 
@@ -71,9 +73,8 @@ def create_app(
         """
         try:
             return verify_order(request, schemas=schemas, read_evidence=read_evidence,
-                                extract=extract, signing_key=signing_key,
-                                unread_policy=unread_policy, returns=returns,
-                                budget_seconds=budget_seconds)
+                                extract=extract, unread_policy=unread_policy,
+                                returns=returns, budget_seconds=budget_seconds)
         except UnknownCategory as error:
             raise HTTPException(status_code=404,
                                 detail="unknown category: %s" % error) from error

@@ -537,10 +537,17 @@ def test_the_snapshot_digest_is_the_one_dump_format():
     assert verify_order(request(), schemas=SCHEMAS).record.snapshot_hash == expected
 
 
-def test_the_signing_key_seals_on_the_way_out():
-    key = generate_key()
-    result = verify_order(request(), schemas=SCHEMAS, signing_key=key)
-    verify(result.record, public_key_hex(key))
+def test_the_surface_hands_back_an_unsealed_record():
+    """Only the store knows the chain head. A signature over `prev_hash=None` is a receipt
+    appendable exactly once per ledger — the first order succeeds and the second conflicts
+    — so sealing has one owner and it is not this one."""
+    import inspect
+
+    result = verify_order(request(), schemas=SCHEMAS)
+
+    assert result.record.hash is None and result.record.signature is None
+    assert result.record.prev_hash is None
+    assert "signing_key" not in inspect.signature(verify_order).parameters
 
 
 # --- DR 0004: a verification that did not complete -----------------------------------------
