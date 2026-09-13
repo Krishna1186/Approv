@@ -105,7 +105,8 @@ class ExtractorConfig(Strict):
 
 
 class FloorPolicy(Strict):
-    strict_unread: bool = Field(strict=True)
+    # IGNORE is a measurement control, not an admissible deployment policy (DR 0022).
+    unread_policy: Literal["withdraw", "escalate"]
     # The floor itself lives in each pinned CategorySchema.
     returns: dict[str, Annotated[float, Field(ge=0, le=1, allow_inf_nan=False)]] = {}
 
@@ -122,6 +123,7 @@ class Deployment(Strict):
     store: Path
     api_token: SecretFile
     floor_policy: FloorPolicy
+    comparison_budget_seconds: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     readiness_ttl_seconds: float = Field(default=60, ge=5, le=300)
     max_body_bytes: int = Field(default=262144, ge=1024, le=1048576)
     max_inflight: int = Field(default=4, ge=1, le=32)
@@ -196,6 +198,7 @@ def load_deployment(path: str | Path | None = None) -> LoadedDeployment:
                     "model": settings.extractor.model,
                     "prompt_version": settings.extractor.prompt_version,
                     "floor_policy": settings.floor_policy.model_dump(mode="json"),
+                    "comparison_budget_seconds": settings.comparison_budget_seconds,
                     "prices": settings.extractor.prices.model_dump(mode="json")}
         return LoadedDeployment(settings, base, schemas, reader, keys, manifest)
     except ConfigError:

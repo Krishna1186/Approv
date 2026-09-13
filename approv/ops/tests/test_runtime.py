@@ -1,5 +1,6 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 import hashlib
 import json
 import logging
@@ -46,7 +47,7 @@ def test_configuration_and_secrets_are_required_not_defaults(deployment, monkeyp
 @pytest.mark.parametrize("path,new_value", [
     (("extractor", "endpoint"), "http://example.com/v1"),
     (("extractor", "endpoint"), "https://user:secret@example.com"),
-    (("floor_policy", "strict_unread"), "false"),
+    (("floor_policy", "unread_policy"), "ignore"),
     (("extractor", "prices", "output_per_million_usd"), -1),
     (("signing", "backend"), "fallback"),
 ])
@@ -83,7 +84,7 @@ def test_missing_store_is_not_replaced_with_an_empty_ledger(deployment):
 def test_authentication_and_deployment_values_are_not_caller_controlled(runtime, body):
     assert call(runtime, "POST", "/v1/verify", body, authorized=False).status_code == 401
     assert call(runtime, "POST", "/v1/verify", {**body, "merchant_id": "other"}).status_code == 403
-    for field in ("schemas", "signing_key", "extract", "read_evidence", "strict_unread", "floor_policy"):
+    for field in ("schemas", "signing_key", "extract", "read_evidence", "unread_policy", "floor_policy"):
         assert call(runtime, "POST", "/v1/verify", {**body, field: {}}).status_code == 422
     assert runtime.store.export()["records"] == []
 
@@ -153,17 +154,63 @@ def test_concurrent_http_retry_identity_has_one_receipt(runtime, body):
     assert len(runtime.store.export()["records"]) == 1
 
 
-def test_provider_failure_is_not_a_decision_and_usage_is_unknown(runtime, body, caplog):
+def test_provider_failure_is_a_retained_incomplete_record_and_usage_is_unknown(runtime, body, caplog):
     runtime.extractor.interpreter_factory.fail = True
     body["artifact"] = {"shape": "free_text", "text": "PRIVATE CUSTOMER REQUEST size M"}
     with caplog.at_level(logging.INFO, logger="approv.ops"):
         response = call(runtime, "POST", "/v1/verify", body)
-    assert response.status_code == 503
-    assert response.json() == {"error": "system_failure", "stage": "extractor"}
-    assert runtime.store.export()["records"] == []
+    assert response.status_code == 200
+    result = response.json()
+    assert result["record"]["completion"] == "provider_unavailable"
+    assert result["record"]["decision"] == "confirm" and not result["covered"]
+    assert runtime.store.export()["records"] == [result["record"]]
+    verify(result["record"], runtime.deployment.public_keys)
+    assert "secret-extractor-key" not in result["record"]["completion_detail"]
     assert "PRIVATE CUSTOMER" not in caplog.text and "secret-extractor-key" not in caplog.text
     events = [json.loads(record.message) for record in caplog.records]
     assert events[-1]["estimated_usd"] is None and events[-1]["unknown_usage_calls"] == 1
+    assert events[-1]["completion"] == "provider_unavailable"
+    runtime.extractor.interpreter_factory.fail = False
+    assert call(runtime, "POST", "/v1/verify", body).json() == result
+
+
+def test_catalogue_failure_is_retained_without_leaking_exception_contents(runtime, body):
+    def broken_reader(snapshot, schema):
+        raise ValueError("reader credential SECRET and private snapshot")
+    runtime.deployment = replace(runtime.deployment, reader=broken_reader)
+    response = call(runtime, "POST", "/v1/verify", body)
+    assert response.status_code == 200
+    result = response.json()
+    assert result["record"]["completion"] == "catalogue_unreadable"
+    assert result["record"]["decision"] == "confirm" and not result["covered"]
+    assert "SECRET" not in result["record"]["completion_detail"]
+    verify(result["record"], runtime.deployment.public_keys)
+
+
+def test_reader_with_wrong_return_type_is_not_ready(runtime, body):
+    runtime.deployment = replace(runtime.deployment, reader=lambda *a: None)
+    readiness = call(runtime, path="/readyz")
+    assert readiness.status_code == 503
+    assert readiness.json()["checks"]["catalogue_reader"] == "unavailable"
+    result = call(runtime, "POST", "/v1/verify", body).json()
+    assert result["record"]["completion"] == "catalogue_unreadable"
+    assert result["record"]["decision"] == "confirm" and not result["covered"]
+
+
+def test_configured_surface_budget_is_bound_and_cannot_authorize(runtime, body):
+    path = runtime.deployment.base / "deployment.json"
+    settings = json.loads(path.read_text())
+    settings["comparison_budget_seconds"] = 0
+    path.write_text(json.dumps(settings))
+    runtime = Runtime(load_deployment(path), interpreter_factory=runtime.extractor.interpreter_factory)
+    response = call(runtime, "POST", "/v1/verify", body)
+    assert response.status_code == 200
+    result = response.json()
+    assert result["record"]["completion"] == "budget_exceeded"
+    assert result["record"]["decision"] == "confirm" and not result["covered"]
+    assert "guaranteed" not in result["record"]["coverage"]
+    assert runtime.deployment.manifest["comparison_budget_seconds"] == 0
+    verify(result["record"], runtime.deployment.public_keys)
 
 
 def test_usage_cost_quantiles_and_prometheus_are_measured(runtime, body, caplog):

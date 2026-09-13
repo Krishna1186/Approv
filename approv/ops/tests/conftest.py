@@ -64,7 +64,7 @@ def deployment(tmp_path):
                           "password": {"file": "password"}, "key_id": key_id},
               "public_keys": {"path": "public-keys.json", "sha256": hashlib.sha256(public.read_bytes()).hexdigest()},
               "store": "receipts.sqlite3", "api_token": {"file": "token"},
-              "floor_policy": {"strict_unread": True}}
+              "floor_policy": {"unread_policy": "withdraw"}}
     path = tmp_path / "deployment.json"
     write_json(path, config)
     return load_deployment(path)

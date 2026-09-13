@@ -4,11 +4,16 @@ from __future__ import annotations
 import time
 
 from approv.harness.intent import RequestInterpreter, as_extractor
+from approv.config.settings import ConfigError
 from approv.ops.telemetry import CURRENT
 
 
 class DependencyFailure(RuntimeError):
     pass
+
+
+class UnreadableResponse(ValueError):
+    """Preserves the surface's malformed-response versus unavailable distinction."""
 
 
 class Extractor:
@@ -23,18 +28,25 @@ class Extractor:
         started = time.perf_counter()
         metadata, status = {}, "system_failure"
         try:
-            key = self.config.credential.read(self.base).decode("utf-8")
+            try:
+                key = self.config.credential.read(self.base).decode("utf-8")
+            except (ConfigError, UnicodeError):
+                raise DependencyFailure("extractor credential unavailable") from None
             interpreter = self.interpreter_factory(self.config.endpoint, self.config.model,
                                                    key, version=self.config.prompt_version)
             def observed(case, category):
                 nonlocal metadata
                 result, metadata = interpreter(case, category)
                 if metadata.get("status") != "parsed":
-                    raise DependencyFailure("extractor returned an invalid interpretation")
+                    raise UnreadableResponse("extractor returned an invalid interpretation")
                 return result, metadata
             result = as_extractor(observed)(text, schema)
             status = "parsed"
             return result
+        except ConfigError:
+            raise DependencyFailure("extractor credential unavailable") from None
+        except (ValueError, TypeError, KeyError, AttributeError, IndexError):
+            raise UnreadableResponse("extractor response unreadable") from None
         except Exception:
             # Provider exceptions can contain echoed credentials and request text.
             raise DependencyFailure("extractor unavailable") from None

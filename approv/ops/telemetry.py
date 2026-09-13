@@ -22,6 +22,7 @@ class Operation:
     id: str = field(default_factory=lambda: uuid.uuid4().hex)
     started: float = field(default_factory=time.perf_counter)
     stage: str = "request"
+    completion: str | None = None
     calls: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
@@ -93,6 +94,7 @@ class Metrics:
                 self._buckets[bound] += int(elapsed <= bound)
         LOG.info(json.dumps({"event": "verification", "operation_id": operation.id,
                             "outcome": outcome, "http_status": status, "replay": replay,
+                            "completion": operation.completion,
                             "stage": operation.stage, "elapsed_seconds": elapsed,
                             "stages": operation.timings, "extractor_calls": operation.calls,
                             "input_tokens": operation.input_tokens,

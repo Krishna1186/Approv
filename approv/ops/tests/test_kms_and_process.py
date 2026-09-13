@@ -150,10 +150,12 @@ def test_real_interpreter_transport_and_malformed_provider_are_measured(provider
     assert Provider.credentials == ["Bearer secret-extractor-key"] * 2
     Provider.malformed = True
     status, error = runtime.verify(json.dumps({**body, "correlation_id": "invalid-model-output"}).encode(), Operation())
-    assert status == 503 and error["stage"] == "extractor"
+    assert status == 200 and error["record"]["completion"] == "unreadable_response"
+    assert error["record"]["decision"] == "confirm" and not error["covered"]
+    verify(error["record"], runtime.deployment.public_keys)
     snapshot = runtime.metrics.snapshot()
     assert snapshot["tokens_and_estimates"]["verification_input"] == 100
-    assert len(runtime.store.export()["records"]) == 1
+    assert len(runtime.store.export()["records"]) == 2
 
 
 def test_bootable_process_health_http_verification_and_cli_backup(provider, body, tmp_path):

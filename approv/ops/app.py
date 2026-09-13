@@ -24,6 +24,7 @@ from approv.receipts.store import ReceiptStore, ReplayError
 from approv.surface.verification import (
     ProductMismatch, UnknownCategory, VerificationRequest, verify_order,
 )
+from approv.types.core import Completion, Evidence, UnreadPolicy
 
 
 class Runtime:
@@ -44,6 +45,16 @@ class Runtime:
         self._ready_at = 0.0
         self._ready = None
 
+    def read_evidence(self, snapshot, schema):
+        try:
+            evidence = tuple(self.deployment.reader(snapshot, schema))
+            if any(not isinstance(item, Evidence) for item in evidence):
+                raise TypeError("reader returned untyped evidence")
+            return evidence
+        except Exception:
+            # The surface retains exception text in completion_detail.
+            raise RuntimeError("configured catalogue reader could not read the snapshot") from None
+
     def ready(self):
         with self._ready_lock:
             if self._ready is not None and time.monotonic() - self._ready_at < self.deployment.settings.readiness_ttl_seconds:
@@ -55,7 +66,7 @@ class Runtime:
                 checks_to_run = {
                     "store": self.store.probe_writable,
                     "key": self.signers.probe,
-                    "catalogue_reader": lambda: [self.deployment.reader({}, s) for s in self.deployment.schemas.values()],
+                    "catalogue_reader": lambda: [self.read_evidence({}, s) for s in self.deployment.schemas.values()],
                     "extractor": lambda: [self.extractor("Readiness probe. No purchase requested.", s)
                                           for s in self.deployment.schemas.values()],
                 }
@@ -89,7 +100,8 @@ class Runtime:
             prior = self.store.lookup_verification(request.correlation_id, request_hash)
             if prior is not None:
                 replay = True
-                status, outcome = 200, "success"
+                operation.completion = prior["record"].get("completion", "completed")
+                status, outcome = 200, "success" if operation.completion == "completed" else operation.completion
                 return status, prior
             operation.stage = "comparison"
             started = time.perf_counter()
@@ -97,15 +109,17 @@ class Runtime:
                 operation.stage = "catalogue"
                 began = time.perf_counter()
                 try:
-                    evidence = self.deployment.reader(snapshot, schema)
+                    evidence = self.read_evidence(snapshot, schema)
                 finally:
                     operation.timings["catalogue_seconds"] = time.perf_counter() - began
                 operation.stage = "comparison"
                 return evidence
             result = verify_order(request, schemas=self.deployment.schemas,
                                   read_evidence=read_evidence, extract=self.extractor,
-                                  strict_unread=self.deployment.settings.floor_policy.strict_unread,
-                                  returns=self.deployment.settings.floor_policy.returns)
+                                  unread_policy=UnreadPolicy(self.deployment.settings.floor_policy.unread_policy),
+                                  returns=self.deployment.settings.floor_policy.returns,
+                                  budget_seconds=self.deployment.settings.comparison_budget_seconds)
+            operation.completion = result.record.completion.value
             operation.timings["comparison_including_extraction_seconds"] = time.perf_counter() - started
             # The surface's placeholder surface-v1 is replaced with what actually ran.
             record = result.record.model_copy(update={
@@ -121,7 +135,10 @@ class Runtime:
             response = self.store.commit_verification(response, request_hash,
                                                       self.deployment.manifest, signer)
             operation.timings["sign_and_store_seconds"] = time.perf_counter() - started
-            status, outcome = 200, "success"
+            # An incomplete verification is still retained and signed (DR 0004).
+            # 503 is reserved for failures that prevent issuing a trustworthy record.
+            status = 200
+            outcome = "success" if record.completion is Completion.COMPLETED else record.completion.value
             return status, response
         except ReplayError:
             status, outcome = 409, "replay_conflict"
@@ -133,7 +150,7 @@ class Runtime:
             status, outcome = 422, "invalid_request"
             return status, {"error": "product_mismatch"}
         except (ValidationError, ValueError, UnicodeError):
-            # Malformed request is 422; downstream storage/reader failures are 503.
+            # Malformed request is 422; storage/assembly failures are 503.
             if operation.stage == "request":
                 status, outcome = 422, "invalid_request"
                 return status, {"error": "invalid_request"}

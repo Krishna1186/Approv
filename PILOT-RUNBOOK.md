@@ -8,10 +8,14 @@ the host, region, provider contract, ingress, secret delivery, retention and bud
 
 Use `python -m approv.ops serve`, not the unconfigured API factory. The operations
 adapter calls the existing `verify_order`, then signs and commits the result before
-returning HTTP 200. `allow`, `confirm` and `refuse` remain successful comparisons.
-Provider, key and storage failures return HTTP 503 `system_failure`, with a stage
-and no comparison record. A merchant must treat 503 as **verification unavailable**;
-it is never permission to proceed as verified. The merchant controls checkout.
+returning HTTP 200. `allow`, `confirm` and `refuse` remain the purchase decisions.
+DR 0004's separate `completion` field distinguishes a completed comparison from an
+unavailable provider, unreadable response/catalogue or exceeded comparison budget.
+Those incomplete records are also signed, retained and returned as HTTP 200, with
+`decision=confirm`, `covered=false` and no guaranteed findings. **HTTP 200 alone is
+never permission to proceed as verified.** Key, storage and assembly failures that
+prevent issuing a trustworthy record return HTTP 503 `system_failure` with a stage.
+The merchant must handle that as verification unavailable, never an implicit allow.
 
 The initial target is one merchant, one process, one SQLite database on a persistent
 local disk. Do not run multiple worker processes or put SQLite WAL on NFS. The SQL
@@ -37,8 +41,8 @@ There is no automatic `.env` loading, fallback schema, fallback key or empty sto
 |---|---|---|
 | Categories and floor | SHA-256-pinned JSON `CategorySchema` files, or confirmed onboarding exports | Missing, changed, duplicate category or empty floor prevents startup |
 | Catalogue reader | Explicit trusted `module:callable` in configuration | Import failure or an incompatible known profile format prevents startup |
-| Unread policy and calibrated returns | Explicit `floor_policy`; `strict_unread` must be a JSON boolean | Missing or invalid policy prevents startup |
-| Extractor | HTTPS endpoint, model identifier, existing `v6` prompt, credential file, contract prices | Missing secret prevents startup; transport or malformed interpretation returns 503 |
+| Unread policy and calibrated returns | Explicit `floor_policy.unread_policy`: `withdraw` or `escalate` | Missing or invalid policy prevents startup; measurement-only `ignore` is rejected |
+| Extractor | HTTPS endpoint, model identifier, existing `v6` prompt, credential file, contract prices | Missing secret prevents startup; transport or malformed interpretation is retained with its distinct incomplete outcome |
 | Signing | Explicit backend and published key fingerprint | Missing key or substitution prevents startup; signing failures return 503 |
 | Receipt database | Explicit durable path, already initialized and migrated | Missing or wrong-version database prevents startup |
 | Merchant authentication | One merchant ID and bearer-token file | Missing token prevents startup; other merchants get 403 |
@@ -48,6 +52,10 @@ write it or its reader module. A request cannot override schemas, signing, extra
 reader or floor policy. Schema hashes establish which reviewed file was loaded; they
 do not authenticate a reviewer. Preserve the review and release approval separately.
 Use `ConfirmedSchema.model_dump_json(round_trip=True)` when exporting onboarding data.
+
+Select `withdraw` to retain DR 0022's coverage-withdrawal policy for an unfinished
+reading, or explicitly select `escalate`. Neither option allows an incomplete
+verification to authorise: the independent completion axis always fails its floor.
 
 The existing default `evidence_from_snapshot` reader accepts dotted field profiles,
 such as `variant.size`. Onboarding's `/.../*/...#name=...` locators require a compatible
@@ -130,6 +138,8 @@ do not repoint an alias behind a running process. Retain old public keys forever
 Existing retries return the original signed response without extraction or re-signing.
 Never regenerate the receipt timestamp to process a retry. A changed request under
 the same correlation ID gets 409; use one durable ID per order-line verification.
+A retry of a recorded incomplete verification returns that same incomplete record,
+even after the provider recovers. A new verification attempt needs a new correlation ID.
 
 ## Install, initialize and start
 
@@ -213,9 +223,14 @@ counters reset on restart and stdout is not a durable receipt store. Watch failu
 and unknown-usage counters alongside the four measures. Set latency, failure-rate,
 disk-space and backup-age alert thresholds from the pilot agreement, not invented
 SLOs. The existing extractor transport still has its fixed 45-second socket timeout;
-this task instruments it without changing the extractor or DR 0004. There is no new
-merchant deadline or automatic bypass. Aggregate abort receipts require the separate
-outcome-model work; operational failures here are events, not forged comparisons.
+this task instruments it without changing the extractor. `comparison_budget_seconds`
+optionally supplies the existing surface's computation budget; `null` means no budget
+has been agreed. Exceeding it yields a retained `budget_exceeded` record. It does not
+interrupt the network request and does not include signing, storage or network transit.
+The full verification latency is measured separately. There is no automatic bypass
+or invented end-to-end deadline. Incomplete records and their distinct completion
+codes are counted even though their HTTP response is 200; issuing no trustworthy
+record because storage or signing failed remains a 503 operational event.
 
 ## Forward migrations, backup and restore
 
