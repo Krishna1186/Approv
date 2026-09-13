@@ -73,6 +73,8 @@ def read_value(value: object, name: str, *, currency: str | None = None,
                 magnitude = value.get("magnitude", value.get("value"))
                 return read_value(f"{magnitude} {value['unit']}", name)
             return None, None, "unsupported_object"
+        if isinstance(value, list):
+            return None, None, "multivalued_field_requires_mapping" if value else None
         raw = text_value(value)
         if len(raw) > 512:
             return None, None, "prose_requires_labelled_extraction"
@@ -103,6 +105,10 @@ def read_value(value: object, name: str, *, currency: str | None = None,
                 return dim, Quantity(magnitude=Decimal(match["n"]), unit=unit, dimension=dim), None
             return None, None, "unknown_or_ambiguous_unit"
         if _NUMBER.fullmatch(raw):
+            unit_key = semantic_key(name).split("_")[-1]
+            unit = _ALIASES.get(unit_key, unit_key)
+            if unit in _UNITS and not option:
+                return _UNITS[unit], Quantity(magnitude=Decimal(raw), unit=unit, dimension=_UNITS[unit]), None
             if _PRICE.search(semantic_key(name)):
                 if currency:
                     return Dimension.MONEY, Money(amount=Decimal(raw), currency=currency), None

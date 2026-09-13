@@ -105,6 +105,35 @@ def test_option_values_without_sold_siblings_are_not_axes():
     assert not any(f.is_variant_axis for f in p.proposed_schema.field_profiles)
 
 
+def test_explicit_count_units_remain_counts_when_they_are_variant_axes():
+    p = propose([{"family_id": "a", "sku": "one", "bundle": "6 pcs"},
+                 {"family_id": "a", "sku": "two", "bundle": "12 pcs"}])
+    assert attrs(p)["bundle"].dimension is Dimension.COUNT
+    assert attrs(p)["bundle"].variant_groups.numerator == 1
+
+
+def test_missing_option_values_do_not_invent_a_dimension():
+    p = propose([{"variants": [{"sku": "one", "selections": [{"name": "Bundle", "value": None}]}]}])
+    assert attrs(p)["bundle"].dimension is None
+
+
+def test_inherited_label_value_specs_do_not_mask_variant_axis_discovery():
+    p = propose([{"specs": [{"label": "Material", "value": "brass"}],
+                  "variants": [{"sku": "a", "finish": "red"}, {"sku": "b", "finish": "blue"}]}])
+    assert attrs(p)["finish"].variant_groups.numerator == 1
+    assert attrs(p)["material"].variant_groups.numerator == 0
+
+
+def test_literal_keys_cannot_impersonate_a_dynamic_option_source():
+    p = propose([{"options": [{"name": "Size", "values": ["S"]}],
+                  "variants": [{"sku": "a", "option1": "S", "option1#name=Size": "malicious"}]}])
+    sources = {f.field_name for f in p.proposed_schema.field_profiles}
+    assert "/variants/*/option1#name=Size" in sources
+    assert "/variants/*/option1~3name=Size" in sources
+    with pytest.raises(ValueError, match="control characters"):
+        propose([{chr(0): "hidden"}])
+
+
 @pytest.mark.parametrize("nested", [True, False])
 def test_numeric_and_mixed_size_labels_are_nominal(nested):
     records = [{"sku": str(i), "family_id": "same", "size": size} for i, size in enumerate(["8", "8.5", "XL", "12 Tall"])]
@@ -187,6 +216,55 @@ def test_empty_missing_false_and_zero_have_explicit_denominators():
     assert attrs(p)["units"].published.numerator == 1
     assert attrs(p)["waterproof"].published.numerator == 1
     assert p.report.cannot_verify.denominator == 3
+
+
+def test_all_missing_keys_still_appear_in_the_report_without_inventing_a_type():
+    p = propose([{"mass": None}, {"mass": "unknown"}, {"mass": ""}, {}])
+    mass = attrs(p)["mass"]
+    assert (mass.occupied.numerator, mass.occupied.denominator) == (0, 4)
+    assert mass.published.numerator == 0
+    assert mass.dimension is None
+    assert "mass" not in {a.name for a in p.proposed_schema.attributes}
+
+
+def test_multivalue_fields_are_reported_without_claiming_a_selected_value():
+    p = propose([{"compatibility": ["A", "B"]}, {"compatibility": []}])
+    field = attrs(p)["compatibility"]
+    assert (field.occupied.numerator, field.occupied.denominator) == (1, 2)
+    assert field.published.numerator == 0
+    assert "multivalued_field_requires_mapping" in field.issues
+
+
+def test_explicit_unit_keys_require_numeric_values():
+    p = propose([{"length_cm": 20, "grams": 500, "capacity_ml": "250", "kg": "red"}])
+    assert attrs(p)["length_cm"].dimension is Dimension.LENGTH
+    assert attrs(p)["grams"].dimension is Dimension.MASS
+    assert attrs(p)["capacity_ml"].dimension is Dimension.VOLUME
+    assert attrs(p)["kg"].dimension is Dimension.NOMINAL
+
+
+def test_missing_nested_variant_value_does_not_inherit_parent_value():
+    p = propose([{"material": "brass", "variants": [{"sku": "a", "specs": {"material": None}}, {"sku": "b", "specs": {"material": "steel"}}]}])
+    assert attrs(p)["material"].published.numerator == 1
+    assert attrs(p)["material"].variant_groups.numerator == 0
+
+
+def test_nested_option_definitions_and_currency_are_inherited():
+    p = propose([{"envelope": {"currency": "CAD", "options": [{"name": "Finish", "values": ["red", "blue"]}],
+                               "variants": [{"sku": "a", "option1": "red", "price": "2.99", "grams": 100},
+                                            {"sku": "b", "option1": "blue", "price": "3.99", "grams": 200}]}}])
+    assert attrs(p)["finish"].variant_groups.numerator == 1
+    assert attrs(p)["finish"].variant_basis == ("named_selector",)
+    assert attrs(p)["price"].published.numerator == 2
+    assert attrs(p)["grams"].dimension is Dimension.MASS
+    assert attrs(p)["grams"].variant_groups.numerator == 0
+
+
+def test_an_empty_variant_array_does_not_verify_the_parent_as_a_sellable_sku():
+    p = propose([{"material": "brass", "variants": []}])
+    assert p.report.listings == 1
+    assert p.report.cannot_verify.numerator == 1
+    assert any("empty_variant_collection" in w for w in p.report.warnings)
 
 
 def test_ambiguous_sibling_collections_do_not_invent_combinations():

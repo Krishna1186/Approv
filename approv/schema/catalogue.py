@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from html import unescape
 from urllib.parse import quote, urlsplit
 
@@ -29,7 +29,7 @@ _VALUE = ("value", "selected_value", "selection", "choice")
 
 def path_text(path: tuple[str, ...]) -> str:
     # '*' denotes an array; literal '*' in keys is escaped as '~2'.
-    return "/" + "/".join("*" if p == "\0" else p.replace("~", "~0").replace("/", "~1").replace("*", "~2") for p in path)
+    return "/" + "/".join("*" if p == "\0" else p.replace("~", "~0").replace("/", "~1").replace("*", "~2").replace("#", "~3") for p in path)
 
 
 def is_identifier(key: str) -> bool:
@@ -65,11 +65,17 @@ def option_definitions(obj: dict) -> dict[int, str]:
 
 
 def variant_collections(obj: dict, path: tuple[str, ...] = ()) -> list[tuple[tuple[str, ...], list]]:
+    if len(path) > 32:
+        raise ValueError("catalogue nesting exceeds 32 levels")
     result = []
     for key, value in obj.items():
+        if not isinstance(key, str) or not key.strip() or any(ord(c) < 32 for c in key):
+            raise ValueError("catalogue field names must be nonempty strings without control characters")
         if semantic_key(key) in _META:
             continue
         current = path + (key,)
+        if value == [] and semantic_key(key) in {"variants", "skus", "editions"}:
+            result.append((current, value))
         if isinstance(value, dict):
             result.extend(variant_collections(value, current))
         elif isinstance(value, list) and value and all(isinstance(v, dict) for v in value):
@@ -93,6 +99,7 @@ class Cell:
     option: bool = False
     selectable: bool = True
     is_advice: bool = False
+    present: bool = True
 
 
 @dataclass(frozen=True)
@@ -127,8 +134,6 @@ def flatten(obj: dict, *, path: tuple[str, ...] = (), skip: frozenset[tuple[str,
         currency = next(iter(local_currencies)) if len(local_currencies) == 1 else "CONFLICT"
 
     def add(name, raw, field, *, prose=False, option=False):
-        if not occupied(raw):
-            return
         policy = policies.get(field)
         certainty = Certainty.PARSED if prose else Certainty.EXACT
         liability = policy.liability if policy else Liability.MERCHANT_GUARANTEED
@@ -140,9 +145,12 @@ def flatten(obj: dict, *, path: tuple[str, ...] = (), skip: frozenset[tuple[str,
         cells.append(Cell(key_name(name), field,
                           json.dumps(raw, sort_keys=True, ensure_ascii=False) if isinstance(raw, dict) else text_value(raw),
                           dim, value, issue, certainty, liability, option,
-                          not (operational or dim is Dimension.MONEY or is_identifier(name) or prose or advice), advice))
+                          not (operational or dim is Dimension.MONEY or is_identifier(name) or prose or advice),
+                          advice, occupied(raw) and raw != []))
 
     for key, value in obj.items():
+        if not isinstance(key, str) or not key.strip():
+            raise ValueError("catalogue field names must be nonempty strings")
         current = path + (key,)
         source = path_text(current)
         name = semantic_key(key)
@@ -171,11 +179,15 @@ def flatten(obj: dict, *, path: tuple[str, ...] = (), skip: frozenset[tuple[str,
                 cells.extend(flatten(value, path=current, skip=skip, options=options,
                                      currency=currency, policies=policies, depth=depth + 1))
         elif isinstance(value, list):
+            paired = False
             for item in value:
                 if isinstance(item, dict) and pair(item):
+                    paired = True
                     label_key, value_key = pair(item)
                     add(item[label_key], item[value_key], source + "/*/" + value_key + "#name=" + quote(item[label_key], safe=""), option=True)
             # Arrays of possible values are not the selected value. No cartesian products.
+            if not paired and not any(isinstance(item, dict) and "name" in item and "values" in item for item in value):
+                add(key, value, source)
         elif isinstance(value, (str, bool, int, float)) or value is None:
             add(key, value, source)
     return cells
@@ -209,9 +221,21 @@ def discover(records: list[dict], *, currency: str | None = None, policies: dict
             listings.append(Listing(_flat_group(record), identity(record), tuple(cells)))
             continue
         path, variants = collections[0]
-        parent = flatten(record, skip=frozenset({path}), currency=currency, policies=policies)
-        definitions = option_definitions(record)
-        parent_currency = next((v for k, v in record.items() if semantic_key(k) in {"currency", "currency_code"}), currency)
+        if not variants:
+            warnings.add("empty_variant_collection: no sellable listing established")
+            listings.append(Listing(None, None, ()))
+            continue
+        parent = [replace(c, option=False) for c in flatten(record, skip=frozenset({path}), currency=currency, policies=policies)]
+        definitions = {}
+        parent_currency = currency
+        ancestor = record
+        for segment in (*path[:-1], None):
+            definitions.update(option_definitions(ancestor))
+            codes = {v for k, v in ancestor.items() if semantic_key(k) in {"currency", "currency_code"} and isinstance(v, str)}
+            if codes:
+                parent_currency = next(iter(codes)) if len(codes) == 1 else "CONFLICT"
+            if segment is not None:
+                ancestor = ancestor[segment]
         for variant in variants:
             if not identity(variant):
                 warnings.add("variant_identity_missing: axis evidence requires distinct identifiers")

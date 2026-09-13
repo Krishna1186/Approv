@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections import Counter, defaultdict
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -35,11 +36,14 @@ def _exact(cell: Cell) -> bool:
 
 
 def _dimension(cells: list[Cell], axis: bool):
+    if not any(c.present for c in cells):
+        return None
     dimensions = {c.dimension for c in cells if c.dimension is not None}
     # Option labels may mix '9', 'XL', and 'Full/Queen'. Preserve the whole label;
     # never interpret the numeric subset as counts and discard the other sizes.
     if (axis or any(c.option for c in cells)) and (
-        Dimension.NOMINAL in dimensions or dimensions <= {Dimension.COUNT}
+        Dimension.NOMINAL in dimensions or not dimensions or
+        (dimensions == {Dimension.COUNT} and any(re.fullmatch(r"\d+(?:\.\d+)?", c.raw) for c in cells if c.present))
     ):
         return Dimension.NOMINAL
     return next(iter(dimensions)) if len(dimensions) == 1 else None
@@ -115,14 +119,18 @@ def propose_schema(records: list[dict], *, category_id: str,
     rows = defaultdict(lambda: defaultdict(list))
     by_group = defaultdict(lambda: defaultdict(lambda: defaultdict(set)))
     group_ids = defaultdict(set)
+    groups_with_selectors = {row.group for row in listings if any(c.option for c in row.cells)}
+    source_groups = defaultdict(lambda: defaultdict(lambda: defaultdict(set)))
     for index, listing in enumerate(listings):
         if listing.group and listing.identity:
             group_ids[listing.group].add(listing.identity)
         for cell in listing.cells:
             by_attribute[cell.name].append(cell)
             rows[cell.name][index].append(cell)
-            if listing.group and listing.identity and _exact(cell) and cell.selectable:
+            if (listing.group and listing.identity and cell.present and _exact(cell) and cell.selectable
+                    and (listing.group not in groups_with_selectors or cell.option)):
                 by_group[cell.name][listing.group][listing.identity].add(cell.raw)
+                source_groups[(cell.name, cell.field)][listing.group][listing.identity].add(cell.raw)
     eligible_groups = {group for group, ids in group_ids.items() if len(ids) > 1}
     axis_groups = defaultdict(set)
     for attribute, groups in by_group.items():
@@ -130,6 +138,12 @@ def propose_schema(records: list[dict], *, category_id: str,
             # One SKU with contradictory values is not two stock choices.
             if group in eligible_groups and len(identities) > 1 and all(len(v) == 1 for v in identities.values()) and len(set.union(*identities.values())) > 1:
                 axis_groups[attribute].add(group)
+    axis_sources = set()
+    for (attribute, source), groups in source_groups.items():
+        if any(group in axis_groups[attribute] and len(ids) > 1
+               and all(len(v) == 1 for v in ids.values()) and len(set.union(*ids.values())) > 1
+               for group, ids in groups.items()):
+            axis_sources.add((attribute, source))
 
     profiles: dict[str, dict] = {}
     specs = []
@@ -155,7 +169,8 @@ def propose_schema(records: list[dict], *, category_id: str,
         for index, observed in rows[attribute].items():
             usable = [c for c in observed if _usable(c, dimension) and not c.is_advice]
             for cell in observed:
-                source_rows[cell.field].add(index)
+                if cell.present:
+                    source_rows[cell.field].add(index)
                 source_cells[cell.field].append(cell)
                 if _usable(cell, dimension):
                     source_published[cell.field].add(index)
@@ -177,26 +192,28 @@ def propose_schema(records: list[dict], *, category_id: str,
         if conflicts:
             issues.add("conflicting_values_excluded_from_publication")
         if dimension is not None:
-            sources = tuple(sorted(source_rows))
+            sources = tuple(sorted(source_cells))
             specs.append(AttributeSpec(name=attribute, dimension=dimension,
                                        criticality=Criticality.SOFT, feed_aliases=sources))
             for source, observed in source_cells.items():
                 entry = profiles.setdefault(source, {"attributes": set(), "cells": [], "axis": False})
                 entry["attributes"].add(attribute)
                 entry["cells"].extend(observed)
-                entry["axis"] |= bool(axis_groups[attribute]) and any(c.selectable and _exact(c) for c in observed)
+                entry["axis"] |= (attribute, source) in axis_sources
             if eligible and any(c.selectable for c in cells):
                 floor_candidates.append((bool(axis_groups[attribute]), eligible, attribute))
         reports.append(AttributeReport(
             attribute=attribute, dimension=dimension, observed_dimensions=dims,
-            occupied=Share.publication(attribute, len(rows[attribute]), total),
+            occupied=Share.publication(attribute, sum(any(c.present for c in observed) for observed in rows[attribute].values()), total),
             published=Share.publication(attribute, published, total), exact=_share(exact, total),
             floor_eligible=_share(eligible, total),
             parsed_only=_share(parsed_only, total), conflicted=_share(conflicts, total),
             variant_groups=_share(len(axis_groups[attribute]), len(eligible_groups)),
+            variant_basis=tuple(sorted({"named_selector" if group in groups_with_selectors else "sibling_value_variation"
+                                        for group in axis_groups[attribute]})),
             sources=tuple(SourceReport(field_name=source, liability=observed[0].liability,
                                       certainty=max((c.certainty for c in observed), key=lambda c: {Certainty.EXACT: 0, Certainty.PARSED: 1, Certainty.INFERRED: 2}[c]),
-                                      is_variant_axis=bool(axis_groups[attribute]) and any(c.selectable and _exact(c) for c in observed),
+                                      is_variant_axis=(attribute, source) in axis_sources,
                                       occupied=_share(len(source_rows[source]), total),
                                       published=_share(len(source_published[source]), total))
                           for source, observed in sorted(source_cells.items())),

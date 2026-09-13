@@ -74,6 +74,7 @@ class AttributeReport(Frozen):
     parsed_only: Share
     conflicted: Share
     variant_groups: Share
+    variant_basis: tuple[str, ...] = ()
     sources: tuple[SourceReport, ...]
     issues: tuple[str, ...] = ()
 
