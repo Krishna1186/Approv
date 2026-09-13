@@ -5,11 +5,12 @@ import json
 import re
 from dataclasses import dataclass, replace
 from html import unescape
-from urllib.parse import quote, urlsplit
+from urllib.parse import urlsplit
 
 from approv.types.core import Certainty, Dimension, Liability
 
 from .values import key_name, occupied, read_value, semantic_key, text_value
+from .locators import LABEL_KEYS, VALUE_KEYS, format_locator
 
 _META = {"evidence", "schema", "category_schema", "field_profiles", "liability",
          "certainty", "is_variant_axis", "floor", "decision", "signature", "hash",
@@ -23,13 +24,16 @@ _OPERATIONAL = {"price", "cost", "amount", "msrp", "available", "availability",
 _GROUP = {"product_id", "parent_id", "family_id", "group_id", "item_group_id", "style_id"}
 _NAMESPACE = {"merchant_id", "store_id", "merchant", "store", "host"}
 _URL = {"source_url", "product_url", "canonical_url"}
-_LABEL = ("name", "label", "attribute", "key", "option")
-_VALUE = ("value", "selected_value", "selection", "choice")
+_LABEL = LABEL_KEYS
+_VALUE = VALUE_KEYS
 
 
 def path_text(path: tuple[str, ...]) -> str:
-    # '*' denotes an array; literal '*' in keys is escaped as '~2'.
-    return "/" + "/".join("*" if p == "\0" else p.replace("~", "~0").replace("/", "~1").replace("*", "~2").replace("#", "~3") for p in path)
+    return format_locator(tuple(None if p == "\0" else p for p in path))
+
+
+def selector_path(path: tuple[str, ...], label: str) -> str:
+    return format_locator(tuple(None if p == "\0" else p for p in path), selector=label)
 
 
 def is_identifier(key: str) -> bool:
@@ -166,7 +170,7 @@ def flatten(obj: dict, *, path: tuple[str, ...] = (), skip: frozenset[tuple[str,
         if match:
             label = options.get(int(match[1]))
             if label:
-                add(label, value, source + "#name=" + quote(label, safe=""), option=True)
+                add(label, value, selector_path(current, label), option=True)
             # Unnamed numbered selectors have no recoverable attribute name.
             continue
         if isinstance(value, dict):
@@ -174,7 +178,7 @@ def flatten(obj: dict, *, path: tuple[str, ...] = (), skip: frozenset[tuple[str,
                 add(key, value, source)
             elif pair(value):
                 label_key, value_key = pair(value)
-                add(value[label_key], value[value_key], source + "/" + value_key + "#name=" + quote(value[label_key], safe=""), option=True)
+                add(value[label_key], value[value_key], selector_path(current + (value_key,), value[label_key]), option=True)
             else:
                 cells.extend(flatten(value, path=current, skip=skip, options=options,
                                      currency=currency, policies=policies, depth=depth + 1))
@@ -184,7 +188,7 @@ def flatten(obj: dict, *, path: tuple[str, ...] = (), skip: frozenset[tuple[str,
                 if isinstance(item, dict) and pair(item):
                     paired = True
                     label_key, value_key = pair(item)
-                    add(item[label_key], item[value_key], source + "/*/" + value_key + "#name=" + quote(item[label_key], safe=""), option=True)
+                    add(item[label_key], item[value_key], selector_path(current + ("\0", value_key), item[label_key]), option=True)
             # Arrays of possible values are not the selected value. No cartesian products.
             if not paired and not any(isinstance(item, dict) and "name" in item and "values" in item for item in value):
                 add(key, value, source)

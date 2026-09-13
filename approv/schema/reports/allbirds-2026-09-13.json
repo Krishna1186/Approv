@@ -1,0 +1,2191 @@
+{
+  "report_version": "catalogue-partner-report-v1",
+  "status": "proposal_requires_human_review",
+  "context": {
+    "merchant": "Allbirds / supplied catalogue snapshot",
+    "scope": "Single-merchant demonstration drawn from the local Shopify export. Includes only the supplied products and variants; completeness against the live store is unmeasured. Product categories require separate review.",
+    "source": "shopify-raw.json",
+    "captured_at": null,
+    "source_sha256": "59a5d4c423ace64c50d8de46e00906286cf25f69d176970e40ff2471e7b67cea"
+  },
+  "measurement": {
+    "category_id": "allbirds.supplied",
+    "observed_at": "2026-09-13T00:00:00Z",
+    "derivation_version": "schema-onboarding-v1",
+    "model_version": "none-deterministic",
+    "prompt_version": "none",
+    "input_records": 294,
+    "listings": 2857,
+    "denominator_unit": "expanded listings; one row for an unexpanded input record",
+    "interval_method": "Wilson 95%; descriptive catalogue counts, not accuracy",
+    "floor": [
+      "size"
+    ],
+    "floor_basis": "Most-published observed selection axis; otherwise most-published structured product attribute. Suggestion only; reviewer must select the floor.",
+    "no_comparable_attributes": {
+      "numerator": 0,
+      "denominator": 2857,
+      "rate": 0.0,
+      "interval": [
+        0.0,
+        0.001342821636821836
+      ]
+    },
+    "cannot_verify": {
+      "numerator": 2,
+      "denominator": 2857,
+      "rate": 0.0007000350017500875,
+      "interval": [
+        0.00019199182392628015,
+        0.0025490197721019653
+      ]
+    },
+    "warnings": [
+      "attribute_diagnostics_require_review",
+      "human_review_required: catalogue frequency cannot establish the category's necessary attributes"
+    ]
+  },
+  "catalogue_digest": "5e8fbfdc9fe0ec6a43460bf53d95c8d5dbfcf8d614a5d90998d80e4fd0d13dd5",
+  "proposal_id": "abe37c30a336631d645cf928845d69c62c1553efcb54ecaf21af541a79e15b0b",
+  "attributes": [
+    {
+      "attribute": "alt",
+      "dimension": null,
+      "observed_dimensions": [],
+      "occupied": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "published": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "exact": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "floor_eligible": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "parsed_only": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "conflicted": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "variant_groups": {
+        "numerator": 0,
+        "denominator": 294,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.012898131087128192
+        ]
+      },
+      "variant_basis": [],
+      "sources": [
+        {
+          "field_name": "/variants/*/featured_image/alt",
+          "liability": "merchant_guaranteed",
+          "certainty": "exact",
+          "is_variant_axis": false,
+          "occupied": {
+            "numerator": 0,
+            "denominator": 2857,
+            "rate": 0.0,
+            "interval": [
+              0.0,
+              0.001342821636821836
+            ]
+          },
+          "published": {
+            "numerator": 0,
+            "denominator": 2857,
+            "rate": 0.0,
+            "interval": [
+              0.0,
+              0.001342821636821836
+            ]
+          }
+        }
+      ],
+      "issues": [
+        "no_unambiguous_dimension"
+      ],
+      "missing": {
+        "numerator": 2857,
+        "denominator": 2857,
+        "rate": 1.0,
+        "interval": [
+          0.9986571783631781,
+          1.0
+        ]
+      },
+      "present_but_unusable": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "not_verifiable_for_attribute": {
+        "numerator": 2857,
+        "denominator": 2857,
+        "rate": 1.0,
+        "interval": [
+          0.9986571783631781,
+          1.0
+        ]
+      },
+      "actions": [
+        "First confirm that this source describes a requested product fact; incidental catalogue metadata need not become a verification requirement.",
+        "Publish this fact for each affected sellable SKU, including explicit variant selections where applicable.",
+        "Review the source mapping and mixed meanings before requesting new product data; no unambiguous attribute type was established."
+      ],
+      "action_scope": "category_review",
+      "minimum_repair_scenario": null
+    },
+    {
+      "attribute": "available",
+      "dimension": "nominal",
+      "observed_dimensions": [
+        "nominal"
+      ],
+      "occupied": {
+        "numerator": 2857,
+        "denominator": 2857,
+        "rate": 1.0,
+        "interval": [
+          0.9986571783631781,
+          1.0
+        ]
+      },
+      "published": {
+        "numerator": 2857,
+        "denominator": 2857,
+        "rate": 1.0,
+        "interval": [
+          0.9986571783631781,
+          1.0
+        ]
+      },
+      "exact": {
+        "numerator": 2857,
+        "denominator": 2857,
+        "rate": 1.0,
+        "interval": [
+          0.9986571783631781,
+          1.0
+        ]
+      },
+      "floor_eligible": {
+        "numerator": 2857,
+        "denominator": 2857,
+        "rate": 1.0,
+        "interval": [
+          0.9986571783631781,
+          1.0
+        ]
+      },
+      "parsed_only": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "conflicted": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "variant_groups": {
+        "numerator": 0,
+        "denominator": 294,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.012898131087128192
+        ]
+      },
+      "variant_basis": [],
+      "sources": [
+        {
+          "field_name": "/variants/*/available",
+          "liability": "merchant_guaranteed",
+          "certainty": "exact",
+          "is_variant_axis": false,
+          "occupied": {
+            "numerator": 2857,
+            "denominator": 2857,
+            "rate": 1.0,
+            "interval": [
+              0.9986571783631781,
+              1.0
+            ]
+          },
+          "published": {
+            "numerator": 2857,
+            "denominator": 2857,
+            "rate": 1.0,
+            "interval": [
+              0.9986571783631781,
+              1.0
+            ]
+          }
+        }
+      ],
+      "issues": [],
+      "missing": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "present_but_unusable": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "not_verifiable_for_attribute": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "actions": [],
+      "action_scope": "category_review",
+      "minimum_repair_scenario": null
+    },
+    {
+      "attribute": "compare_at_price",
+      "dimension": "money",
+      "observed_dimensions": [
+        "money"
+      ],
+      "occupied": {
+        "numerator": 84,
+        "denominator": 2857,
+        "rate": 0.029401470073503674,
+        "interval": [
+          0.023810903021940426,
+          0.036255896901550615
+        ]
+      },
+      "published": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "exact": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "floor_eligible": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "parsed_only": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "conflicted": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "variant_groups": {
+        "numerator": 0,
+        "denominator": 294,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.012898131087128192
+        ]
+      },
+      "variant_basis": [],
+      "sources": [
+        {
+          "field_name": "/variants/*/compare_at_price",
+          "liability": "merchant_guaranteed",
+          "certainty": "exact",
+          "is_variant_axis": false,
+          "occupied": {
+            "numerator": 84,
+            "denominator": 2857,
+            "rate": 0.029401470073503674,
+            "interval": [
+              0.023810903021940426,
+              0.036255896901550615
+            ]
+          },
+          "published": {
+            "numerator": 0,
+            "denominator": 2857,
+            "rate": 0.0,
+            "interval": [
+              0.0,
+              0.001342821636821836
+            ]
+          }
+        }
+      ],
+      "issues": [
+        "currency_missing_or_ambiguous"
+      ],
+      "missing": {
+        "numerator": 2773,
+        "denominator": 2857,
+        "rate": 0.9705985299264963,
+        "interval": [
+          0.9637441030984494,
+          0.9761890969780597
+        ]
+      },
+      "present_but_unusable": {
+        "numerator": 84,
+        "denominator": 2857,
+        "rate": 0.029401470073503674,
+        "interval": [
+          0.023810903021940426,
+          0.036255896901550615
+        ]
+      },
+      "not_verifiable_for_attribute": {
+        "numerator": 2857,
+        "denominator": 2857,
+        "rate": 1.0,
+        "interval": [
+          0.9986571783631781,
+          1.0
+        ]
+      },
+      "actions": [
+        "Publish this fact for each affected sellable SKU, including explicit variant selections where applicable.",
+        "Publish an explicit ISO currency with each amount, or establish a trusted catalogue currency during onboarding."
+      ],
+      "action_scope": "publication_repair",
+      "minimum_repair_scenario": null
+    },
+    {
+      "attribute": "featured_image",
+      "dimension": null,
+      "observed_dimensions": [],
+      "occupied": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "published": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "exact": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "floor_eligible": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "parsed_only": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "conflicted": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "variant_groups": {
+        "numerator": 0,
+        "denominator": 294,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.012898131087128192
+        ]
+      },
+      "variant_basis": [],
+      "sources": [
+        {
+          "field_name": "/variants/*/featured_image",
+          "liability": "merchant_guaranteed",
+          "certainty": "exact",
+          "is_variant_axis": false,
+          "occupied": {
+            "numerator": 0,
+            "denominator": 2857,
+            "rate": 0.0,
+            "interval": [
+              0.0,
+              0.001342821636821836
+            ]
+          },
+          "published": {
+            "numerator": 0,
+            "denominator": 2857,
+            "rate": 0.0,
+            "interval": [
+              0.0,
+              0.001342821636821836
+            ]
+          }
+        }
+      ],
+      "issues": [
+        "no_unambiguous_dimension"
+      ],
+      "missing": {
+        "numerator": 2857,
+        "denominator": 2857,
+        "rate": 1.0,
+        "interval": [
+          0.9986571783631781,
+          1.0
+        ]
+      },
+      "present_but_unusable": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "not_verifiable_for_attribute": {
+        "numerator": 2857,
+        "denominator": 2857,
+        "rate": 1.0,
+        "interval": [
+          0.9986571783631781,
+          1.0
+        ]
+      },
+      "actions": [
+        "First confirm that this source describes a requested product fact; incidental catalogue metadata need not become a verification requirement.",
+        "Publish this fact for each affected sellable SKU, including explicit variant selections where applicable.",
+        "Review the source mapping and mixed meanings before requesting new product data; no unambiguous attribute type was established."
+      ],
+      "action_scope": "category_review",
+      "minimum_repair_scenario": null
+    },
+    {
+      "attribute": "grams",
+      "dimension": "mass",
+      "observed_dimensions": [
+        "mass"
+      ],
+      "occupied": {
+        "numerator": 2857,
+        "denominator": 2857,
+        "rate": 1.0,
+        "interval": [
+          0.9986571783631781,
+          1.0
+        ]
+      },
+      "published": {
+        "numerator": 2857,
+        "denominator": 2857,
+        "rate": 1.0,
+        "interval": [
+          0.9986571783631781,
+          1.0
+        ]
+      },
+      "exact": {
+        "numerator": 2857,
+        "denominator": 2857,
+        "rate": 1.0,
+        "interval": [
+          0.9986571783631781,
+          1.0
+        ]
+      },
+      "floor_eligible": {
+        "numerator": 2857,
+        "denominator": 2857,
+        "rate": 1.0,
+        "interval": [
+          0.9986571783631781,
+          1.0
+        ]
+      },
+      "parsed_only": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "conflicted": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "variant_groups": {
+        "numerator": 0,
+        "denominator": 294,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.012898131087128192
+        ]
+      },
+      "variant_basis": [],
+      "sources": [
+        {
+          "field_name": "/variants/*/grams",
+          "liability": "merchant_guaranteed",
+          "certainty": "exact",
+          "is_variant_axis": false,
+          "occupied": {
+            "numerator": 2857,
+            "denominator": 2857,
+            "rate": 1.0,
+            "interval": [
+              0.9986571783631781,
+              1.0
+            ]
+          },
+          "published": {
+            "numerator": 2857,
+            "denominator": 2857,
+            "rate": 1.0,
+            "interval": [
+              0.9986571783631781,
+              1.0
+            ]
+          }
+        }
+      ],
+      "issues": [],
+      "missing": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "present_but_unusable": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "not_verifiable_for_attribute": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "actions": [],
+      "action_scope": "category_review",
+      "minimum_repair_scenario": null
+    },
+    {
+      "attribute": "height",
+      "dimension": "count",
+      "observed_dimensions": [
+        "count"
+      ],
+      "occupied": {
+        "numerator": 19,
+        "denominator": 2857,
+        "rate": 0.006650332516625832,
+        "interval": [
+          0.004261632683761332,
+          0.010363993565521397
+        ]
+      },
+      "published": {
+        "numerator": 19,
+        "denominator": 2857,
+        "rate": 0.006650332516625832,
+        "interval": [
+          0.004261632683761332,
+          0.010363993565521397
+        ]
+      },
+      "exact": {
+        "numerator": 19,
+        "denominator": 2857,
+        "rate": 0.006650332516625832,
+        "interval": [
+          0.004261632683761332,
+          0.010363993565521397
+        ]
+      },
+      "floor_eligible": {
+        "numerator": 19,
+        "denominator": 2857,
+        "rate": 0.006650332516625832,
+        "interval": [
+          0.004261632683761332,
+          0.010363993565521397
+        ]
+      },
+      "parsed_only": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "conflicted": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "variant_groups": {
+        "numerator": 0,
+        "denominator": 294,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.012898131087128192
+        ]
+      },
+      "variant_basis": [],
+      "sources": [
+        {
+          "field_name": "/variants/*/featured_image/height",
+          "liability": "merchant_guaranteed",
+          "certainty": "exact",
+          "is_variant_axis": false,
+          "occupied": {
+            "numerator": 19,
+            "denominator": 2857,
+            "rate": 0.006650332516625832,
+            "interval": [
+              0.004261632683761332,
+              0.010363993565521397
+            ]
+          },
+          "published": {
+            "numerator": 19,
+            "denominator": 2857,
+            "rate": 0.006650332516625832,
+            "interval": [
+              0.004261632683761332,
+              0.010363993565521397
+            ]
+          }
+        }
+      ],
+      "issues": [],
+      "missing": {
+        "numerator": 2838,
+        "denominator": 2857,
+        "rate": 0.9933496674833742,
+        "interval": [
+          0.9896360064344786,
+          0.9957383673162387
+        ]
+      },
+      "present_but_unusable": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "not_verifiable_for_attribute": {
+        "numerator": 2838,
+        "denominator": 2857,
+        "rate": 0.9933496674833742,
+        "interval": [
+          0.9896360064344786,
+          0.9957383673162387
+        ]
+      },
+      "actions": [
+        "First confirm that this source describes a requested product fact; incidental catalogue metadata need not become a verification requirement.",
+        "Publish this fact for each affected sellable SKU, including explicit variant selections where applicable."
+      ],
+      "action_scope": "category_review",
+      "minimum_repair_scenario": null
+    },
+    {
+      "attribute": "price",
+      "dimension": "money",
+      "observed_dimensions": [
+        "money"
+      ],
+      "occupied": {
+        "numerator": 2857,
+        "denominator": 2857,
+        "rate": 1.0,
+        "interval": [
+          0.9986571783631781,
+          1.0
+        ]
+      },
+      "published": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "exact": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "floor_eligible": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "parsed_only": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "conflicted": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "variant_groups": {
+        "numerator": 0,
+        "denominator": 294,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.012898131087128192
+        ]
+      },
+      "variant_basis": [],
+      "sources": [
+        {
+          "field_name": "/variants/*/option1#name=Price",
+          "liability": "merchant_guaranteed",
+          "certainty": "exact",
+          "is_variant_axis": false,
+          "occupied": {
+            "numerator": 2,
+            "denominator": 2857,
+            "rate": 0.0007000350017500875,
+            "interval": [
+              0.00019199182392628015,
+              0.0025490197721019653
+            ]
+          },
+          "published": {
+            "numerator": 0,
+            "denominator": 2857,
+            "rate": 0.0,
+            "interval": [
+              0.0,
+              0.001342821636821836
+            ]
+          }
+        },
+        {
+          "field_name": "/variants/*/price",
+          "liability": "merchant_guaranteed",
+          "certainty": "exact",
+          "is_variant_axis": false,
+          "occupied": {
+            "numerator": 2857,
+            "denominator": 2857,
+            "rate": 1.0,
+            "interval": [
+              0.9986571783631781,
+              1.0
+            ]
+          },
+          "published": {
+            "numerator": 0,
+            "denominator": 2857,
+            "rate": 0.0,
+            "interval": [
+              0.0,
+              0.001342821636821836
+            ]
+          }
+        }
+      ],
+      "issues": [
+        "currency_missing_or_ambiguous"
+      ],
+      "missing": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "present_but_unusable": {
+        "numerator": 2857,
+        "denominator": 2857,
+        "rate": 1.0,
+        "interval": [
+          0.9986571783631781,
+          1.0
+        ]
+      },
+      "not_verifiable_for_attribute": {
+        "numerator": 2857,
+        "denominator": 2857,
+        "rate": 1.0,
+        "interval": [
+          0.9986571783631781,
+          1.0
+        ]
+      },
+      "actions": [
+        "Publish an explicit ISO currency with each amount, or establish a trusted catalogue currency during onboarding."
+      ],
+      "action_scope": "publication_repair",
+      "minimum_repair_scenario": null
+    },
+    {
+      "attribute": "product_type",
+      "dimension": "nominal",
+      "observed_dimensions": [
+        "nominal"
+      ],
+      "occupied": {
+        "numerator": 2857,
+        "denominator": 2857,
+        "rate": 1.0,
+        "interval": [
+          0.9986571783631781,
+          1.0
+        ]
+      },
+      "published": {
+        "numerator": 2857,
+        "denominator": 2857,
+        "rate": 1.0,
+        "interval": [
+          0.9986571783631781,
+          1.0
+        ]
+      },
+      "exact": {
+        "numerator": 2857,
+        "denominator": 2857,
+        "rate": 1.0,
+        "interval": [
+          0.9986571783631781,
+          1.0
+        ]
+      },
+      "floor_eligible": {
+        "numerator": 2857,
+        "denominator": 2857,
+        "rate": 1.0,
+        "interval": [
+          0.9986571783631781,
+          1.0
+        ]
+      },
+      "parsed_only": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "conflicted": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "variant_groups": {
+        "numerator": 0,
+        "denominator": 294,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.012898131087128192
+        ]
+      },
+      "variant_basis": [],
+      "sources": [
+        {
+          "field_name": "/product_type",
+          "liability": "merchant_guaranteed",
+          "certainty": "exact",
+          "is_variant_axis": false,
+          "occupied": {
+            "numerator": 2857,
+            "denominator": 2857,
+            "rate": 1.0,
+            "interval": [
+              0.9986571783631781,
+              1.0
+            ]
+          },
+          "published": {
+            "numerator": 2857,
+            "denominator": 2857,
+            "rate": 1.0,
+            "interval": [
+              0.9986571783631781,
+              1.0
+            ]
+          }
+        }
+      ],
+      "issues": [],
+      "missing": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "present_but_unusable": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "not_verifiable_for_attribute": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "actions": [],
+      "action_scope": "category_review",
+      "minimum_repair_scenario": null
+    },
+    {
+      "attribute": "requires_shipping",
+      "dimension": "nominal",
+      "observed_dimensions": [
+        "nominal"
+      ],
+      "occupied": {
+        "numerator": 2857,
+        "denominator": 2857,
+        "rate": 1.0,
+        "interval": [
+          0.9986571783631781,
+          1.0
+        ]
+      },
+      "published": {
+        "numerator": 2857,
+        "denominator": 2857,
+        "rate": 1.0,
+        "interval": [
+          0.9986571783631781,
+          1.0
+        ]
+      },
+      "exact": {
+        "numerator": 2857,
+        "denominator": 2857,
+        "rate": 1.0,
+        "interval": [
+          0.9986571783631781,
+          1.0
+        ]
+      },
+      "floor_eligible": {
+        "numerator": 2857,
+        "denominator": 2857,
+        "rate": 1.0,
+        "interval": [
+          0.9986571783631781,
+          1.0
+        ]
+      },
+      "parsed_only": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "conflicted": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "variant_groups": {
+        "numerator": 0,
+        "denominator": 294,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.012898131087128192
+        ]
+      },
+      "variant_basis": [],
+      "sources": [
+        {
+          "field_name": "/variants/*/requires_shipping",
+          "liability": "merchant_guaranteed",
+          "certainty": "exact",
+          "is_variant_axis": false,
+          "occupied": {
+            "numerator": 2857,
+            "denominator": 2857,
+            "rate": 1.0,
+            "interval": [
+              0.9986571783631781,
+              1.0
+            ]
+          },
+          "published": {
+            "numerator": 2857,
+            "denominator": 2857,
+            "rate": 1.0,
+            "interval": [
+              0.9986571783631781,
+              1.0
+            ]
+          }
+        }
+      ],
+      "issues": [],
+      "missing": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "present_but_unusable": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "not_verifiable_for_attribute": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "actions": [],
+      "action_scope": "category_review",
+      "minimum_repair_scenario": null
+    },
+    {
+      "attribute": "size",
+      "dimension": "nominal",
+      "observed_dimensions": [
+        "nominal"
+      ],
+      "occupied": {
+        "numerator": 2855,
+        "denominator": 2857,
+        "rate": 0.9992999649982499,
+        "interval": [
+          0.997450980227898,
+          0.9998080081760737
+        ]
+      },
+      "published": {
+        "numerator": 2855,
+        "denominator": 2857,
+        "rate": 0.9992999649982499,
+        "interval": [
+          0.997450980227898,
+          0.9998080081760737
+        ]
+      },
+      "exact": {
+        "numerator": 2855,
+        "denominator": 2857,
+        "rate": 0.9992999649982499,
+        "interval": [
+          0.997450980227898,
+          0.9998080081760737
+        ]
+      },
+      "floor_eligible": {
+        "numerator": 2855,
+        "denominator": 2857,
+        "rate": 0.9992999649982499,
+        "interval": [
+          0.997450980227898,
+          0.9998080081760737
+        ]
+      },
+      "parsed_only": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "conflicted": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "variant_groups": {
+        "numerator": 293,
+        "denominator": 294,
+        "rate": 0.9965986394557823,
+        "interval": [
+          0.9809875509576159,
+          0.9993993392551687
+        ]
+      },
+      "variant_basis": [
+        "named_selector"
+      ],
+      "sources": [
+        {
+          "field_name": "/variants/*/option1#name=Size",
+          "liability": "merchant_guaranteed",
+          "certainty": "exact",
+          "is_variant_axis": true,
+          "occupied": {
+            "numerator": 2855,
+            "denominator": 2857,
+            "rate": 0.9992999649982499,
+            "interval": [
+              0.997450980227898,
+              0.9998080081760737
+            ]
+          },
+          "published": {
+            "numerator": 2855,
+            "denominator": 2857,
+            "rate": 0.9992999649982499,
+            "interval": [
+              0.997450980227898,
+              0.9998080081760737
+            ]
+          }
+        }
+      ],
+      "issues": [
+        "unknown_or_ambiguous_unit"
+      ],
+      "missing": {
+        "numerator": 2,
+        "denominator": 2857,
+        "rate": 0.0007000350017500875,
+        "interval": [
+          0.00019199182392628015,
+          0.0025490197721019653
+        ]
+      },
+      "present_but_unusable": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "not_verifiable_for_attribute": {
+        "numerator": 2,
+        "denominator": 2857,
+        "rate": 0.0007000350017500875,
+        "interval": [
+          0.00019199182392628015,
+          0.0025490197721019653
+        ]
+      },
+      "actions": [
+        "Publish this fact for each affected sellable SKU, including explicit variant selections where applicable."
+      ],
+      "action_scope": "publication_repair",
+      "minimum_repair_scenario": {
+        "assumption": "If every gap for this attribute becomes consistent, exact merchant evidence; other attributes remain unchanged.",
+        "additional_listings_meeting_proposed_minimum": {
+          "numerator": 2,
+          "denominator": 2857,
+          "rate": 0.0007000350017500875,
+          "interval": [
+            0.00019199182392628015,
+            0.0025490197721019653
+          ]
+        },
+        "remaining_below_proposed_minimum": {
+          "numerator": 0,
+          "denominator": 2857,
+          "rate": 0.0,
+          "interval": [
+            0.0,
+            0.001342821636821836
+          ]
+        }
+      }
+    },
+    {
+      "attribute": "src",
+      "dimension": "nominal",
+      "observed_dimensions": [
+        "nominal"
+      ],
+      "occupied": {
+        "numerator": 19,
+        "denominator": 2857,
+        "rate": 0.006650332516625832,
+        "interval": [
+          0.004261632683761332,
+          0.010363993565521397
+        ]
+      },
+      "published": {
+        "numerator": 19,
+        "denominator": 2857,
+        "rate": 0.006650332516625832,
+        "interval": [
+          0.004261632683761332,
+          0.010363993565521397
+        ]
+      },
+      "exact": {
+        "numerator": 19,
+        "denominator": 2857,
+        "rate": 0.006650332516625832,
+        "interval": [
+          0.004261632683761332,
+          0.010363993565521397
+        ]
+      },
+      "floor_eligible": {
+        "numerator": 19,
+        "denominator": 2857,
+        "rate": 0.006650332516625832,
+        "interval": [
+          0.004261632683761332,
+          0.010363993565521397
+        ]
+      },
+      "parsed_only": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "conflicted": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "variant_groups": {
+        "numerator": 0,
+        "denominator": 294,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.012898131087128192
+        ]
+      },
+      "variant_basis": [],
+      "sources": [
+        {
+          "field_name": "/variants/*/featured_image/src",
+          "liability": "merchant_guaranteed",
+          "certainty": "exact",
+          "is_variant_axis": false,
+          "occupied": {
+            "numerator": 19,
+            "denominator": 2857,
+            "rate": 0.006650332516625832,
+            "interval": [
+              0.004261632683761332,
+              0.010363993565521397
+            ]
+          },
+          "published": {
+            "numerator": 19,
+            "denominator": 2857,
+            "rate": 0.006650332516625832,
+            "interval": [
+              0.004261632683761332,
+              0.010363993565521397
+            ]
+          }
+        }
+      ],
+      "issues": [],
+      "missing": {
+        "numerator": 2838,
+        "denominator": 2857,
+        "rate": 0.9933496674833742,
+        "interval": [
+          0.9896360064344786,
+          0.9957383673162387
+        ]
+      },
+      "present_but_unusable": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "not_verifiable_for_attribute": {
+        "numerator": 2838,
+        "denominator": 2857,
+        "rate": 0.9933496674833742,
+        "interval": [
+          0.9896360064344786,
+          0.9957383673162387
+        ]
+      },
+      "actions": [
+        "First confirm that this source describes a requested product fact; incidental catalogue metadata need not become a verification requirement.",
+        "Publish this fact for each affected sellable SKU, including explicit variant selections where applicable."
+      ],
+      "action_scope": "category_review",
+      "minimum_repair_scenario": null
+    },
+    {
+      "attribute": "taxable",
+      "dimension": "nominal",
+      "observed_dimensions": [
+        "nominal"
+      ],
+      "occupied": {
+        "numerator": 2857,
+        "denominator": 2857,
+        "rate": 1.0,
+        "interval": [
+          0.9986571783631781,
+          1.0
+        ]
+      },
+      "published": {
+        "numerator": 2857,
+        "denominator": 2857,
+        "rate": 1.0,
+        "interval": [
+          0.9986571783631781,
+          1.0
+        ]
+      },
+      "exact": {
+        "numerator": 2857,
+        "denominator": 2857,
+        "rate": 1.0,
+        "interval": [
+          0.9986571783631781,
+          1.0
+        ]
+      },
+      "floor_eligible": {
+        "numerator": 2857,
+        "denominator": 2857,
+        "rate": 1.0,
+        "interval": [
+          0.9986571783631781,
+          1.0
+        ]
+      },
+      "parsed_only": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "conflicted": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "variant_groups": {
+        "numerator": 0,
+        "denominator": 294,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.012898131087128192
+        ]
+      },
+      "variant_basis": [],
+      "sources": [
+        {
+          "field_name": "/variants/*/taxable",
+          "liability": "merchant_guaranteed",
+          "certainty": "exact",
+          "is_variant_axis": false,
+          "occupied": {
+            "numerator": 2857,
+            "denominator": 2857,
+            "rate": 1.0,
+            "interval": [
+              0.9986571783631781,
+              1.0
+            ]
+          },
+          "published": {
+            "numerator": 2857,
+            "denominator": 2857,
+            "rate": 1.0,
+            "interval": [
+              0.9986571783631781,
+              1.0
+            ]
+          }
+        }
+      ],
+      "issues": [],
+      "missing": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "present_but_unusable": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "not_verifiable_for_attribute": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "actions": [],
+      "action_scope": "category_review",
+      "minimum_repair_scenario": null
+    },
+    {
+      "attribute": "title",
+      "dimension": null,
+      "observed_dimensions": [
+        "count",
+        "money",
+        "nominal"
+      ],
+      "occupied": {
+        "numerator": 2857,
+        "denominator": 2857,
+        "rate": 1.0,
+        "interval": [
+          0.9986571783631781,
+          1.0
+        ]
+      },
+      "published": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "exact": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "floor_eligible": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "parsed_only": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "conflicted": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "variant_groups": {
+        "numerator": 0,
+        "denominator": 294,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.012898131087128192
+        ]
+      },
+      "variant_basis": [],
+      "sources": [
+        {
+          "field_name": "/variants/*/title",
+          "liability": "merchant_guaranteed",
+          "certainty": "exact",
+          "is_variant_axis": false,
+          "occupied": {
+            "numerator": 2857,
+            "denominator": 2857,
+            "rate": 1.0,
+            "interval": [
+              0.9986571783631781,
+              1.0
+            ]
+          },
+          "published": {
+            "numerator": 0,
+            "denominator": 2857,
+            "rate": 0.0,
+            "interval": [
+              0.0,
+              0.001342821636821836
+            ]
+          }
+        }
+      ],
+      "issues": [
+        "currency_missing_or_ambiguous",
+        "no_unambiguous_dimension",
+        "unitless_decimal",
+        "unknown_or_ambiguous_unit"
+      ],
+      "missing": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "present_but_unusable": {
+        "numerator": 2857,
+        "denominator": 2857,
+        "rate": 1.0,
+        "interval": [
+          0.9986571783631781,
+          1.0
+        ]
+      },
+      "not_verifiable_for_attribute": {
+        "numerator": 2857,
+        "denominator": 2857,
+        "rate": 1.0,
+        "interval": [
+          0.9986571783631781,
+          1.0
+        ]
+      },
+      "actions": [
+        "First confirm that this source describes a requested product fact; incidental catalogue metadata need not become a verification requirement.",
+        "Review the source mapping and mixed meanings before requesting new product data; no unambiguous attribute type was established."
+      ],
+      "action_scope": "category_review",
+      "minimum_repair_scenario": null
+    },
+    {
+      "attribute": "variant_ids",
+      "dimension": null,
+      "observed_dimensions": [],
+      "occupied": {
+        "numerator": 19,
+        "denominator": 2857,
+        "rate": 0.006650332516625832,
+        "interval": [
+          0.004261632683761332,
+          0.010363993565521397
+        ]
+      },
+      "published": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "exact": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "floor_eligible": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "parsed_only": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "conflicted": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "variant_groups": {
+        "numerator": 0,
+        "denominator": 294,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.012898131087128192
+        ]
+      },
+      "variant_basis": [],
+      "sources": [
+        {
+          "field_name": "/variants/*/featured_image/variant_ids",
+          "liability": "merchant_guaranteed",
+          "certainty": "exact",
+          "is_variant_axis": false,
+          "occupied": {
+            "numerator": 19,
+            "denominator": 2857,
+            "rate": 0.006650332516625832,
+            "interval": [
+              0.004261632683761332,
+              0.010363993565521397
+            ]
+          },
+          "published": {
+            "numerator": 0,
+            "denominator": 2857,
+            "rate": 0.0,
+            "interval": [
+              0.0,
+              0.001342821636821836
+            ]
+          }
+        }
+      ],
+      "issues": [
+        "multivalued_field_requires_mapping",
+        "no_unambiguous_dimension"
+      ],
+      "missing": {
+        "numerator": 2838,
+        "denominator": 2857,
+        "rate": 0.9933496674833742,
+        "interval": [
+          0.9896360064344786,
+          0.9957383673162387
+        ]
+      },
+      "present_but_unusable": {
+        "numerator": 19,
+        "denominator": 2857,
+        "rate": 0.006650332516625832,
+        "interval": [
+          0.004261632683761332,
+          0.010363993565521397
+        ]
+      },
+      "not_verifiable_for_attribute": {
+        "numerator": 2857,
+        "denominator": 2857,
+        "rate": 1.0,
+        "interval": [
+          0.9986571783631781,
+          1.0
+        ]
+      },
+      "actions": [
+        "First confirm that this source describes a requested product fact; incidental catalogue metadata need not become a verification requirement.",
+        "Publish this fact for each affected sellable SKU, including explicit variant selections where applicable.",
+        "Review the source mapping and mixed meanings before requesting new product data; no unambiguous attribute type was established."
+      ],
+      "action_scope": "category_review",
+      "minimum_repair_scenario": null
+    },
+    {
+      "attribute": "vendor",
+      "dimension": "nominal",
+      "observed_dimensions": [
+        "nominal"
+      ],
+      "occupied": {
+        "numerator": 2857,
+        "denominator": 2857,
+        "rate": 1.0,
+        "interval": [
+          0.9986571783631781,
+          1.0
+        ]
+      },
+      "published": {
+        "numerator": 2857,
+        "denominator": 2857,
+        "rate": 1.0,
+        "interval": [
+          0.9986571783631781,
+          1.0
+        ]
+      },
+      "exact": {
+        "numerator": 2857,
+        "denominator": 2857,
+        "rate": 1.0,
+        "interval": [
+          0.9986571783631781,
+          1.0
+        ]
+      },
+      "floor_eligible": {
+        "numerator": 2857,
+        "denominator": 2857,
+        "rate": 1.0,
+        "interval": [
+          0.9986571783631781,
+          1.0
+        ]
+      },
+      "parsed_only": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "conflicted": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "variant_groups": {
+        "numerator": 0,
+        "denominator": 294,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.012898131087128192
+        ]
+      },
+      "variant_basis": [],
+      "sources": [
+        {
+          "field_name": "/vendor",
+          "liability": "merchant_guaranteed",
+          "certainty": "exact",
+          "is_variant_axis": false,
+          "occupied": {
+            "numerator": 2857,
+            "denominator": 2857,
+            "rate": 1.0,
+            "interval": [
+              0.9986571783631781,
+              1.0
+            ]
+          },
+          "published": {
+            "numerator": 2857,
+            "denominator": 2857,
+            "rate": 1.0,
+            "interval": [
+              0.9986571783631781,
+              1.0
+            ]
+          }
+        }
+      ],
+      "issues": [],
+      "missing": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "present_but_unusable": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "not_verifiable_for_attribute": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "actions": [],
+      "action_scope": "category_review",
+      "minimum_repair_scenario": null
+    },
+    {
+      "attribute": "width",
+      "dimension": "count",
+      "observed_dimensions": [
+        "count"
+      ],
+      "occupied": {
+        "numerator": 19,
+        "denominator": 2857,
+        "rate": 0.006650332516625832,
+        "interval": [
+          0.004261632683761332,
+          0.010363993565521397
+        ]
+      },
+      "published": {
+        "numerator": 19,
+        "denominator": 2857,
+        "rate": 0.006650332516625832,
+        "interval": [
+          0.004261632683761332,
+          0.010363993565521397
+        ]
+      },
+      "exact": {
+        "numerator": 19,
+        "denominator": 2857,
+        "rate": 0.006650332516625832,
+        "interval": [
+          0.004261632683761332,
+          0.010363993565521397
+        ]
+      },
+      "floor_eligible": {
+        "numerator": 19,
+        "denominator": 2857,
+        "rate": 0.006650332516625832,
+        "interval": [
+          0.004261632683761332,
+          0.010363993565521397
+        ]
+      },
+      "parsed_only": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "conflicted": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "variant_groups": {
+        "numerator": 0,
+        "denominator": 294,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.012898131087128192
+        ]
+      },
+      "variant_basis": [],
+      "sources": [
+        {
+          "field_name": "/variants/*/featured_image/width",
+          "liability": "merchant_guaranteed",
+          "certainty": "exact",
+          "is_variant_axis": false,
+          "occupied": {
+            "numerator": 19,
+            "denominator": 2857,
+            "rate": 0.006650332516625832,
+            "interval": [
+              0.004261632683761332,
+              0.010363993565521397
+            ]
+          },
+          "published": {
+            "numerator": 19,
+            "denominator": 2857,
+            "rate": 0.006650332516625832,
+            "interval": [
+              0.004261632683761332,
+              0.010363993565521397
+            ]
+          }
+        }
+      ],
+      "issues": [],
+      "missing": {
+        "numerator": 2838,
+        "denominator": 2857,
+        "rate": 0.9933496674833742,
+        "interval": [
+          0.9896360064344786,
+          0.9957383673162387
+        ]
+      },
+      "present_but_unusable": {
+        "numerator": 0,
+        "denominator": 2857,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.001342821636821836
+        ]
+      },
+      "not_verifiable_for_attribute": {
+        "numerator": 2838,
+        "denominator": 2857,
+        "rate": 0.9933496674833742,
+        "interval": [
+          0.9896360064344786,
+          0.9957383673162387
+        ]
+      },
+      "actions": [
+        "First confirm that this source describes a requested product fact; incidental catalogue metadata need not become a verification requirement.",
+        "Publish this fact for each affected sellable SKU, including explicit variant selections where applicable."
+      ],
+      "action_scope": "category_review",
+      "minimum_repair_scenario": null
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+[
+  {
+    "sku": "literal-a",
+    "spec/sheet": {"coat.tone": "navy", "star*field": "matte", "hash#field": "woven", "tilde~field": "linen"},
+    "selection": {"name": "Couleur / été #1", "value": "bleu"},
+    "description": "Wall thickness: 2 mm; Finish: matte"
+  },
+  {
+    "sku": "literal-b",
+    "spec/sheet": {"coat.tone": "sand", "star*field": "gloss", "hash#field": "knit", "tilde~field": "cotton"},
+    "selection": {"name": "Couleur / été #1", "value": "rouge"},
+    "description": "Wall thickness: 3 mm; Finish: gloss"
+  }
+]
