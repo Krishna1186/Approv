@@ -1,5 +1,6 @@
 """Merchant order verification: the order half, its binding, and the entry point."""
 import importlib.util
+from datetime import datetime, timezone
 
 import pytest
 
@@ -7,13 +8,13 @@ from approv.evaluator import decide
 from approv.intake import AgentPresence, FreeText, Reading, Search, Structured, Undeclared
 from approv.receipts.chain import generate_key, public_key_hex, seal, verify
 from approv.surface.verification import (
-    ProductMismatch, UnknownCategory, VerificationRequest, evidence_from_snapshot,
-    snapshot_digest, verify_order,
+    ModeMismatch, ProductMismatch, UnknownCategory, VerificationRequest,
+    evidence_from_snapshot, ingest_outcome, snapshot_digest, verify_order,
 )
 from approv.types.core import (
     AttributeSpec, CategorySchema, Certainty, Channel, Constraint, Criticality, Decision,
-    Completion, Dimension, FieldProfile, Liability, Money, OrderLine, Support, Term,
-    UnreadPolicy,
+    Completion, Dimension, FieldProfile, Liability, Mode, Money, OrderLine, OrderOutcome,
+    OutcomeKind, Support, Term, UnreadPolicy,
 )
 
 SCHEMA = CategorySchema(
@@ -247,6 +248,109 @@ def test_a_typed_catalogue_value_is_taken_as_typed():
     evidence = evidence_from_snapshot(
         {"pack_count": {"kind": "count", "n": 6}}, SCHEMA)
     assert evidence[0].value.n == 6
+
+
+# --- shadow mode --------------------------------------------------------------------------
+
+def test_a_record_says_whether_it_gated_anything():
+    """A shadow run is how a merchant finds out what Approv would have done before it does
+    anything, and the receipt has to say which it was."""
+    watched = verify_order(request(), schemas=SCHEMAS)
+    gated = verify_order(request(), schemas=SCHEMAS, mode=Mode.ENFORCE)
+
+    assert watched.record.mode is Mode.SHADOW
+    assert gated.record.mode is Mode.ENFORCE
+    assert watched.record.decision is gated.record.decision
+
+
+def test_enforce_has_to_be_asked_for():
+    """The two mistakes are not symmetric. A shadow record mislabelled `enforce` is a false
+    claim in a dispute; an enforce record mislabelled `shadow` under-claims and is
+    recoverable. Only the second is reachable by forgetting."""
+    from approv.receipts.record import build_record
+
+    assert verify_order(request(), schemas=SCHEMAS).record.mode is Mode.SHADOW
+    bare = build_record(correlation_id="c", request_text="x", constraints=(), findings=(),
+                        schema=SCHEMA, product_id="prod-1", product_snapshot={},
+                        snapshot_hash="h", model_version="m", prompt_version="p")
+    assert bare.mode is Mode.SHADOW
+
+
+def test_the_mode_is_deployment_configuration_not_request_payload():
+    """A caller who could send `enforce` could defeat sandbox isolation with one JSON
+    field. Same argument as the schemas: the party being defended does not get to set the
+    terms."""
+    assert "mode" not in VerificationRequest.model_fields
+
+
+def test_the_mode_is_inside_the_signature():
+    """A shadow receipt that can be relabelled `enforce` afterwards is exactly the artifact
+    this must never produce."""
+    key = generate_key()
+    sealed = seal(verify_order(request(), schemas=SCHEMAS).record, key)
+    verify(sealed, public_key_hex(key))
+
+    with pytest.raises(ValueError, match="does not match its hash"):
+        verify(sealed.model_copy(update={"mode": Mode.ENFORCE}), public_key_hex(key))
+
+
+# --- outcome ingestion ----------------------------------------------------------------
+
+def outcome(**kw):
+    base = dict(correlation_id="corr-1", kind=OutcomeKind.RETURNED,
+                occurred_at=datetime(2026, 9, 20, tzinfo=timezone.utc),
+                mode=Mode.SHADOW, merchant_id="m-1")
+    return OrderOutcome(**{**base, **kw})
+
+
+def test_an_outcome_joins_a_verification_by_correlation_id():
+    """The join a shadow run exists to make: the decision says what Approv would have
+    done, the outcome says what happened anyway. Without it a shadow run measures what the
+    corpus already measures."""
+    kept = []
+    taken = ingest_outcome(outcome(), record_outcome=kept.append)
+
+    assert kept == [taken]
+    assert taken.correlation_id == verify_order(request(), schemas=SCHEMAS).receipt_id
+
+
+def test_the_merchants_reason_is_kept_verbatim():
+    """Their words, not a reason code. Normalising it here is the first step toward
+    deciding with it."""
+    words = "customer said the blue was too dark, sending back"
+    kept = []
+    ingest_outcome(outcome(merchant_reason=words), record_outcome=kept.append)
+
+    assert kept[0].merchant_reason == words
+
+
+def test_nothing_in_the_decision_path_can_read_an_outcome():
+    """The field most likely to be quietly promoted into a signal. The moment a merchant's
+    free text reaches criticality or the evaluator, §1's central claim is false — so it is
+    asserted the way the other import boundaries are, not trusted."""
+    import ast
+    import pathlib
+
+    for target in ("approv/evaluator", "approv/algebra", "approv/criticality.py"):
+        path = pathlib.Path(target)
+        files = sorted(path.rglob("*.py")) if path.is_dir() else [path]
+        for one in files:
+            source = one.read_text(encoding="utf-8")
+            names = set()
+            for node in ast.walk(ast.parse(source)):
+                if isinstance(node, ast.ImportFrom):
+                    names.update(alias.name for alias in node.names)
+            assert not names & {"OrderOutcome", "OutcomeKind"}, one
+
+
+def test_an_outcome_from_the_other_mode_is_refused_rather_than_stored():
+    """A sandbox result joined to a live record is the cross-contamination the separate
+    chain exists to prevent, and a join key is all it would take."""
+    kept = []
+    with pytest.raises(ModeMismatch):
+        ingest_outcome(outcome(mode=Mode.ENFORCE), record_outcome=kept.append,
+                       mode=Mode.SHADOW)
+    assert kept == []
 
 
 # --- seam 4: coverage is on the record, inside the digest ---------------------------------
@@ -734,3 +838,32 @@ def test_a_verification_that_did_not_complete_is_a_200_with_the_record():
 def test_health_names_what_this_deployment_can_verify():
     payload = client().get("/v1/health").json()
     assert payload["status"] == "ok" and payload["categories"] == [SCHEMA.category_id]
+
+
+@requires_api
+def test_a_deployment_with_nowhere_to_put_outcomes_says_so():
+    """An ingestion endpoint that silently discards is worse than none, because it reports
+    success."""
+    response = client().post("/v1/outcomes", json={
+        "correlation_id": "corr-1", "kind": "returned",
+        "occurred_at": "2026-09-20T00:00:00Z"})
+
+    assert response.status_code == 501
+
+
+@requires_api
+def test_the_wrong_mode_is_a_conflict_over_the_wire():
+    kept = []
+    api = client(record_outcome=kept.append, mode=Mode.SHADOW)
+    response = api.post("/v1/outcomes", json={
+        "correlation_id": "corr-1", "kind": "refunded",
+        "occurred_at": "2026-09-20T00:00:00Z", "mode": "enforce"})
+
+    assert response.status_code == 409
+    assert kept == []
+
+
+@requires_api
+def test_health_says_which_mode_this_deployment_runs():
+    payload = client().get("/v1/health").json()
+    assert payload["mode"] == "shadow" and payload["outcomes"] is False

@@ -18,7 +18,7 @@ from approv.criticality import coverage_of, narrowed_attributes, unread_requirem
 from approv.evaluator import VERSION as EVALUATOR_VERSION, decide
 from approv.types.core import (
     AgentTurn, Attestation, CategorySchema, Claim, ComparisonRecord, Completion,
-    Constraint, Criticality, Finding, OrderLine, ReasonCode, UnreadPolicy,
+    Constraint, Criticality, Finding, Mode, OrderLine, ReasonCode, UnreadPolicy,
 )
 
 VERSION = "receipt-v1"
@@ -134,6 +134,11 @@ def build_record(
     # record carries it because the dispute artifact reads the record and nothing else.
     covered: bool = True,
     coverage_notes: tuple[str, ...] = (),
+    # Defaulted to SHADOW rather than required, because three test fixtures construct
+    # records directly and a required field would only move the problem. The default is
+    # the safe half of an asymmetric pair: `enforce` has to be asked for, and a receipt
+    # cannot claim to have gated a transaction by anyone forgetting to say it did not.
+    mode: Mode = Mode.SHADOW,
 ) -> ComparisonRecord:
     """Assemble one unsigned ComparisonRecord and decide it.
 
@@ -191,6 +196,7 @@ def build_record(
         completion=completion,
         completion_detail=completion_detail,
         findings=findings,
+        mode=mode,
         covered=covered,
         coverage_notes=coverage_notes,
         coverage=tuple(coverage_of(f, narrowed=f.attribute in narrowed,

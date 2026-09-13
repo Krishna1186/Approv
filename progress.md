@@ -489,6 +489,73 @@ against a real page load. `mark` failing open is unchanged and unimplemented: th
 
 562 tests. Nothing measured moved.
 
+## Seams 1 and 4, sealing, and shadow mode (13 September)
+
+**Seam 1 — the field path format.** `approv.schema` emits
+`/variants/*/options/*/value#name=Colour`; the surface read dotted keys. A schema derived
+from a catalogue read *zero* evidence from that same catalogue. The resolver now walks the
+pointer, and the `#name=` selector must match a sibling of the value — load-bearing rather
+than decorative, because Size and Colour share that path and reading it wrong crosses two
+attributes. It costs one shape deliberately: `/variants/*/option1#name=Colour`, whose label
+lives in a separate table, reads nothing here. Reading nothing is now caught; reading the
+wrong attribute is not.
+
+**The silence was the worse half.** A schema whose paths read nothing from a non-empty
+snapshot looked identical to a cautious engine — no exception, no log, every attribute
+UNSTATED, every order confirmed. A pilot partner would have seen a 100% confirm rate and no
+error. It is now `CATALOGUE_UNREADABLE` with a detail naming the mismatch.
+
+**Seam 4 — DR 0023.** `covered` and `coverage_notes` moved onto the record, inside the
+digest. My original reasoning (*"policy about the channel rather than a fact about the
+comparison"*) was wrong against a renderer that reads the record and nothing else, and two
+agents hit it from opposite sides within a day. `covered=False` now withdraws every
+guarantee, which makes four withdrawal reasons — narrowed attribute, unread request,
+incomplete verification, uncovered channel — each with its own field on the record.
+Coverage still never gates a decision.
+
+**Sealing has one owner.** The surface no longer signs: only the store knows the chain
+head, and a signature over `prev_hash=None` is a receipt appendable exactly once per
+ledger. `verify_order` returns an unsealed record.
+
+**Shadow mode.** `Mode.SHADOW | ENFORCE` on the record and inside the digest. It is
+deployment configuration, never request payload — a caller who could send `enforce` could
+defeat sandbox isolation with one JSON field — and it defaults to SHADOW everywhere,
+because the two mistakes are not symmetric: a shadow record mislabelled `enforce` is a
+false claim in a dispute, an enforce record mislabelled `shadow` under-claims and is
+recoverable. Only the second is reachable by forgetting.
+
+**Outcome ingestion.** `OrderOutcome` joins a verification by `correlation_id`: shipped /
+returned / disputed / refunded, with the merchant's reason text kept verbatim and read by
+nothing. That last part is asserted the way the other import boundaries are — `evaluator/`,
+`algebra/` and `criticality` may not import the outcome types — because it is the field
+most likely to be quietly promoted into a signal. `POST /v1/outcomes` refuses an outcome
+carrying the other mode (409) and refuses to accept one at all when the deployment has
+nowhere to put it (501): an ingestion endpoint that silently discards is worse than none,
+because it reports success.
+
+Storage and the separate sandbox chain are the store's, not this fence's. What is enforced
+here is that a shadow record cannot be produced by an enforce deployment or relabelled
+afterwards, and that an outcome cannot cross modes through this surface.
+
+**Invariant 10** — no personal data in the record, approved by the founder. A field-name
+test catches the day someone adds `customer_email`, which is how personal data actually
+arrives: as a convenience field, not as an attack.
+
+## Parked
+
+**`approv/challenge.py` — built, tested, unwired, and staying that way for now.** One
+bounded evidentiary round: Approv names the attribute it could not establish, the agent
+answers with a *citation* rather than a value, Approv reads that source itself. The design
+is sound and the safety property (`Citation` has no `value` field) is the good part.
+
+It is parked because there is nobody to challenge. Under DR 0020 the record is a merchant
+defence assembled from merchant-side data, and a shadow run has no live agent in the loop
+to answer a question — the order has already been placed by the time we see it. Wiring it
+would mean inventing a round-trip that the surface does not have and the merchant did not
+ask for. It waits for the agent-side product, which DR 0020 keeps and does not build first.
+
+Do not wire it. Its tests keep passing, which is the whole cost of keeping it.
+
 ## Open
 
 - Extraction is scored against the generator's spec, not against hand labels. That
@@ -496,9 +563,19 @@ against a real page load. `mark` failing open is unchanged and unimplemented: th
   shopper's wording is not in evidence anywhere.
 - `mark` and `verify` unscored.
 - Whether published merchant data is true. Nothing here tests that and nothing can.
-- `approv/artifact/` renders a record for a returns desk and does not yet know about
-  `completion`, so an incomplete verification reads there as an ordinary confirm. Not my
-  file; flagged rather than edited.
+- **Seam 5, mine, unfixed and decision-path.** On-site search states an attribute twice —
+  once as a filter, once in the query text — and `algebra.runner` raises DUPLICATE_CLAIM
+  for any two claims on one attribute *without comparing their values*. Two statements that
+  agree are corroboration, and they currently produce the weakest outcome available:
+  unresolved, order escalated. Measured by claude2 on a synthetic week: 20 of 24
+  on-site-search orders confirmed for this reason alone. It makes DR 0020's second fidelity
+  tier unusable. Needs a ruling and a DR before the fix.
+- The default catalogue reader does not resolve `/variants/*/option1#name=Colour` — the
+  flat-export shape whose option names live in a separate table. It reads nothing, loudly,
+  rather than risking the wrong attribute. A merchant on that shape needs a `Reader`.
+- A multi-variant snapshot is read across every variant, so a product whose variants differ
+  produces conflicting evidence and confirms. Safe, but the order line names a `variant_id`
+  the reader cannot see. Unresolved.
 - Coverage is bounded by schema expressiveness: 43% of held-out requests still carry an
   unread note after the marker fix, and most of those name something this category has no
   attribute for. Selling a guarantee on under half of traffic is a product limit, not a

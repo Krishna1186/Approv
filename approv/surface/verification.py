@@ -43,7 +43,7 @@ from approv.receipts.chain import canonical_json
 from approv.receipts.record import build_record
 from approv.types.core import (
     Attestation, CategorySchema, ComparisonRecord, Completion, Count, Dimension, Evidence,
-    Finding, Money, OrderLine, Quantity, Term, UnreadPolicy, Value,
+    Finding, Mode, Money, OrderLine, OrderOutcome, Quantity, Term, UnreadPolicy, Value,
 )
 
 VERSION = "surface-v1"
@@ -59,6 +59,10 @@ ArtifactBody = Annotated[
 # right for a merchant whose snapshot is shaped like their schema and wrong for one who
 # needs a real adapter.
 Reader = Callable[[Mapping[str, object], CategorySchema], tuple[Evidence, ...]]
+
+# Where an ingested outcome is kept. Injected for the same reason the reader is: storage is
+# the store's and this module may not reach into it.
+Sink = Callable[[OrderOutcome], None]
 
 # The discriminated value union, for a catalogue that exports typed values.
 _VALUE_ADAPTER = TypeAdapter(Value)
@@ -313,6 +317,7 @@ def verify_order(
     unread_policy: UnreadPolicy = UnreadPolicy.WITHDRAW,
     returns: Mapping[str, float] | None = None,
     budget_seconds: float | None = None,
+    mode: Mode = Mode.SHADOW,
 ) -> VerificationResult:
     """One order line in, one unsealed record out.
 
@@ -330,6 +335,10 @@ def verify_order(
     verification that blew its budget cannot authorise. It does **not** cut the call short,
     because cancelling in flight needs cooperation from the adapter that owns the HTTP
     client, and claiming otherwise would be the more dangerous error.
+
+    `mode` is deployment configuration and never request payload, for the same reason the
+    schemas are: a caller who could send `enforce` could defeat sandbox isolation with one
+    JSON field. A shadow deployment cannot emit an enforce record at all.
     """
     schema = schemas.get(request.category_id)
     if schema is None:
@@ -391,6 +400,7 @@ def verify_order(
         # finished, so the two are combined once, here, on the way onto the record.
         covered=taken.covered and completion is Completion.COMPLETED,
         coverage_notes=taken.notes,
+        mode=mode,
     )
     return VerificationResult(record=record, receipt_id=request.correlation_id,
                               covered=record.covered,
@@ -465,6 +475,37 @@ def _nothing_read(request: VerificationRequest, schema: CategorySchema) -> Intak
                   agent=request.agent or AgentPresence.UNKNOWN,
                   merchant_id=request.merchant_id, covered=False,
                   notes=("the stated request could not be read; see completion_detail",))
+
+
+class ModeMismatch(ValueError):
+    """An outcome from one mode was offered to a deployment running the other."""
+
+
+def ingest_outcome(outcome: OrderOutcome, *, record_outcome: Sink,
+                   mode: Mode = Mode.SHADOW) -> OrderOutcome:
+    """Take one later fact about one verified order. Decide nothing with it.
+
+    A shadow run's whole purpose is this join: the decision says what Approv would have
+    done, and the outcome says what happened anyway. Without it a shadow run measures the
+    same thing the corpus already measures, and the two numbers DR 0020 says decide the
+    business — how much agent traffic carries a recoverable request, and how many clean
+    records still get refunded — stay unmeasured.
+
+    **`merchant_reason` is recorded verbatim and read by nothing.** It is the field most
+    likely to be quietly promoted into a signal, and the moment it is, a merchant's free
+    text is in the decision path. Persisting is the caller's (`record_outcome`), because
+    the store owns storage and this module must not.
+
+    The mode has to match. An outcome carrying the other mode is refused rather than
+    stored, because a sandbox result joined to a live record would be exactly the
+    cross-contamination the separate chain exists to prevent — and a join key is all it
+    would take.
+    """
+    if outcome.mode is not mode:
+        raise ModeMismatch("outcome is %s, this deployment is %s"
+                           % (outcome.mode.value, mode.value))
+    record_outcome(outcome)
+    return outcome
 
 
 def _bind_snapshot_to_order(request: VerificationRequest) -> None:

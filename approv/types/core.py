@@ -102,6 +102,65 @@ class Decision(str, Enum):
     REFUSE = "refuse"
 
 
+class Mode(str, Enum):
+    """Whether this decision gated a real transaction or only watched one.
+
+    A shadow run is how a merchant finds out what Approv would have done before it does
+    anything — the only honest way to price the nuisance and false-allow rates on their own
+    traffic rather than on our corpus.
+
+    **A shadow receipt must never be presentable as though it gated a real transaction.**
+    So the mode is on the record and inside the digest, it is deployment configuration
+    rather than request payload (a caller who could send `enforce` could defeat sandbox
+    isolation with one JSON field), and it defaults to SHADOW everywhere. The two mistakes
+    are not symmetric: a shadow record mislabelled `enforce` is a false claim in a dispute,
+    while an enforce record mislabelled `shadow` merely under-claims and is recoverable.
+    Only the second is reachable by forgetting.
+    """
+
+    SHADOW = "shadow"
+    ENFORCE = "enforce"
+
+
+class OutcomeKind(str, Enum):
+    """What actually happened to an order, long after the decision.
+
+    The measurement a shadow run exists to produce, and the input DR 0012's pricing needs:
+    a false allow nobody notices costs nothing, and only the outcome says which is which.
+    """
+
+    SHIPPED = "shipped"
+    RETURNED = "returned"
+    DISPUTED = "disputed"
+    REFUNDED = "refunded"
+
+
+class OrderOutcome(BaseModel):
+    """One later fact about one verified order, joined by `correlation_id`.
+
+    `merchant_reason` is the merchant's own words, recorded verbatim and **decided on by
+    nothing**. It is the field most likely to be quietly turned into a signal — a reason
+    code, a classifier, a criticality input — and the moment it is, a merchant's free text
+    is in the decision path and §1's central claim is false. A test asserts that neither
+    `evaluator/` nor `algebra/` nor `criticality` imports this module's outcome types.
+
+    `mode` travels with the outcome so a sandbox result can never be joined to a live
+    record. Nothing here is a decision; it is evidence about one already made.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    correlation_id: str = Field(min_length=1)
+    kind: OutcomeKind
+    occurred_at: datetime
+    mode: Mode = Mode.SHADOW
+    merchant_id: str | None = None
+    merchant_reason: str | None = None
+    # What the merchant shipped or took back, when they say. Free of any claim that it
+    # matches the order line: a returns desk records what came back, not what was owed.
+    sku: str | None = None
+    quantity: int | None = Field(default=None, ge=0)
+
+
 class Completion(str, Enum):
     """Whether the verification ran to a conclusion, and if not, whose problem it was.
 
@@ -544,6 +603,10 @@ class ComparisonRecord(BaseModel):
     product_id: str
     product_snapshot: dict[str, object]
     snapshot_hash: str
+    # Whether this decision gated a real transaction or only watched one. Inside the digest
+    # with everything else: a shadow receipt that could be relabelled `enforce` after the
+    # fact is exactly the artifact this must never produce.
+    mode: Mode = Mode.SHADOW
     # Whether this verification ran to a conclusion at all, and the specific detail — which
     # reader, how long it took. DR 0004: an abort is a recorded outcome, never a silent
     # skip, because an unrecorded abort is indistinguishable from a successful allow in the

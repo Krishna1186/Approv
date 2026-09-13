@@ -15,10 +15,10 @@ from __future__ import annotations
 from typing import Mapping
 
 from approv.surface.verification import (
-    ProductMismatch, UnknownCategory, VerificationRequest, VerificationResult,
-    evidence_from_snapshot, verify_order,
+    ModeMismatch, ProductMismatch, UnknownCategory, VerificationRequest,
+    VerificationResult, evidence_from_snapshot, ingest_outcome, verify_order,
 )
-from approv.types.core import CategorySchema, UnreadPolicy
+from approv.types.core import CategorySchema, Mode, OrderOutcome, UnreadPolicy
 
 try:
     from fastapi import FastAPI, HTTPException
@@ -39,6 +39,8 @@ def create_app(
     unread_policy: UnreadPolicy = UnreadPolicy.WITHDRAW,
     returns: Mapping[str, float] | None = None,
     budget_seconds: float | None = None,
+    mode: Mode = Mode.SHADOW,
+    record_outcome=None,
     title: str = "Approv order verification",
 ):
     """One endpoint, and its configuration bound once rather than per request.
@@ -55,7 +57,9 @@ def create_app(
 
     @app.get("/v1/health")
     def health() -> dict:
-        return {"status": "ok", "version": VERSION, "categories": sorted(schemas)}
+        return {"status": "ok", "version": VERSION, "mode": mode.value,
+                "categories": sorted(schemas),
+                "outcomes": record_outcome is not None}
 
     @app.post("/v1/verify", response_model=VerificationResult)
     def verify(request: VerificationRequest) -> VerificationResult:
@@ -74,7 +78,7 @@ def create_app(
         try:
             return verify_order(request, schemas=schemas, read_evidence=read_evidence,
                                 extract=extract, unread_policy=unread_policy,
-                                returns=returns, budget_seconds=budget_seconds)
+                                returns=returns, budget_seconds=budget_seconds, mode=mode)
         except UnknownCategory as error:
             raise HTTPException(status_code=404,
                                 detail="unknown category: %s" % error) from error
@@ -83,5 +87,22 @@ def create_app(
             # because answering it at all would produce a record that looks like evidence
             # and is about the wrong product.
             raise HTTPException(status_code=422, detail=str(error)) from error
+
+    @app.post("/v1/outcomes", response_model=OrderOutcome)
+    def outcome(outcome: OrderOutcome) -> OrderOutcome:
+        """Take one later fact about one verified order, joined by `correlation_id`.
+
+        Nothing decides on it, here or downstream. The merchant's reason text is stored as
+        they wrote it, and a deployment that has not been given somewhere to put outcomes
+        says so rather than accepting and dropping them — an ingestion endpoint that
+        silently discards is worse than none, because it reports success.
+        """
+        if record_outcome is None:
+            raise HTTPException(status_code=501,
+                                detail="this deployment has no outcome store configured")
+        try:
+            return ingest_outcome(outcome, record_outcome=record_outcome, mode=mode)
+        except ModeMismatch as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
 
     return app
