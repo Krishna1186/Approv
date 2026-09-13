@@ -151,3 +151,60 @@ both the fast tests and the exhaustive option are collected by the default comma
 Unsupported or ambiguous structures require review: unrelated repeated collections
 are never combined into a cartesian product, opaque multiple-value fields are not
 treated as a selected value, and currencies or ambiguous units are never guessed.
+
+## Locator integration contract
+
+See [LOCATOR_CONTRACT.md](LOCATOR_CONTRACT.md) for the exact grammar, selected-SKU
+snapshot boundary, selector guards and typed evidence requirements. `locators.py`
+owns the shared codec; surface owns resolution. The default suite calls the real
+surface reader against derived schemas and explicit JSON fixtures. The base reader
+at `9484f81` fails that seam; those failures are visible and must be fixed in surface
+before this integration can be claimed. The report below audits onboarding's reader,
+not a completed production verification or signed coverage event.
+
+## Partner-facing catalogue report
+
+```python
+from approv.schema.report import ReportContext, build_partner_report, render_html
+
+report = build_partner_report(proposal, ReportContext(
+    merchant="Merchant display name",
+    scope="All supplied category listings; completeness against live stock unmeasured",
+    source="merchant-export.json",
+    captured_at="2026-09-10T00:00:00Z",  # omit if unknown
+))
+html = render_html(report)
+```
+
+The renderer reuses the proposal's counts, `Share` intervals from harness coverage,
+and publication patterns for explicitly conditional repair scenarios. It does not
+adopt the schema, determine event eligibility, read a request or issue a receipt.
+Missing, present-but-unusable, prose-only and minimum-eligible evidence stay distinct.
+Remediation prioritises the proposed floor, observed selection axes, monetary fields
+and parsed facts; incidental fields require a relevance review before new publication
+requirements are proposed. Initial parse diagnostics on a successfully preserved
+nominal label do not become a request to change that label's units.
+
+The offline CLI writes standalone printable HTML, a machine-readable report and a
+round-trippable `.proposal.json` without adding dependencies to the default suite:
+
+```text
+python -m approv.schema.report_cli merchant-export.json --merchant "Merchant" --scope "Supplied category snapshot" --category merchant.category --output approv/schema/reports/merchant
+```
+
+`--shape shopping-study` unwraps only IDs, URLs and merchant details from the local
+study cache. `--shape shopify-export` unwraps the host/products envelope and supplies
+the host namespace; `--host` restricts it to one merchant. Neither reads an embedded
+schema or precomputed product evidence. Currency must be supplied by the catalogue
+or explicitly established using `--currency`, never guessed from a host.
+
+Optional PDFs use `reportlab` and the same report JSON:
+
+```text
+python -m approv.schema.report_pdf approv/schema/reports/merchant.json approv/schema/reports/merchant.pdf
+```
+
+Install `reportlab` in your environment only when exporting PDFs; it is not imported
+by the normal CLI or tests. The checked-in reports were rendered and visually
+inspected using PyMuPDF because Poppler was unavailable in the authoring environment.
+See [the handoff and measured results](../../docs/catalogue-verifiability-report.md).
