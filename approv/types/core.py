@@ -102,6 +102,29 @@ class Decision(str, Enum):
     REFUSE = "refuse"
 
 
+class UnreadPolicy(str, Enum):
+    """What a request we did not finish reading does to the answer. DR 0022.
+
+    An unread requirement is *our* failure, not the merchant's and not the shopper's, and
+    the three ways of handling it put the cost in three different places.
+
+    ESCALATE  fail the verification floor: confirm rather than authorise. The merchant
+              pauses their checkout over our extraction miss, which charges them for our
+              defect. Measured at 75.5% nuisance on the v3 pack, which is unshippable.
+    WITHDRAW  authorise, and withdraw the guarantee. The sale proceeds, the merchant keeps
+              the risk on that order, and we promise nothing about a request we could not
+              read. The third option coverage created, the same one that fixed hedges and
+              fixed narrowing.
+    IGNORE    authorise and guarantee anyway. Kept only so DR 0022's table can be
+              reproduced; it is the dishonest one, because it sells a promise over words
+              nobody read.
+    """
+
+    ESCALATE = "escalate"
+    WITHDRAW = "withdraw"
+    IGNORE = "ignore"
+
+
 class CheckKind(str, Enum):
     """Which of DR 0016 §2's three comparisons produced a finding.
 

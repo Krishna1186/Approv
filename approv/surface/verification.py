@@ -16,12 +16,13 @@ into evidence; `algebra` compares; `evaluator.decide` decides; `receipts` assemb
 signs. Nothing here decides anything, and a caller that wanted to override the decision
 would be the decision path, which is the one thing §1 says we do not have.
 
-**`strict_unread` defaults to escalating.** It is a business parameter (§2.6) and picking
-one here is picking a merchant's risk appetite for them, so it is a constructor argument
-rather than a constant. The default is the fail-safe direction — an order whose request we
-did not finish reading is confirmed rather than authorised — and the operating points are
-measured in `receipts/record.py` and DR 0021. A merchant who would rather eat false allows
-than nuisance sets it False knowingly.
+**`unread_policy` defaults to withdrawing the guarantee, not to escalating** (DR 0022).
+An unread requirement is our defect; pausing the merchant's checkout over it charges them
+for it, and it was measured at 58.8% nuisance. Withdrawing instead lets the sale proceed
+and promises nothing about a request we could not finish reading — same decisions as
+ignoring it, 23.2 pp fewer findings claimed as guaranteed. It stays a constructor argument
+because ESCALATE is a legitimate merchant preference and §2.6 says the threshold is a
+business parameter, not a constant.
 """
 
 from __future__ import annotations
@@ -39,7 +40,8 @@ from approv.intake import (
 from approv.receipts.chain import canonical_json, seal
 from approv.receipts.record import build_record
 from approv.types.core import (
-    Attestation, CategorySchema, ComparisonRecord, Count, Evidence, OrderLine, Term, Value,
+    Attestation, CategorySchema, ComparisonRecord, Count, Evidence, OrderLine, Term,
+    UnreadPolicy, Value,
 )
 
 VERSION = "surface-v1"
@@ -188,7 +190,7 @@ def verify_order(
     extract: Extractor | None = None,
     signing_key=None,
     prev_hash: str | None = None,
-    strict_unread: bool = True,
+    unread_policy: UnreadPolicy = UnreadPolicy.WITHDRAW,
     returns: Mapping[str, float] | None = None,
 ) -> VerificationResult:
     """One order line in, one signed record out.
@@ -228,7 +230,7 @@ def verify_order(
         attestation=request.attestation,
         prev_hash=prev_hash,
         unread=taken.unread,
-        strict_unread=strict_unread,
+        unread_policy=unread_policy,
         order=request.order,
     )
     if signing_key is not None:

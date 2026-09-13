@@ -18,7 +18,7 @@ from approv.surface.verification import (
     ProductMismatch, UnknownCategory, VerificationRequest, VerificationResult,
     evidence_from_snapshot, verify_order,
 )
-from approv.types.core import CategorySchema
+from approv.types.core import CategorySchema, UnreadPolicy
 
 try:
     from fastapi import FastAPI, HTTPException
@@ -37,7 +37,7 @@ def create_app(
     read_evidence=evidence_from_snapshot,
     extract=None,
     signing_key=None,
-    strict_unread: bool = True,
+    unread_policy: UnreadPolicy = UnreadPolicy.WITHDRAW,
     returns: Mapping[str, float] | None = None,
     title: str = "Approv order verification",
 ):
@@ -65,7 +65,7 @@ def create_app(
         try:
             return verify_order(request, schemas=schemas, read_evidence=read_evidence,
                                 extract=extract, signing_key=signing_key,
-                                strict_unread=strict_unread, returns=returns)
+                                unread_policy=unread_policy, returns=returns)
         except UnknownCategory as error:
             raise HTTPException(status_code=404,
                                 detail="unknown category: %s" % error) from error

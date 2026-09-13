@@ -14,11 +14,11 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from approv.criticality import coverage_of, narrowed_attributes
+from approv.criticality import coverage_of, narrowed_attributes, unread_requirements
 from approv.evaluator import VERSION as EVALUATOR_VERSION, decide
 from approv.types.core import (
     AgentTurn, Attestation, CategorySchema, Claim, ComparisonRecord, Constraint,
-    Criticality, Finding, OrderLine, ReasonCode,
+    Criticality, Finding, OrderLine, ReasonCode, UnreadPolicy,
 )
 
 VERSION = "receipt-v1"
@@ -59,18 +59,19 @@ def floor_is_met(findings: tuple[Finding, ...], unread: tuple[str, ...] = ()) ->
     Routing to `confirm` rather than `refuse` is the point. The purchase is not blocked,
     it is escalated, which is the only branch that is recoverable (section 2.6).
 
-    Whether to apply this at all is `strict_unread`, and it is a business parameter rather
+    Whether to apply this at all is `unread_policy`, and it is a business parameter rather
     than a constant, because section 2.6 says a false allow and a false refuse do not cost
-    the same and the ratio differs per merchant. Both operating points are measured on the
-    fresh corpus, 1,057 pairs over 34 requests:
+    the same and the ratio differs per merchant. DR 0022 measured all three and made
+    WITHDRAW the default: escalating charges the merchant for our extraction miss. The two
+    operating points below are the older two-way trade, measured on the fresh corpus,
+    1,057 pairs over 34 requests:
 
-        strict_unread=True    false allow  0.0% [0.0, 0.4]   nuisance confirm  48.4%
-        strict_unread=False   false allow  0.3% [0.1, 0.9]   nuisance confirm   3.3%
+        escalate   false allow  0.0% [0.0, 0.4]   nuisance confirm  48.4%
+        ignore     false allow  0.3% [0.1, 0.9]   nuisance confirm   3.3%
 
     Both were measured before DR 0021, when `unread` still meant every interpretation
-    note. Under the definition that survived it — notes meaning a *checkable requirement*
-    went unchecked — the strict point is better than those figures show; on the v3 pack the
-    same narrowing moved nuisance from 84.3% to 75.5% with nothing else changing.
+    note, and before DR 0022 added the third option. They stand as measured rather than as
+    corrected; the v3 pack numbers under the current definitions are in DR 0022.
 
     Neither is obviously right and picking one here would be picking a merchant's risk
     appetite for them. What the numbers do say is that the gate is the wrong place to fix
@@ -119,7 +120,10 @@ def build_record(
     # filters, because the record records what it is told rather than second-guessing it —
     # `types.core.dropped_requirement` is the one definition. DR 0021.
     unread: tuple[str, ...] = (),
-    strict_unread: bool = True,
+    # What an unread request does to the answer. DR 0022: the default withdraws the
+    # guarantee rather than escalating, because an unread requirement is our defect and
+    # pausing the merchant's checkout over it charges them for it.
+    unread_policy: UnreadPolicy = UnreadPolicy.WITHDRAW,
     order: OrderLine | None = None,
 ) -> ComparisonRecord:
     """Assemble one unsigned ComparisonRecord and decide it.
@@ -138,12 +142,19 @@ def build_record(
     wants to override it, that caller is the decision path and the company's central
     claim is false.
     """
-    decision, reasons = decide(
-        findings, floor_met=floor_is_met(findings, unread if strict_unread else ()))
+    # Narrowed once, here, so that what the record stores and what the decision acts on
+    # are the same set. DR 0022: a gap that is nothing but the shopper's hedge words names
+    # no unread requirement, and storing it would say we failed to read something we read.
+    unread = unread_requirements(constraints, unread)
+    escalate = unread if unread_policy is UnreadPolicy.ESCALATE else ()
+    decision, reasons = decide(findings, floor_met=floor_is_met(findings, escalate))
     # Computed here and not passed in, so that a caller cannot forget it. `unread` is
     # already the record's honest account of what went unread; this reads it rather than
     # asking for the same thing twice.
     narrowed = narrowed_attributes(constraints, unread)
+    # IGNORE is the only policy that guarantees over words nobody read. Both of the others
+    # acknowledge the gap; they differ in whether the sale pauses for it.
+    request_unread = bool(unread) and unread_policy is not UnreadPolicy.IGNORE
     return ComparisonRecord(
         correlation_id=correlation_id,
         agent_id=agent_id,
@@ -161,7 +172,8 @@ def build_record(
         snapshot_hash=snapshot_hash,
         order=order,
         findings=findings,
-        coverage=tuple(coverage_of(f, narrowed=f.attribute in narrowed) for f in findings),
+        coverage=tuple(coverage_of(f, narrowed=f.attribute in narrowed,
+                                   request_unread=request_unread) for f in findings),
         completeness=completeness(schema, constraints),
         unread=unread,
         decision=decision,

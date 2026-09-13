@@ -12,7 +12,7 @@ from approv.surface.verification import (
 )
 from approv.types.core import (
     AttributeSpec, CategorySchema, Certainty, Channel, Constraint, Criticality, Decision,
-    Dimension, FieldProfile, Liability, Money, OrderLine, Support, Term,
+    Dimension, FieldProfile, Liability, Money, OrderLine, Support, Term, UnreadPolicy,
 )
 
 SCHEMA = CategorySchema(
@@ -68,6 +68,70 @@ def reader(text, schema):
 def colour_only(text, schema):
     return Reading(constraints=(Constraint(attribute="color", value=Term(surface="Frost"),
                                            channel=Channel.AGENT_MESSAGE, raw_text=text),))
+
+
+def under_read(text, schema):
+    """Reads both requirements, and says a third went unread."""
+    return Reading(constraints=reader(text, schema).constraints,
+                   unread=("Unsupported requirement: monogram",))
+
+
+# --- DR 0022: what an unread request does -------------------------------------------------
+
+def unread_result(policy):
+    return verify_order(request(artifact=FreeText(text="a Frost duvet in M, monogrammed")),
+                        schemas=SCHEMAS, extract=under_read, unread_policy=policy)
+
+
+def test_an_unread_requirement_lets_the_sale_through_and_withdraws_the_guarantee():
+    """DR 0022, the default. An unread requirement is our defect, and pausing the
+    merchant's checkout over it charges them for it — measured at 58.8% nuisance. The sale
+    proceeds; what is withdrawn is the promise."""
+    result = unread_result(UnreadPolicy.WITHDRAW)
+
+    assert result.record.decision is Decision.ALLOW
+    assert set(result.record.coverage) == {"out_of_coverage"}
+    assert result.record.unread == ("Unsupported requirement: monogram",)
+
+
+def test_withdrawal_is_record_wide_because_the_gap_belongs_to_no_attribute():
+    """Narrowing could be attributed to a constraint's own quote; this cannot. Colour and
+    size both compare cleanly and neither is guaranteed, because what a guarantee promises
+    is that the order was as asked."""
+    clean = verify_order(request(artifact=FreeText(text="a Frost duvet in M")),
+                         schemas=SCHEMAS, extract=reader)
+    assert "guaranteed" in clean.record.coverage
+    assert "guaranteed" not in unread_result(UnreadPolicy.WITHDRAW).record.coverage
+
+
+def test_escalating_is_still_available_because_it_is_a_merchant_preference():
+    result = unread_result(UnreadPolicy.ESCALATE)
+
+    assert result.record.decision is Decision.CONFIRM
+    assert set(result.record.coverage) == {"out_of_coverage"}
+
+
+def test_ignoring_is_the_one_that_promises_over_words_nobody_read():
+    """Kept only so DR 0022's table reproduces. Same decision as WITHDRAW, and it claims
+    the guarantee anyway."""
+    ignored = unread_result(UnreadPolicy.IGNORE)
+
+    assert ignored.record.decision is Decision.ALLOW
+    assert "guaranteed" in ignored.record.coverage
+
+
+def test_the_three_policies_differ_on_exactly_two_axes():
+    """ESCALATE and WITHDRAW share coverage and differ in the decision; WITHDRAW and
+    IGNORE share the decision and differ in coverage. That separation is what made the
+    measurement decidable."""
+    escalate = unread_result(UnreadPolicy.ESCALATE)
+    withdraw = unread_result(UnreadPolicy.WITHDRAW)
+    ignore = unread_result(UnreadPolicy.IGNORE)
+
+    assert escalate.record.coverage == withdraw.record.coverage
+    assert escalate.record.decision is not withdraw.record.decision
+    assert withdraw.record.decision is ignore.record.decision
+    assert withdraw.record.coverage != ignore.record.coverage
 
 
 # --- the order half ---------------------------------------------------------------------

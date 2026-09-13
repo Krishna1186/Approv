@@ -375,6 +375,64 @@ would let the party being defended define what counts as a match.
 
 396 tests. Nothing measured moved: no study path calls the surface.
 
+## DR 0022 — what an unread request does (13 September)
+
+The nuisance question, measured three ways rather than argued. v3 pack, heldout, 46 cases,
+1,244 pairs; nothing changes between columns but the policy.
+
+| | ESCALATE | **WITHDRAW** | IGNORE |
+|---|---:|---:|---:|
+| False allow, of 1,142 | 4.3% [3.3, 5.6] | 7.3% [5.9, 8.9] | 7.3% [5.9, 8.9] |
+| False refuse, of 102 | 0.0% [0.0, 3.6] | 0.0% [0.0, 3.6] | 0.0% [0.0, 3.6] |
+| Escalated (wrong product confirmed) | 4.8% [3.7, 6.2] | 1.8% [1.2, 2.8] | 1.8% |
+| **Nuisance (right product confirmed)** | **58.8% [49.1, 67.9]** | **16.7% [10.7, 25.1]** | 16.7% |
+| **Guaranteed false allow** | **0** | **0** | **0** |
+| Payout rate per authorisation | 0.0% [0.0, 4.1] of 91 | 0.0% [0.0, 2.2] of 168 | 0.0% [0.0, 2.2] of 168 |
+| Coverage — guaranteed | 18.8% [17.7, 19.9] | 18.8% | 42.0% [40.6, 43.4] |
+| Coverage — out of coverage | 38.3% [37.0, 39.7] | 38.3% | 15.1% [14.1, 16.2] |
+
+**Guaranteed false allow did not rise — it is zero under all three.** That was the cost to
+watch for and it did not appear.
+
+The table separates on two axes, which is what made it decidable. ESCALATE and WITHDRAW
+have identical coverage and differ only in the decision: 3.0 pp less false allow for
+42.1 pp more nuisance, and every one of those false allows is out of coverage, so the
+3.0 pp is bought with a currency that has no measured price. WITHDRAW and IGNORE have
+identical decisions and differ only in what is promised: 23.2 pp of findings that IGNORE
+claims as guaranteed over words nobody read.
+
+**WITHDRAW is the default.** Withdrawal is record-wide, not attribute-scoped, and that is
+the argument rather than a detail: narrowing could be attributed to a constraint's own
+quote, but a gap belonging to no constraint has no attribute to scope to. A guarantee
+promises that *this order was as asked*, and a request we did not finish reading cannot
+support that about any attribute, however cleanly the ones we did read compare.
+
+**What this corpus cannot show.** WITHDRAW and IGNORE produce the same payout count here:
+zero. The case for WITHDRAW rests on the coverage claim being true, not on a measured
+payout difference. The reason is structural — the answer key is derived from published
+fields, so it is bounded by the same schema the comparison is, and text the schema cannot
+express (*"delivery speed doesn't matter"*) is exactly the text that goes unread and can
+never make a product wrong by the key's own definition. Pricing that needs return
+outcomes, not an answer key.
+
+**The marker fix this forced.** Under a record-wide withdrawal the gap detector's false
+positives stopped being cosmetic: 8 of the 28 cases carrying an unread note were hedge
+families and nothing else, and would have surrendered a whole record's guarantee because
+the shopper said *"preferably"*. `criticality.unread_requirements` subtracts layer-1 marker
+words, read off the quotes rather than the note. Holding policy at ESCALATE it moved
+nuisance 75.5% → 58.8%, false allow 0.1% → 4.3%, guaranteed coverage 12.1% → 18.8%. It runs
+in `build_record`, so what the record stores in `unread` and what the decision acts on are
+the same set — storing a hedge as unread would put in the dispute artifact a claim that we
+failed to read something we read.
+
+**The number this exposes, and it is the real finding.** 28 of 46 held-out requests carry
+an unread note; 20 of 46 still do after the marker fix. So roughly **two in five orders are
+authorised with no guarantee at all**, and guaranteed findings fall from 42.0% to 18.8%.
+That is not a defect in the decision — under IGNORE those guarantees were being claimed
+anyway; what changed is that the record now says which ones we can stand behind. It does
+bound the product, and the larger of the two ways out is schema expressiveness rather than
+extraction: most surviving gaps are requirements the category has no attribute for.
+
 ## Open
 
 - Extraction is scored against the generator's spec, not against hand labels. That
@@ -382,9 +440,10 @@ would let the party being defended define what counts as a match.
   shopper's wording is not in evidence anywhere.
 - `mark` and `verify` unscored.
 - Whether published merchant data is true. Nothing here tests that and nothing can.
-- `strict_unread` defaults to escalating at the surface, and the strict floor's nuisance is
-  75.5% on the v3 pack. No merchant would run that. Either the floor moves or the nuisance
-  does, and neither has been decided.
+- Coverage is bounded by schema expressiveness: 43% of held-out requests still carry an
+  unread note after the marker fix, and most of those name something this category has no
+  attribute for. Selling a guarantee on under half of traffic is a product limit, not a
+  tuning one, and nothing here measures which categories are worse.
 - Value narrowing in extraction still happens; it is now routed out of coverage rather
   than repaired. Attribution is scoped to the constraint's own quote, and a v6 quote is
   a whole clause, so a gap belonging to no single attribute marks every attribute read

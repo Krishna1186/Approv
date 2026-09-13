@@ -46,6 +46,7 @@ from approv.algebra.term import normalize_term
 from approv.types.core import (
     COVERAGE_GAP_PREFIX, AttributeSpec, Bound, CategorySchema, Constraint, Count,
     Criticality, FieldProfile, Money, Quantity, Support, Term, Finding,
+    dropped_requirement,
 )
 
 VERSION = "criticality-v1"
@@ -338,6 +339,42 @@ def _marker_words(quote: str) -> frozenset[str]:
     return frozenset(found)
 
 
+def unread_requirements(constraints: Iterable[Constraint],
+                        notes: Iterable[str]) -> tuple[str, ...]:
+    """The notes that name something genuinely unread. DR 0022.
+
+    DR 0021 settled that `unread` means a *checkable requirement* went unchecked, and
+    `dropped_requirement` is that test. It is note-only, so it cannot see one more case
+    that is not a requirement at all: a coverage gap whose residual is nothing but layer-1
+    marker words.
+
+    "preferably", "around ... or similar" and "ideally" carry no value, so they reach no
+    constraint and `coverage_gap` names them as unaccounted for. They were read — by
+    `request_layer`, which is why those findings are SOFT — and they are not requirements
+    we missed. On the v3 pack that is 8 of the 28 cases carrying a note, every one of them
+    a hedge family. Under DR 0022's withdrawal a record-level guarantee would have been
+    surrendered because the shopper said "preferably", which is the opposite of what the
+    hedge means.
+
+    Marker words are read off the **quotes** rather than the note, because the residual is
+    a bag of words with stopwords stripped and "or similar" arrives as "similar". The quote
+    still has the phrase intact.
+    """
+    markers: set[str] = set()
+    for constraint in constraints:
+        markers |= _marker_words(constraint.raw_text or "")
+    out = []
+    for note in notes or ():
+        text = str(note)
+        if not dropped_requirement(text):
+            continue
+        if text.startswith(COVERAGE_GAP_PREFIX):
+            if not _words(text[len(COVERAGE_GAP_PREFIX):]) - markers:
+                continue
+        out.append(text)
+    return tuple(out)
+
+
 def narrowed_attributes(constraints: Iterable[Constraint],
                         notes: Iterable[str]) -> frozenset[str]:
     """Attributes whose recorded value is narrower than the words it was read from.
@@ -373,7 +410,8 @@ def narrowed_attributes(constraints: Iterable[Constraint],
     )
 
 
-def coverage_of(finding: Finding, *, narrowed: bool = False) -> str:
+def coverage_of(finding: Finding, *, narrowed: bool = False,
+                request_unread: bool = False) -> str:
     """What this finding is worth in a dispute. Property 6, DR 0020.
 
     The point of the mapping is that a soft mismatch is never a blocked sale — it is
@@ -392,13 +430,20 @@ def coverage_of(finding: Finding, *, narrowed: bool = False) -> str:
     that the choice did not contain: the sale proceeds, nuisance does not move, and we
     promise nothing we could not fully read.
 
-    Only GUARANTEED is withdrawn. REFUSED is not a promise, it is a decision that already
-    happened, and relabelling it would report that we made no claim when in fact we
-    blocked the sale.
+    **`request_unread` is the same argument one level up** (DR 0022). Narrowing is a gap we
+    could attribute to a constraint's own quote. Some gaps belong to no constraint at all —
+    the request said something we never encoded anywhere — and there is no attribute to
+    scope those to, so what goes out of coverage is the record. A guarantee is a promise
+    that this order was as asked; a request we did not finish reading cannot support that
+    promise about any attribute, however cleanly the attributes we did read compare.
+
+    Only GUARANTEED is withdrawn, in both cases. REFUSED is not a promise, it is a decision
+    that already happened, and relabelling it would report that we made no claim when in
+    fact we blocked the sale.
     """
     if finding.criticality in (Criticality.HARD, Criticality.BOUND):
         if finding.support is Support.VIOLATED:
             return REFUSED
-        if finding.support is Support.SATISFIED and not narrowed:
+        if finding.support is Support.SATISFIED and not (narrowed or request_unread):
             return GUARANTEED
     return OUT_OF_COVERAGE

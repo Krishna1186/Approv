@@ -4,7 +4,7 @@ import pytest
 from approv.criticality import (
     COVERAGE_GAP_PREFIX, GUARANTEED, OUT_OF_COVERAGE, REFUSED, applied, calibrate_returns,
     coverage_of, narrowed_attributes, request_layer, resolve, returns_layer, schema_layer,
-    superseded_attributes,
+    superseded_attributes, unread_requirements,
 )
 from approv.types.core import (
     AttributeSpec, Bound, BoundOp, CategorySchema, Certainty, Channel, CheckKind,
@@ -298,6 +298,60 @@ def test_a_constraint_with_no_quote_is_not_narrowed():
     """A structured channel that carries no wording cannot have narrowed the wording.
     Absent evidence of a gap is not evidence of one."""
     assert narrowed_attributes((want("color", "Frost"),), gap("tandem stripe")) == frozenset()
+
+
+def test_a_gap_that_is_nothing_but_the_shoppers_hedge_names_nothing_unread():
+    """DR 0022. "preferably" carries no value, so it reaches no constraint and the gap
+    detector names it — but it was read, by `request_layer`, and it is why the finding is
+    SOFT. Under a record-level withdrawal this would surrender the whole record's guarantee
+    because the shopper hedged, which is the opposite of what a hedge means. 8 of the 28 v3
+    cases carrying a note were exactly this."""
+    hedged = (want("color", "Tan", quote="preferably in Tan"),)
+    assert unread_requirements(hedged, gap("preferably")) == ()
+
+
+def test_a_split_marker_phrase_still_names_nothing_unread():
+    """Read off the quote, not the note: the residual is a bag of words with stopwords
+    stripped, so "or similar" arrives as "similar" and the note alone cannot tell."""
+    hedged = (want("size", "M", quote="around size M or similar"),)
+    assert unread_requirements(hedged, gap("around similar")) == ()
+
+
+def test_a_real_gap_survives_the_marker_filter():
+    stated = (want("color", "Frost", quote="a Tandem Stripe in Frost"),)
+    assert unread_requirements(stated, gap("tandem stripe")) == (
+        COVERAGE_GAP_PREFIX + "tandem stripe",)
+
+
+def test_a_gap_that_is_part_marker_and_part_content_survives():
+    """Only a residual that is *entirely* marker words names nothing. "ideally Oxford
+    Stripe" dropped a pattern the record cannot claim to have checked."""
+    stated = (want("color", "Fresh Moss", quote="ideally Oxford Stripe in Fresh Moss"),)
+    assert unread_requirements(stated, gap("ideally oxford stripe")) != ()
+
+
+def test_a_dropped_requirement_that_is_not_a_gap_is_untouched():
+    """The marker rule is about the gap detector's own false positives. An unsupported
+    requirement is unread whatever words are in the quotes."""
+    notes = ("Unsupported requirement: gift_wrap",)
+    assert unread_requirements((want("color", "Tan", quote="preferably in Tan"),),
+                               notes) == notes
+
+
+def test_a_note_that_is_not_a_dropped_requirement_never_reaches_here():
+    """DR 0021 still governs what counts at all; this only narrows it further."""
+    assert unread_requirements((), ("Superseded, discarded: Black (color)",)) == ()
+
+
+def test_an_unread_request_withdraws_the_guarantee_from_the_whole_record():
+    """DR 0022, and the reason it is not attribute-scoped: a gap belonging to no
+    constraint has no attribute to scope to. A guarantee promises that this order was as
+    asked, and a request we did not finish reading cannot support that about any
+    attribute, however cleanly the ones we did read compare."""
+    assert coverage_of(finding(Criticality.HARD, Support.SATISFIED),
+                       request_unread=True) == OUT_OF_COVERAGE
+    assert coverage_of(finding(Criticality.HARD, Support.VIOLATED),
+                       request_unread=True) == REFUSED
 
 
 def test_narrowing_withdraws_the_guarantee_and_nothing_else():

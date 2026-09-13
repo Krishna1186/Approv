@@ -8,7 +8,7 @@ from approv.receipts.chain import (
     generate_key, public_key_hex, record_hash, seal, verify, verify_chain,
 )
 from approv.criticality import GUARANTEED, OUT_OF_COVERAGE
-from approv.types.core import COVERAGE_GAP_PREFIX, dropped_requirement
+from approv.types.core import COVERAGE_GAP_PREFIX, UnreadPolicy, dropped_requirement
 from approv.receipts.record import build_record, completeness, floor_is_met
 from approv.types.core import (
     AttributeSpec, CategorySchema, Channel, CheckKind, Constraint, Criticality,
@@ -67,7 +67,7 @@ def test_unread_is_a_dropped_requirement_and_not_merely_a_note():
 # --- narrowing: the guarantee withdrawn where the reading did not finish ----------------
 
 def test_a_narrowed_requirement_is_authorised_but_not_guaranteed():
-    """The third option `strict_unread` did not contain, wired end to end.
+    """The third option the floor did not contain, wired end to end.
 
     Before coverage existed the only lever for a partly-read requirement was the floor,
     which had to choose between escalating the sale (0.0% false allow at 48.4% nuisance)
@@ -83,7 +83,7 @@ def test_a_narrowed_requirement_is_authorised_but_not_guaranteed():
                   finding("color", Support.SATISFIED)),
         constraints=(constraint("size", "9"), narrowed),
         unread=(COVERAGE_GAP_PREFIX + "tandem stripe",),
-        strict_unread=False)
+        unread_policy=UnreadPolicy.IGNORE)
 
     covered = dict(zip((f.attribute for f in built.findings), built.coverage))
     assert covered == {"size": GUARANTEED, "color": OUT_OF_COVERAGE}
