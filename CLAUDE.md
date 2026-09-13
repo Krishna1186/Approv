@@ -130,6 +130,15 @@ Violating one is a stop-work event.
    layer imports only `approv.types`, and the engine never imports intake. A test asserts
    both directions. Without it, adapter pressure leaks into the engine within a month and
    "the engine barely changes" silently stops being true.
+10. **No personal data in the record.** The signed object holds the stated request, the
+   product and the order line — never a name, address, email, phone, payment instrument or
+   account identifier. The join keys it does carry (`correlation_id`, `order_id`, `sku`,
+   `merchant_id`, `agent_id`) identify transactions, not people. A test asserts the record
+   declares no such field. The reason is the artifact's own job: it is handed to a returns
+   desk, a PSP and possibly a court, and one that needs a redaction pass first is not
+   evidence, it is a liability. `request_text` is the agent's words about a *product*; a
+   surface whose field could carry a shopper's identity redacts before the call, because
+   nothing downstream can tell the difference.
 
 ---
 

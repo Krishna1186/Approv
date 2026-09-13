@@ -29,9 +29,10 @@ from __future__ import annotations
 
 import hashlib
 import time
+from urllib.parse import unquote
 from typing import Annotated, Callable, Mapping, Union
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
 from approv.algebra.runner import check_constraints
 from approv.intake import (
@@ -41,8 +42,8 @@ from approv.intake import (
 from approv.receipts.chain import canonical_json, seal
 from approv.receipts.record import build_record
 from approv.types.core import (
-    Attestation, CategorySchema, ComparisonRecord, Completion, Count, Evidence, Finding,
-    OrderLine, Term, UnreadPolicy, Value,
+    Attestation, CategorySchema, ComparisonRecord, Completion, Count, Dimension, Evidence,
+    Finding, Money, OrderLine, Quantity, Term, UnreadPolicy, Value,
 )
 
 VERSION = "surface-v1"
@@ -61,6 +62,19 @@ Reader = Callable[[Mapping[str, object], CategorySchema], tuple[Evidence, ...]]
 
 # The discriminated value union, for a catalogue that exports typed values.
 _VALUE_ADAPTER = TypeAdapter(Value)
+
+# The array marker in a derived field path. A sentinel rather than the string "*", so a key
+# that really is an asterisk (written `~2` on the wire) cannot collide with it once
+# unescaped.
+_ANY = type("ArrayMarker", (), {"__repr__": lambda self: "*"})()
+
+# Only the unambiguous units. A bare number with no unit, or a unit we do not recognise,
+# yields no evidence rather than a guessed dimension.
+_DIMENSIONS = {
+    **dict.fromkeys(("mg", "g", "kg", "oz", "lb"), Dimension.MASS),
+    **dict.fromkeys(("ml", "cl", "l"), Dimension.VOLUME),
+    **dict.fromkeys(("mm", "cm", "m", "in", "ft"), Dimension.LENGTH),
+}
 
 
 class UnknownCategory(LookupError):
@@ -115,12 +129,85 @@ class VerificationResult(BaseModel):
     intake_notes: tuple[str, ...] = ()
 
 
-def _dig(snapshot: Mapping[str, object], field_name: str):
-    """`variant.size` as a nested lookup, falling back to the flat key.
+def _split_pointer(field_name: str) -> tuple[list, str | None]:
+    """A JSON pointer with an optional `#name=` selector, into tokens and the selector.
 
-    Both spellings occur in real catalogue exports and guessing wrong loses evidence
-    silently, which routes an attribute to PRODUCT_SILENT and escalates a sale for a
-    reason that is ours rather than the merchant's.
+    `approv.schema` writes a `#` inside a key as `~3` and URL-quotes the selector value, so
+    the first `#` is unambiguously the separator. `*` is the array marker; a literal `*` in
+    a key arrives as `~2`. Unescaping puts `~0` last, or a key containing `~1` would be
+    decoded twice.
+    """
+    path, _, selector = field_name.partition("#")
+    tokens = []
+    for token in path.split("/")[1:]:
+        if token == "*":
+            tokens.append(_ANY)
+            continue
+        for code, char in (("~1", "/"), ("~2", "*"), ("~3", "#"), ("~0", "~")):
+            token = token.replace(code, char)
+        tokens.append(token)
+    name = unquote(selector[len("name="):]) if selector.startswith("name=") else None
+    return tokens, name
+
+
+def _walk(node: object, tokens: list):
+    """Every node this pointer reaches. A `*` fans out over a list rather than indexing."""
+    if not tokens:
+        yield node
+        return
+    token, rest = tokens[0], tokens[1:]
+    if token is _ANY:
+        if isinstance(node, (list, tuple)):
+            for item in node:
+                yield from _walk(item, rest)
+    elif isinstance(node, Mapping) and token in node:
+        yield from _walk(node[token], rest)
+
+
+def _same_label(left: str, right: str) -> bool:
+    return left.strip().casefold() == right.strip().casefold()
+
+
+def _pointer_values(snapshot: Mapping[str, object], field_name: str) -> list:
+    """The values a derived `field_name` names in this snapshot.
+
+    In `/variants/*/options/*/value#name=Colour` the container is a label/value pair and
+    the selector is **load-bearing**: the same path also carries Size, and reading it wrong
+    crosses two attributes. So a selector must match a sibling of the value, and a
+    container labelled with anything else is a *different attribute* rather than a
+    fallback — falling back to the path would hand every option value to whichever
+    attribute asked first.
+
+    That rule costs one shape. `approv.schema` also writes
+    `/variants/*/option1#name=Colour` for flat exports whose option names live in a
+    separate table, and there the label is not a sibling at all, so this reader returns
+    nothing for it. Deliberate: reading nothing is caught loudly by `_reads_nothing`, and
+    reading the wrong attribute is not caught at all. A merchant on that shape supplies
+    their own `Reader`.
+    """
+    tokens, selector = _split_pointer(field_name)
+    if not tokens:
+        return []
+    last = tokens[-1]
+    if not isinstance(last, str):
+        return []
+    candidates = [(parent, parent[last]) for parent in _walk(snapshot, tokens[:-1])
+                  if isinstance(parent, Mapping) and last in parent]
+    if selector is None:
+        return [value for _, value in candidates]
+    return [value for parent, value in candidates
+            if any(_same_label(sibling, selector)
+                   for key, sibling in parent.items()
+                   if key != last and isinstance(sibling, str))]
+
+
+def _dotted(snapshot: Mapping[str, object], field_name: str):
+    """A flat key, or `variant.size` as a nested lookup. The pre-onboarding spelling.
+
+    Kept, and disjoint by construction rather than by guessing: a JSON pointer always
+    begins with `/`, so nothing here is ever asked to choose between the two formats.
+    Schemas authored before `approv.schema` existed are still in tests and in deployments;
+    the derived format is the one to write from here on.
     """
     if field_name in snapshot:
         return snapshot[field_name]
@@ -142,6 +229,16 @@ def _as_value(raw) -> Value | None:
     """
     if isinstance(raw, Mapping) and "kind" in raw:
         return _VALUE_ADAPTER.validate_python(dict(raw))
+    # The two typed shapes a real catalogue writes without a `kind` tag, and the two
+    # `approv.schema` recognises when it derives the schema. Reading them is not coercion:
+    # an amount beside its currency *is* a Money, and refusing it here would leave a price
+    # attribute the derivation had already promised reading nothing at all.
+    if isinstance(raw, Mapping) and "amount" in raw and set(raw) <= {"amount", "currency"}:
+        return _typed(Money, amount=raw.get("amount"), currency=raw.get("currency"))
+    if isinstance(raw, Mapping) and "unit" in raw and set(raw) <= {"unit", "value", "magnitude"}:
+        return _typed(Quantity, unit=raw.get("unit"),
+                      magnitude=raw.get("magnitude", raw.get("value")),
+                      dimension=_DIMENSIONS.get(str(raw.get("unit")).strip().casefold()))
     if isinstance(raw, str):
         return Term(surface=raw)
     if isinstance(raw, bool):
@@ -149,6 +246,21 @@ def _as_value(raw) -> Value | None:
     if isinstance(raw, int):
         return Count(n=raw)
     return None
+
+
+def _typed(model, **fields) -> Value | None:
+    """Build a typed value, or nothing if the catalogue did not supply enough for one.
+
+    A currency-less amount and a dimensionless magnitude are not values, and inventing
+    either is how a comparison gets manufactured out of a field nobody stated properly.
+    `approv.schema` refuses the same two cases when it derives the schema.
+    """
+    if any(value is None for value in fields.values()):
+        return None
+    try:
+        return model(**fields)
+    except ValidationError:
+        return None
 
 
 def evidence_from_snapshot(snapshot: Mapping[str, object],
@@ -163,14 +275,23 @@ def evidence_from_snapshot(snapshot: Mapping[str, object],
     """
     out = []
     for profile in schema.field_profiles:
-        value = _as_value(_dig(snapshot, profile.field_name))
-        if value is None:
-            continue
-        for attribute in profile.attributes:
-            out.append(Evidence(attribute=attribute, value=value,
-                                field_name=profile.field_name, liability=profile.liability,
-                                certainty=profile.certainty, is_advice=profile.is_advice))
+        if profile.field_name.startswith("/"):
+            raw = _pointer_values(snapshot, profile.field_name)
+        else:
+            found = _dotted(snapshot, profile.field_name)
+            raw = [] if found is None else [found]
+        for one in raw:
+            value = _as_value(one)
+            if value is None:
+                continue
+            for attribute in profile.attributes:
+                out.append(Evidence(attribute=attribute, value=value,
+                                    field_name=profile.field_name,
+                                    liability=profile.liability,
+                                    certainty=profile.certainty,
+                                    is_advice=profile.is_advice))
     return tuple(out)
+
 
 
 def snapshot_digest(snapshot: Mapping[str, object]) -> str:
@@ -225,6 +346,8 @@ def verify_order(
         evidence, failure = _run(
             lambda: read_evidence(request.product_snapshot, schema),
             Completion.CATALOGUE_UNREADABLE, "reading the catalogue snapshot")
+    if failure is None:
+        failure = _reads_nothing(evidence, request.product_snapshot, schema)
     if failure is None:
         findings = check_constraints(
             taken.constraints, evidence, schema, returns=returns,
@@ -300,6 +423,35 @@ def _run(step, failure: Completion, what: str, *, parse_failure: Completion | No
         if parse_failure is not None and isinstance(error, _PARSE_ERRORS):
             kind = parse_failure
         return None, (kind, "%s: %s: %s" % (what, type(error).__name__, error))
+
+
+def _reads_nothing(evidence, snapshot: Mapping[str, object], schema: CategorySchema):
+    """A schema that reads *nothing* from a non-empty snapshot is disconnected, not careful.
+
+    The silence is the worse half of the field-path defect. When a derived schema's paths
+    do not match the catalogue they were derived from, `read_evidence` raises nothing and
+    logs nothing: every attribute goes UNSTATED, every order confirms, and the deployment
+    looks like a cautious engine rather than a disconnected one. A pilot partner sees a
+    100% confirm rate and no error at all, which is the worst shape a failure can take —
+    it survives monitoring, it survives a green test suite, and it looks like the product
+    working.
+
+    So it is a failed verification with a named reason (DR 0004) rather than an exception:
+    the merchant still gets a record, it still cannot authorise, it carries no coverage,
+    and `completion_detail` says the schema read nothing. A 500 would hand them nothing to
+    keep and invite them to ship anyway.
+
+    Scoped to the case that can only be a fault. A schema with no profiles has nothing to
+    read with, and an empty snapshot has nothing to read — neither is evidence of a
+    mismatch, and failing on them would fire on legitimately sparse traffic.
+    """
+    if evidence or not schema.field_profiles or not snapshot:
+        return None
+    return (Completion.CATALOGUE_UNREADABLE,
+            "the schema's %d field paths read no evidence from a snapshot of %d fields; "
+            "first path %r — schema and catalogue are not the same shape"
+            % (len(schema.field_profiles), len(snapshot),
+               schema.field_profiles[0].field_name))
 
 
 def _nothing_read(request: VerificationRequest, schema: CategorySchema) -> Intake:

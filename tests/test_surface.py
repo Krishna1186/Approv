@@ -50,7 +50,8 @@ def order(**kw):
 
 def request(artifact=None, snapshot=None, **kw):
     return VerificationRequest(
-        merchant_id="m-1", correlation_id="corr-1", category_id=SCHEMA.category_id,
+        merchant_id="m-1", correlation_id="corr-1",
+        category_id=kw.pop("category_id", SCHEMA.category_id),
         order=kw.pop("order", order()),
         artifact=artifact or Structured(protocol="acp",
                                         fields={"size": "M", "color": "Frost"}),
@@ -246,6 +247,138 @@ def test_a_typed_catalogue_value_is_taken_as_typed():
     evidence = evidence_from_snapshot(
         {"pack_count": {"kind": "count", "n": 6}}, SCHEMA)
     assert evidence[0].value.n == 6
+
+
+# --- invariant 10: no personal data in the record -----------------------------------------
+
+def test_the_record_declares_no_field_that_could_hold_a_person():
+    """Invariant 10. The artifact is handed to a returns desk, a PSP and possibly a court;
+    one that needs a redaction pass first is not evidence, it is a liability.
+
+    A field-name check rather than a content scan, because content cannot be policed here
+    — `request_text` is free text and a surface that lets a shopper's identity into it has
+    to redact before the call. What this catches is the day somebody adds
+    `customer_email` to the record and nobody notices, which is how personal data actually
+    arrives: as a convenience field, not as an attack.
+    """
+    from approv.types.core import ComparisonRecord, OrderLine
+
+    forbidden = ("email", "phone", "name", "address", "postcode", "zip", "dob",
+                 "birth", "customer", "shopper", "buyer", "card", "pan", "iban",
+                 "account", "ssn", "tax_id", "passport", "ip_address", "device")
+    declared = set(ComparisonRecord.model_fields) | set(OrderLine.model_fields)
+    offending = sorted(f for f in declared
+                       if any(word in f.lower() for word in forbidden))
+
+    assert not offending, f"invariant 10: record declares {offending}"
+
+
+def test_the_join_keys_it_does_carry_identify_transactions_not_people():
+    """Stated so the invariant is not read as forbidding identifiers altogether. A
+    correlation id is the join between two signed halves (DR 0016 §7); an order id and a
+    SKU are the merchant's own references to a purchase."""
+    from approv.types.core import ComparisonRecord, OrderLine
+
+    assert {"correlation_id", "merchant_id", "agent_id"} <= set(ComparisonRecord.model_fields)
+    assert {"order_id", "sku"} <= set(OrderLine.model_fields)
+
+
+# --- seam 1: the format onboarding actually emits -----------------------------------------
+
+DERIVED_CATALOGUE = [
+    {"product_id": "duvet-tandem", "title": "Tandem Stripe Duvet Cover",
+     "variants": [{"sku": "TAN-KING-FROST",
+                   "options": [{"name": "Size", "value": "King"},
+                               {"name": "Colour", "value": "Frost"}],
+                   "price": {"amount": "118.00", "currency": "USD"}}]},
+    {"product_id": "duvet-halden", "title": "Halden Linen Duvet Cover",
+     "variants": [{"sku": "HAL-QUEEN-ASH",
+                   "options": [{"name": "Size", "value": "Queen"},
+                               {"name": "Colour", "value": "Ash"}],
+                   "price": {"amount": "149.00", "currency": "USD"}}]},
+]
+
+
+def derived_schema(catalogue=None):
+    from approv.schema import confirm_schema, propose_schema
+
+    proposal = propose_schema(catalogue or DERIVED_CATALOGUE,
+                              category_id="bedding.duvets", currency="USD")
+    return confirm_schema(proposal, reviewer="founder",
+                          expected_proposal_id=proposal.proposal_id,
+                          floor=proposal.proposed_schema.floor).category_schema
+
+
+def test_a_derived_schema_reads_the_catalogue_it_was_derived_from():
+    """The regression that should have existed. Onboarding's output is the surface's
+    input, or onboarding onboards nothing — and it failed silently, which is the worse
+    half: a pilot partner would have seen a 100% confirm rate and no error at all."""
+    evidence = evidence_from_snapshot(DERIVED_CATALOGUE[0], derived_schema())
+
+    assert evidence, "a schema derived from this catalogue reads nothing from it"
+    assert {e.attribute for e in evidence} == {"title", "colour", "size", "price"}
+
+
+def test_the_selector_picks_the_right_option_off_a_shared_path():
+    """`/variants/*/options/*/value` carries Size and Colour on the same path, so the
+    `#name=` selector is load-bearing rather than an annotation. Reading it wrong crosses
+    two attributes, which is worse than reading nothing."""
+    read = {e.attribute: e.value.surface
+            for e in evidence_from_snapshot(DERIVED_CATALOGUE[0], derived_schema())
+            if e.attribute in ("size", "colour")}
+
+    assert read == {"size": "King", "colour": "Frost"}
+
+
+def test_a_container_labelled_with_something_else_yields_nothing():
+    """A selector must match a sibling of the value. A container labelled with anything
+    else is a *different attribute*, not a fallback — falling back to the path would hand
+    every option value to whichever attribute asked first."""
+    schema = derived_schema()
+    snapshot = {"product_id": "x", "title": "T",
+                "variants": [{"sku": "S", "options": [{"name": "Weave", "value": "Sateen"}]}]}
+
+    assert {e.attribute for e in evidence_from_snapshot(snapshot, schema)} == {"title"}
+
+
+def test_a_typed_catalogue_price_is_read_rather_than_skipped():
+    """An amount beside its currency is a Money. Refusing it would leave a price attribute
+    the derivation had already promised reading nothing at all."""
+    price = next(e for e in evidence_from_snapshot(DERIVED_CATALOGUE[0], derived_schema())
+                 if e.attribute == "price")
+
+    assert price.value.currency == "USD" and str(price.value.amount) == "118.00"
+
+
+def test_an_amount_without_a_currency_is_not_a_price():
+    """`approv.schema` refuses the same case when it derives. Inventing a currency is how
+    a comparison gets manufactured out of a field nobody stated properly."""
+    schema = derived_schema()
+    snapshot = {"product_id": "x", "variants": [{"sku": "S", "price": {"amount": "118.00"}}]}
+
+    assert not [e for e in evidence_from_snapshot(snapshot, schema) if e.attribute == "price"]
+
+
+def test_a_schema_that_reads_nothing_fails_loudly_instead_of_confirming_quietly():
+    """The silence is the worse half. A disconnected deployment must not be
+    indistinguishable from a cautious one — so it is a named failure carrying a record,
+    not an exception and not a silent confirm."""
+    dotted = {"variant": {"size": "M", "color": "Frost"}}
+    result = verify_order(request(snapshot=dotted),
+                          schemas={SCHEMA.category_id: derived_schema()})
+
+    assert result.record.completion is Completion.CATALOGUE_UNREADABLE
+    assert "not the same shape" in result.record.completion_detail
+    assert result.record.decision is Decision.CONFIRM
+    assert not result.covered
+
+
+def test_a_sparse_snapshot_is_not_a_shape_mismatch():
+    """Scoped to the case that can only be a fault. An empty snapshot has nothing to read
+    and a schema with no profiles has nothing to read with; failing on either would fire
+    on legitimately sparse traffic."""
+    assert verify_order(request(snapshot={}), schemas=SCHEMAS).record.completion \
+        is Completion.COMPLETED
 
 
 # --- the entry point ----------------------------------------------------------------------
