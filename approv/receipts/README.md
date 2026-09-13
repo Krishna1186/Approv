@@ -1,5 +1,11 @@
 # Receipt operations
 
+Deployment configuration, KMS versus local signing, health, metrics, forward-only
+store migrations and backup/restore commands are in the [pilot runbook](../../PILOT-RUNBOOK.md).
+Production startup opens an existing migrated store; initialization is an explicit
+administration command. The library's `ReceiptStore(path)` convenience constructor
+still initializes and migrates for existing local callers.
+
 The comparison format and Ed25519/SHA-256 construction are retained. `seal()` now
 fills `key_id` with the SHA-256 fingerprint of the public key and accepts only
 `signature_version="ed25519-sha256-v1"`. Both fields are inside the signed digest.

@@ -1,0 +1,28 @@
+# Local construction only. A TLS ingress, managed disk and secret mounts are provisioned separately.
+services:
+  approv:
+    build:
+      context: .
+      dockerfile: Dockerfile.pilot
+    restart: unless-stopped
+    read_only: true
+    user: "10001:10001"
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    ports: ["127.0.0.1:8000:8000"]
+    environment:
+      APPROV_CONFIG: /etc/approv/deployment.json
+    volumes:
+      - type: bind
+        source: ${APPROV_CONFIG_DIR:?Set the reviewed configuration directory}
+        target: /etc/approv
+        read_only: true
+      - type: bind
+        source: ${APPROV_SECRET_DIR:?Set the restricted secret mount directory}
+        target: /run/secrets/approv
+        read_only: true
+      - type: bind
+        source: ${APPROV_STATE_DIR:?Set the durable local state directory}
+        target: /var/lib/approv
+    tmpfs: [/tmp:rw,noexec,nosuid,size=32m]
+    stop_grace_period: 90s

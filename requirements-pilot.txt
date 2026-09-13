@@ -1,0 +1,22 @@
+# Deployment dependencies, separate from the engine's deliberately small dependency set.
+pydantic==2.12.5
+cryptography==46.0.7
+uvicorn==0.52.4
+# Optional at runtime for encrypted-file signing; installed for the explicit aws-kms backend.
+boto3==1.43.92
+
+# Resolved runtime dependencies; keep deployments reproducible across rebuilds.
+annotated-types==0.8.0
+botocore==1.43.93
+cffi==2.1.1
+click==8.5.0
+h11==0.16.0
+jmespath==1.1.0
+pycparser==3.0
+pydantic-core==2.41.5
+python-dateutil==2.9.0.post0
+s3transfer==0.19.2
+six==1.17.0
+typing-extensions==4.16.0
+typing-inspection==0.4.4
+urllib3==2.7.0

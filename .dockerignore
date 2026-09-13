@@ -1,0 +1,9 @@
+**
+!requirements-pilot.txt
+!approv/
+!approv/**
+!scripts/
+!scripts/verify_receipt.py
+approv/**/__pycache__/
+approv/**/tests/
+approv/**/*.pyc

@@ -1,0 +1,15 @@
+FROM python:3.13-slim
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 APPROV_CONFIG=/etc/approv/deployment.json
+WORKDIR /app
+COPY requirements-pilot.txt ./
+RUN pip install --no-cache-dir -r requirements-pilot.txt \
+    && groupadd --gid 10001 approv \
+    && useradd --uid 10001 --gid 10001 --no-create-home approv
+COPY approv/ ./approv/
+COPY scripts/verify_receipt.py ./scripts/verify_receipt.py
+USER 10001:10001
+EXPOSE 8000
+HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/livez', timeout=2).close()"
+ENTRYPOINT ["python", "-m", "approv.ops"]
+CMD ["serve", "--host", "0.0.0.0", "--port", "8000"]

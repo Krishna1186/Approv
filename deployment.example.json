@@ -1,0 +1,36 @@
+{
+  "format": "approv-deployment-v1",
+  "deployment_id": "REPLACE_WITH_REVIEWED_RELEASE_ID",
+  "merchant_id": "REPLACE_WITH_PILOT_MERCHANT_ID",
+  "schemas": [
+    {"path": "schemas/pilot.json", "sha256": "REPLACE_WITH_FILE_SHA256"}
+  ],
+  "catalogue_reader": "approv.surface.verification:evidence_from_snapshot",
+  "extractor": {
+    "endpoint": "https://REPLACE_WITH_PROVIDER_HOST/v1",
+    "model": "REPLACE_WITH_MODEL_VERSION",
+    "prompt_version": "v6",
+    "credential": {"file": "/run/secrets/approv/extractor"},
+    "prices": {
+      "input_per_million_usd": "REPLACE_WITH_CONTRACT_PRICE",
+      "cached_input_per_million_usd": "REPLACE_WITH_CONTRACT_PRICE",
+      "output_per_million_usd": "REPLACE_WITH_CONTRACT_PRICE",
+      "as_of": "REPLACE_WITH_PRICE_DATE"
+    }
+  },
+  "signing": {
+    "backend": "aws-kms",
+    "region": "REPLACE_WITH_REGION",
+    "key_arn": "REPLACE_WITH_IMMUTABLE_KEY_ARN",
+    "key_id": "ed25519:REPLACE_WITH_PUBLIC_KEY_FINGERPRINT",
+    "timeout_seconds": 5
+  },
+  "public_keys": {"path": "public-keys.json", "sha256": "REPLACE_WITH_FILE_SHA256"},
+  "store": "/var/lib/approv/receipts.sqlite3",
+  "api_token": {"file": "/run/secrets/approv/api-token"},
+  "floor_policy": {"strict_unread": true, "returns": {}},
+  "readiness_ttl_seconds": 60,
+  "max_body_bytes": 262144,
+  "max_inflight": 4,
+  "metrics_window": 10000
+}
