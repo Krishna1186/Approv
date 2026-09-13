@@ -110,6 +110,16 @@ COVERAGE_LABEL: dict[str, str] = {
     UNRECORDED: "NOT recorded",
 }
 
+# The same four classes as one word each, for the tally line. Separate from the labels
+# because "1 Refused, so no promise" is not a sentence, and a tally that reads badly is a
+# tally people skip.
+COVERAGE_TALLY: dict[str, str] = {
+    GUARANTEED: "covered",
+    REFUSED: "refused",
+    OUT_OF_COVERAGE: "NOT covered",
+    UNRECORDED: "NOT recorded",
+}
+
 COVERAGE_MEANS: dict[str, str] = {
     GUARANTEED: (
         "Inside the class of findings Approv stands behind under the merchant's coverage "

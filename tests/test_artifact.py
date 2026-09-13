@@ -20,6 +20,7 @@ import pytest
 from approv.artifact import build, render_html, render_text
 from approv.artifact import language as lang
 from approv.artifact import signature
+from approv.artifact.__main__ import main
 from approv.artifact.document import FLOOR_REASON, STOP, coverage_classes
 from approv.artifact.render import CLOSING, HEADINGS, NO_REQUIREMENTS, UNREAD_MEANS
 from approv.receipts.chain import generate_key, public_key_hex, seal
@@ -140,7 +141,7 @@ def test_every_member_of_every_printed_enum_has_words(mapping, enum):
 
 def test_every_channel_and_coverage_class_has_words():
     assert set(lang.PROVENANCE) == {c.value for c in Channel}
-    assert set(lang.COVERAGE_LABEL) == set(lang.COVERAGE_MEANS)
+    assert set(lang.COVERAGE_LABEL) == set(lang.COVERAGE_MEANS) == set(lang.COVERAGE_TALLY)
 
 
 def machine_tokens():
@@ -555,6 +556,54 @@ def test_the_closing_limits_are_never_dropped():
     for rendering in (render_text(record()), render_html(record())):
         for paragraph in CLOSING:
             assert flat(paragraph) in flat(rendering)
+
+
+# --- the line for the reader with a minute ------------------------------------------------
+
+def test_the_summary_counts_exactly_what_the_table_below_it_shows():
+    """A summary that said anything the table did not would be the line people read and
+    the table nobody checks. It is arithmetic over the printed rows and nothing else."""
+    findings = (
+        found("size", Support.SATISFIED, Criticality.HARD, evidence=(saw("size", "King"),)),
+        found("colour", Support.VIOLATED, Criticality.HARD,
+              evidence=(saw("colour", "Stone", "variant.colour"),)),
+        found("material", Support.UNSTATED, Criticality.SOFT),
+    )
+    doc = build(record(findings=findings))
+    assert doc.summary == ("3 requirement(s) compared: 1 not met, 1 not checked, 1 met. "
+                           "Coverage: 1 covered, 1 refused, 1 NOT covered.")
+    for rendering in (render_text(doc.record), render_html(doc.record)):
+        assert doc.summary in flat(rendering)
+
+
+def test_the_summary_of_a_record_that_compared_nothing_says_so():
+    assert build(record(constraints=(), findings=())).summary == "No attribute was compared."
+
+
+# --- the command line ----------------------------------------------------------------------
+
+def test_the_command_line_writes_both_renderings(tmp_path):
+    """A rendering surface only a developer can invoke is not a document anyone is handed.
+
+    The record file's own name is passed through into the instructions, so the file the
+    reader is told to check is the file they were given.
+    """
+    sealed, key_hex, path = seal_to_disk(tmp_path, record(sign=False))
+    page, text = tmp_path / "dispute.html", tmp_path / "dispute.txt"
+
+    assert main([str(path), "--key", key_hex, "--html", str(page),
+                 "--text", str(text)]) == 0
+    assert "record.json" in text.read_text(encoding="utf-8")
+    assert key_hex in page.read_text(encoding="utf-8")
+    assert embedded_record(page.read_text(encoding="utf-8"))["hash"] == sealed.hash
+
+
+def test_the_command_line_refuses_a_chain_rather_than_rendering_the_first_of_it(tmp_path):
+    """A chain is several decisions. Rendering the first one under a filename that
+    promised all of them is how a document ends up answering a question nobody asked."""
+    path = tmp_path / "chain.json"
+    path.write_text("[%s]" % record().model_dump_json(), encoding="utf-8")
+    assert main([str(path)]) == 1
 
 
 def test_the_plain_text_rendering_stays_ascii_for_an_ascii_record():

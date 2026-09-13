@@ -155,6 +155,8 @@ def to_text(document: Document, *, public_key: str | None = None,
                    f"{lang.value(line.unit_price)} x {line.quantity}")
     out.append(f"Decided {record.timestamp.isoformat()}")
     out += ["=" * WIDTH, "", document.headline.upper(), ""]
+    out.append(_wrap(document.summary, "  "))
+    out.append("")
     out.append(_wrap(document.means, "  "))
     out.append("")
     out.append(_wrap(f"What it does not mean: {document.does_not_mean}", "  "))
@@ -269,6 +271,7 @@ header.doc p { margin: .15rem 0; font-size: .9rem; color: #d6d8dc; }
 .verdict h2 { margin: 0 0 .5rem; font-size: 1.25rem; }
 .verdict p { margin: .4rem 0; }
 .verdict .caveat { color: #4a4f57; }
+.verdict .tally { font-weight: 600; }
 ul.alerts { list-style: none; padding: 0; margin: 1rem 0; }
 ul.alerts li { background: #fff; border-left: 6px solid #b06a00; padding: .6rem .9rem;
                margin: .4rem 0; }
@@ -505,7 +508,9 @@ def to_html(document: Document, *, public_key: str | None = None,
         + "".join(f"<p>{part}</p>" for part in subtitle)
         + "</div></header>\n<main>\n"
         f'<div class="verdict {_attr(record.decision.value)}">'
-        f"<h2>{_e(document.headline)}</h2><p>{_e(document.means)}</p>"
+        f"<h2>{_e(document.headline)}</h2>"
+        f'<p class="tally">{_e(document.summary)}</p>'
+        f"<p>{_e(document.means)}</p>"
         f'<p class="caveat"><strong>What it does not mean:</strong> '
         f"{_e(document.does_not_mean)}</p></div>\n"
         f"{alerts}\n{body}\n"

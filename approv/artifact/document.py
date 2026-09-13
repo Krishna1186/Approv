@@ -106,6 +106,7 @@ class Document:
 
     record: ComparisonRecord
     headline: str
+    summary: str
     means: str
     does_not_mean: str
     alerts: tuple[Alert, ...] = ()
@@ -394,6 +395,36 @@ def alerts(record: ComparisonRecord) -> tuple[Alert, ...]:
     return tuple(out)
 
 
+_TALLY_WORD = {Support.VIOLATED: "not met", Support.UNSTATED: "not checked",
+               Support.SATISFIED: "met"}
+
+
+def summary_line(record: ComparisonRecord) -> str:
+    """One line of arithmetic over the rows below it, for the reader with a minute.
+
+    It counts and nothing else — a document whose summary said anything the table did
+    not would be the summary people read and the table nobody checked. Worst first, in
+    the same order as the table, and a class with nothing in it is not printed rather
+    than printed as a zero.
+    """
+    if not record.findings:
+        return "No attribute was compared."
+    supports = [
+        "%d %s" % (sum(1 for f in record.findings if f.support is support),
+                   _TALLY_WORD[support])
+        for support in (Support.VIOLATED, Support.UNSTATED, Support.SATISFIED)
+        if any(f.support is support for f in record.findings)
+    ]
+    classes = coverage_classes(record)
+    covered = [
+        "%d %s" % (classes.count(key), lang.COVERAGE_TALLY[key])
+        for key in (lang.GUARANTEED, lang.REFUSED, lang.OUT_OF_COVERAGE, lang.UNRECORDED)
+        if classes.count(key)
+    ]
+    return "%d requirement(s) compared: %s. Coverage: %s." % (
+        len(record.findings), ", ".join(supports), ", ".join(covered))
+
+
 def _buckets(record: ComparisonRecord) -> dict[str, tuple[str, ...]]:
     out: dict[str, list[str]] = {key: [] for key in lang.COVERAGE_LABEL}
     for finding, covered in zip(record.findings, coverage_classes(record)):
@@ -410,6 +441,7 @@ def build(record: ComparisonRecord) -> Document:
     return Document(
         record=record,
         headline=lang.DECISION_HEADLINE[decision],
+        summary=summary_line(record),
         means=lang.DECISION_MEANS[decision],
         does_not_mean=lang.DECISION_DOES_NOT_MEAN[decision],
         alerts=alerts(record),
