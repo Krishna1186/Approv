@@ -1,0 +1,1201 @@
+{
+  "status": "proposed",
+  "proposed_schema": {
+    "category_id": "allbirds.supplied",
+    "version": "schema-onboarding-v1:5e8fbfdc9fe0ec6a",
+    "attributes": [
+      {
+        "name": "available",
+        "dimension": "nominal",
+        "criticality": "soft",
+        "feed_aliases": [
+          "/variants/*/available"
+        ],
+        "tolerance": "0.005"
+      },
+      {
+        "name": "compare_at_price",
+        "dimension": "money",
+        "criticality": "soft",
+        "feed_aliases": [
+          "/variants/*/compare_at_price"
+        ],
+        "tolerance": "0.005"
+      },
+      {
+        "name": "grams",
+        "dimension": "mass",
+        "criticality": "soft",
+        "feed_aliases": [
+          "/variants/*/grams"
+        ],
+        "tolerance": "0.005"
+      },
+      {
+        "name": "height",
+        "dimension": "count",
+        "criticality": "soft",
+        "feed_aliases": [
+          "/variants/*/featured_image/height"
+        ],
+        "tolerance": "0.005"
+      },
+      {
+        "name": "price",
+        "dimension": "money",
+        "criticality": "soft",
+        "feed_aliases": [
+          "/variants/*/option1#name=Price",
+          "/variants/*/price"
+        ],
+        "tolerance": "0.005"
+      },
+      {
+        "name": "product_type",
+        "dimension": "nominal",
+        "criticality": "soft",
+        "feed_aliases": [
+          "/product_type"
+        ],
+        "tolerance": "0.005"
+      },
+      {
+        "name": "requires_shipping",
+        "dimension": "nominal",
+        "criticality": "soft",
+        "feed_aliases": [
+          "/variants/*/requires_shipping"
+        ],
+        "tolerance": "0.005"
+      },
+      {
+        "name": "size",
+        "dimension": "nominal",
+        "criticality": "soft",
+        "feed_aliases": [
+          "/variants/*/option1#name=Size"
+        ],
+        "tolerance": "0.005"
+      },
+      {
+        "name": "src",
+        "dimension": "nominal",
+        "criticality": "soft",
+        "feed_aliases": [
+          "/variants/*/featured_image/src"
+        ],
+        "tolerance": "0.005"
+      },
+      {
+        "name": "taxable",
+        "dimension": "nominal",
+        "criticality": "soft",
+        "feed_aliases": [
+          "/variants/*/taxable"
+        ],
+        "tolerance": "0.005"
+      },
+      {
+        "name": "vendor",
+        "dimension": "nominal",
+        "criticality": "soft",
+        "feed_aliases": [
+          "/vendor"
+        ],
+        "tolerance": "0.005"
+      },
+      {
+        "name": "width",
+        "dimension": "count",
+        "criticality": "soft",
+        "feed_aliases": [
+          "/variants/*/featured_image/width"
+        ],
+        "tolerance": "0.005"
+      }
+    ],
+    "field_profiles": [
+      {
+        "field_name": "/product_type",
+        "attributes": [
+          "product_type"
+        ],
+        "liability": "merchant_guaranteed",
+        "certainty": "exact",
+        "is_advice": false,
+        "is_variant_axis": false
+      },
+      {
+        "field_name": "/variants/*/available",
+        "attributes": [
+          "available"
+        ],
+        "liability": "merchant_guaranteed",
+        "certainty": "exact",
+        "is_advice": false,
+        "is_variant_axis": false
+      },
+      {
+        "field_name": "/variants/*/compare_at_price",
+        "attributes": [
+          "compare_at_price"
+        ],
+        "liability": "merchant_guaranteed",
+        "certainty": "exact",
+        "is_advice": false,
+        "is_variant_axis": false
+      },
+      {
+        "field_name": "/variants/*/featured_image/height",
+        "attributes": [
+          "height"
+        ],
+        "liability": "merchant_guaranteed",
+        "certainty": "exact",
+        "is_advice": false,
+        "is_variant_axis": false
+      },
+      {
+        "field_name": "/variants/*/featured_image/src",
+        "attributes": [
+          "src"
+        ],
+        "liability": "merchant_guaranteed",
+        "certainty": "exact",
+        "is_advice": false,
+        "is_variant_axis": false
+      },
+      {
+        "field_name": "/variants/*/featured_image/width",
+        "attributes": [
+          "width"
+        ],
+        "liability": "merchant_guaranteed",
+        "certainty": "exact",
+        "is_advice": false,
+        "is_variant_axis": false
+      },
+      {
+        "field_name": "/variants/*/grams",
+        "attributes": [
+          "grams"
+        ],
+        "liability": "merchant_guaranteed",
+        "certainty": "exact",
+        "is_advice": false,
+        "is_variant_axis": false
+      },
+      {
+        "field_name": "/variants/*/option1#name=Price",
+        "attributes": [
+          "price"
+        ],
+        "liability": "merchant_guaranteed",
+        "certainty": "exact",
+        "is_advice": false,
+        "is_variant_axis": false
+      },
+      {
+        "field_name": "/variants/*/option1#name=Size",
+        "attributes": [
+          "size"
+        ],
+        "liability": "merchant_guaranteed",
+        "certainty": "exact",
+        "is_advice": false,
+        "is_variant_axis": true
+      },
+      {
+        "field_name": "/variants/*/price",
+        "attributes": [
+          "price"
+        ],
+        "liability": "merchant_guaranteed",
+        "certainty": "exact",
+        "is_advice": false,
+        "is_variant_axis": false
+      },
+      {
+        "field_name": "/variants/*/requires_shipping",
+        "attributes": [
+          "requires_shipping"
+        ],
+        "liability": "merchant_guaranteed",
+        "certainty": "exact",
+        "is_advice": false,
+        "is_variant_axis": false
+      },
+      {
+        "field_name": "/variants/*/taxable",
+        "attributes": [
+          "taxable"
+        ],
+        "liability": "merchant_guaranteed",
+        "certainty": "exact",
+        "is_advice": false,
+        "is_variant_axis": false
+      },
+      {
+        "field_name": "/vendor",
+        "attributes": [
+          "vendor"
+        ],
+        "liability": "merchant_guaranteed",
+        "certainty": "exact",
+        "is_advice": false,
+        "is_variant_axis": false
+      }
+    ],
+    "floor": [
+      "size"
+    ]
+  },
+  "report": {
+    "category_id": "allbirds.supplied",
+    "observed_at": "2026-09-13T00:00:00Z",
+    "derivation_version": "schema-onboarding-v1",
+    "model_version": "none-deterministic",
+    "prompt_version": "none",
+    "input_records": 294,
+    "listings": 2857,
+    "denominator_unit": "expanded listings; one row for an unexpanded input record",
+    "interval_method": "Wilson 95%; descriptive catalogue counts, not accuracy",
+    "attributes": [
+      {
+        "attribute": "alt",
+        "dimension": null,
+        "observed_dimensions": [],
+        "occupied": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "published": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "exact": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "floor_eligible": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "parsed_only": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "conflicted": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "variant_groups": {
+          "numerator": 0,
+          "denominator": 294
+        },
+        "variant_basis": [],
+        "sources": [
+          {
+            "field_name": "/variants/*/featured_image/alt",
+            "liability": "merchant_guaranteed",
+            "certainty": "exact",
+            "is_variant_axis": false,
+            "occupied": {
+              "numerator": 0,
+              "denominator": 2857
+            },
+            "published": {
+              "numerator": 0,
+              "denominator": 2857
+            }
+          }
+        ],
+        "issues": [
+          "no_unambiguous_dimension"
+        ]
+      },
+      {
+        "attribute": "available",
+        "dimension": "nominal",
+        "observed_dimensions": [
+          "nominal"
+        ],
+        "occupied": {
+          "numerator": 2857,
+          "denominator": 2857
+        },
+        "published": {
+          "numerator": 2857,
+          "denominator": 2857
+        },
+        "exact": {
+          "numerator": 2857,
+          "denominator": 2857
+        },
+        "floor_eligible": {
+          "numerator": 2857,
+          "denominator": 2857
+        },
+        "parsed_only": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "conflicted": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "variant_groups": {
+          "numerator": 0,
+          "denominator": 294
+        },
+        "variant_basis": [],
+        "sources": [
+          {
+            "field_name": "/variants/*/available",
+            "liability": "merchant_guaranteed",
+            "certainty": "exact",
+            "is_variant_axis": false,
+            "occupied": {
+              "numerator": 2857,
+              "denominator": 2857
+            },
+            "published": {
+              "numerator": 2857,
+              "denominator": 2857
+            }
+          }
+        ],
+        "issues": []
+      },
+      {
+        "attribute": "compare_at_price",
+        "dimension": "money",
+        "observed_dimensions": [
+          "money"
+        ],
+        "occupied": {
+          "numerator": 84,
+          "denominator": 2857
+        },
+        "published": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "exact": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "floor_eligible": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "parsed_only": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "conflicted": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "variant_groups": {
+          "numerator": 0,
+          "denominator": 294
+        },
+        "variant_basis": [],
+        "sources": [
+          {
+            "field_name": "/variants/*/compare_at_price",
+            "liability": "merchant_guaranteed",
+            "certainty": "exact",
+            "is_variant_axis": false,
+            "occupied": {
+              "numerator": 84,
+              "denominator": 2857
+            },
+            "published": {
+              "numerator": 0,
+              "denominator": 2857
+            }
+          }
+        ],
+        "issues": [
+          "currency_missing_or_ambiguous"
+        ]
+      },
+      {
+        "attribute": "featured_image",
+        "dimension": null,
+        "observed_dimensions": [],
+        "occupied": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "published": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "exact": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "floor_eligible": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "parsed_only": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "conflicted": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "variant_groups": {
+          "numerator": 0,
+          "denominator": 294
+        },
+        "variant_basis": [],
+        "sources": [
+          {
+            "field_name": "/variants/*/featured_image",
+            "liability": "merchant_guaranteed",
+            "certainty": "exact",
+            "is_variant_axis": false,
+            "occupied": {
+              "numerator": 0,
+              "denominator": 2857
+            },
+            "published": {
+              "numerator": 0,
+              "denominator": 2857
+            }
+          }
+        ],
+        "issues": [
+          "no_unambiguous_dimension"
+        ]
+      },
+      {
+        "attribute": "grams",
+        "dimension": "mass",
+        "observed_dimensions": [
+          "mass"
+        ],
+        "occupied": {
+          "numerator": 2857,
+          "denominator": 2857
+        },
+        "published": {
+          "numerator": 2857,
+          "denominator": 2857
+        },
+        "exact": {
+          "numerator": 2857,
+          "denominator": 2857
+        },
+        "floor_eligible": {
+          "numerator": 2857,
+          "denominator": 2857
+        },
+        "parsed_only": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "conflicted": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "variant_groups": {
+          "numerator": 0,
+          "denominator": 294
+        },
+        "variant_basis": [],
+        "sources": [
+          {
+            "field_name": "/variants/*/grams",
+            "liability": "merchant_guaranteed",
+            "certainty": "exact",
+            "is_variant_axis": false,
+            "occupied": {
+              "numerator": 2857,
+              "denominator": 2857
+            },
+            "published": {
+              "numerator": 2857,
+              "denominator": 2857
+            }
+          }
+        ],
+        "issues": []
+      },
+      {
+        "attribute": "height",
+        "dimension": "count",
+        "observed_dimensions": [
+          "count"
+        ],
+        "occupied": {
+          "numerator": 19,
+          "denominator": 2857
+        },
+        "published": {
+          "numerator": 19,
+          "denominator": 2857
+        },
+        "exact": {
+          "numerator": 19,
+          "denominator": 2857
+        },
+        "floor_eligible": {
+          "numerator": 19,
+          "denominator": 2857
+        },
+        "parsed_only": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "conflicted": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "variant_groups": {
+          "numerator": 0,
+          "denominator": 294
+        },
+        "variant_basis": [],
+        "sources": [
+          {
+            "field_name": "/variants/*/featured_image/height",
+            "liability": "merchant_guaranteed",
+            "certainty": "exact",
+            "is_variant_axis": false,
+            "occupied": {
+              "numerator": 19,
+              "denominator": 2857
+            },
+            "published": {
+              "numerator": 19,
+              "denominator": 2857
+            }
+          }
+        ],
+        "issues": []
+      },
+      {
+        "attribute": "price",
+        "dimension": "money",
+        "observed_dimensions": [
+          "money"
+        ],
+        "occupied": {
+          "numerator": 2857,
+          "denominator": 2857
+        },
+        "published": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "exact": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "floor_eligible": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "parsed_only": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "conflicted": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "variant_groups": {
+          "numerator": 0,
+          "denominator": 294
+        },
+        "variant_basis": [],
+        "sources": [
+          {
+            "field_name": "/variants/*/option1#name=Price",
+            "liability": "merchant_guaranteed",
+            "certainty": "exact",
+            "is_variant_axis": false,
+            "occupied": {
+              "numerator": 2,
+              "denominator": 2857
+            },
+            "published": {
+              "numerator": 0,
+              "denominator": 2857
+            }
+          },
+          {
+            "field_name": "/variants/*/price",
+            "liability": "merchant_guaranteed",
+            "certainty": "exact",
+            "is_variant_axis": false,
+            "occupied": {
+              "numerator": 2857,
+              "denominator": 2857
+            },
+            "published": {
+              "numerator": 0,
+              "denominator": 2857
+            }
+          }
+        ],
+        "issues": [
+          "currency_missing_or_ambiguous"
+        ]
+      },
+      {
+        "attribute": "product_type",
+        "dimension": "nominal",
+        "observed_dimensions": [
+          "nominal"
+        ],
+        "occupied": {
+          "numerator": 2857,
+          "denominator": 2857
+        },
+        "published": {
+          "numerator": 2857,
+          "denominator": 2857
+        },
+        "exact": {
+          "numerator": 2857,
+          "denominator": 2857
+        },
+        "floor_eligible": {
+          "numerator": 2857,
+          "denominator": 2857
+        },
+        "parsed_only": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "conflicted": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "variant_groups": {
+          "numerator": 0,
+          "denominator": 294
+        },
+        "variant_basis": [],
+        "sources": [
+          {
+            "field_name": "/product_type",
+            "liability": "merchant_guaranteed",
+            "certainty": "exact",
+            "is_variant_axis": false,
+            "occupied": {
+              "numerator": 2857,
+              "denominator": 2857
+            },
+            "published": {
+              "numerator": 2857,
+              "denominator": 2857
+            }
+          }
+        ],
+        "issues": []
+      },
+      {
+        "attribute": "requires_shipping",
+        "dimension": "nominal",
+        "observed_dimensions": [
+          "nominal"
+        ],
+        "occupied": {
+          "numerator": 2857,
+          "denominator": 2857
+        },
+        "published": {
+          "numerator": 2857,
+          "denominator": 2857
+        },
+        "exact": {
+          "numerator": 2857,
+          "denominator": 2857
+        },
+        "floor_eligible": {
+          "numerator": 2857,
+          "denominator": 2857
+        },
+        "parsed_only": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "conflicted": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "variant_groups": {
+          "numerator": 0,
+          "denominator": 294
+        },
+        "variant_basis": [],
+        "sources": [
+          {
+            "field_name": "/variants/*/requires_shipping",
+            "liability": "merchant_guaranteed",
+            "certainty": "exact",
+            "is_variant_axis": false,
+            "occupied": {
+              "numerator": 2857,
+              "denominator": 2857
+            },
+            "published": {
+              "numerator": 2857,
+              "denominator": 2857
+            }
+          }
+        ],
+        "issues": []
+      },
+      {
+        "attribute": "size",
+        "dimension": "nominal",
+        "observed_dimensions": [
+          "nominal"
+        ],
+        "occupied": {
+          "numerator": 2855,
+          "denominator": 2857
+        },
+        "published": {
+          "numerator": 2855,
+          "denominator": 2857
+        },
+        "exact": {
+          "numerator": 2855,
+          "denominator": 2857
+        },
+        "floor_eligible": {
+          "numerator": 2855,
+          "denominator": 2857
+        },
+        "parsed_only": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "conflicted": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "variant_groups": {
+          "numerator": 293,
+          "denominator": 294
+        },
+        "variant_basis": [
+          "named_selector"
+        ],
+        "sources": [
+          {
+            "field_name": "/variants/*/option1#name=Size",
+            "liability": "merchant_guaranteed",
+            "certainty": "exact",
+            "is_variant_axis": true,
+            "occupied": {
+              "numerator": 2855,
+              "denominator": 2857
+            },
+            "published": {
+              "numerator": 2855,
+              "denominator": 2857
+            }
+          }
+        ],
+        "issues": [
+          "unknown_or_ambiguous_unit"
+        ]
+      },
+      {
+        "attribute": "src",
+        "dimension": "nominal",
+        "observed_dimensions": [
+          "nominal"
+        ],
+        "occupied": {
+          "numerator": 19,
+          "denominator": 2857
+        },
+        "published": {
+          "numerator": 19,
+          "denominator": 2857
+        },
+        "exact": {
+          "numerator": 19,
+          "denominator": 2857
+        },
+        "floor_eligible": {
+          "numerator": 19,
+          "denominator": 2857
+        },
+        "parsed_only": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "conflicted": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "variant_groups": {
+          "numerator": 0,
+          "denominator": 294
+        },
+        "variant_basis": [],
+        "sources": [
+          {
+            "field_name": "/variants/*/featured_image/src",
+            "liability": "merchant_guaranteed",
+            "certainty": "exact",
+            "is_variant_axis": false,
+            "occupied": {
+              "numerator": 19,
+              "denominator": 2857
+            },
+            "published": {
+              "numerator": 19,
+              "denominator": 2857
+            }
+          }
+        ],
+        "issues": []
+      },
+      {
+        "attribute": "taxable",
+        "dimension": "nominal",
+        "observed_dimensions": [
+          "nominal"
+        ],
+        "occupied": {
+          "numerator": 2857,
+          "denominator": 2857
+        },
+        "published": {
+          "numerator": 2857,
+          "denominator": 2857
+        },
+        "exact": {
+          "numerator": 2857,
+          "denominator": 2857
+        },
+        "floor_eligible": {
+          "numerator": 2857,
+          "denominator": 2857
+        },
+        "parsed_only": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "conflicted": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "variant_groups": {
+          "numerator": 0,
+          "denominator": 294
+        },
+        "variant_basis": [],
+        "sources": [
+          {
+            "field_name": "/variants/*/taxable",
+            "liability": "merchant_guaranteed",
+            "certainty": "exact",
+            "is_variant_axis": false,
+            "occupied": {
+              "numerator": 2857,
+              "denominator": 2857
+            },
+            "published": {
+              "numerator": 2857,
+              "denominator": 2857
+            }
+          }
+        ],
+        "issues": []
+      },
+      {
+        "attribute": "title",
+        "dimension": null,
+        "observed_dimensions": [
+          "count",
+          "money",
+          "nominal"
+        ],
+        "occupied": {
+          "numerator": 2857,
+          "denominator": 2857
+        },
+        "published": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "exact": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "floor_eligible": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "parsed_only": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "conflicted": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "variant_groups": {
+          "numerator": 0,
+          "denominator": 294
+        },
+        "variant_basis": [],
+        "sources": [
+          {
+            "field_name": "/variants/*/title",
+            "liability": "merchant_guaranteed",
+            "certainty": "exact",
+            "is_variant_axis": false,
+            "occupied": {
+              "numerator": 2857,
+              "denominator": 2857
+            },
+            "published": {
+              "numerator": 0,
+              "denominator": 2857
+            }
+          }
+        ],
+        "issues": [
+          "currency_missing_or_ambiguous",
+          "no_unambiguous_dimension",
+          "unitless_decimal",
+          "unknown_or_ambiguous_unit"
+        ]
+      },
+      {
+        "attribute": "variant_ids",
+        "dimension": null,
+        "observed_dimensions": [],
+        "occupied": {
+          "numerator": 19,
+          "denominator": 2857
+        },
+        "published": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "exact": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "floor_eligible": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "parsed_only": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "conflicted": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "variant_groups": {
+          "numerator": 0,
+          "denominator": 294
+        },
+        "variant_basis": [],
+        "sources": [
+          {
+            "field_name": "/variants/*/featured_image/variant_ids",
+            "liability": "merchant_guaranteed",
+            "certainty": "exact",
+            "is_variant_axis": false,
+            "occupied": {
+              "numerator": 19,
+              "denominator": 2857
+            },
+            "published": {
+              "numerator": 0,
+              "denominator": 2857
+            }
+          }
+        ],
+        "issues": [
+          "multivalued_field_requires_mapping",
+          "no_unambiguous_dimension"
+        ]
+      },
+      {
+        "attribute": "vendor",
+        "dimension": "nominal",
+        "observed_dimensions": [
+          "nominal"
+        ],
+        "occupied": {
+          "numerator": 2857,
+          "denominator": 2857
+        },
+        "published": {
+          "numerator": 2857,
+          "denominator": 2857
+        },
+        "exact": {
+          "numerator": 2857,
+          "denominator": 2857
+        },
+        "floor_eligible": {
+          "numerator": 2857,
+          "denominator": 2857
+        },
+        "parsed_only": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "conflicted": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "variant_groups": {
+          "numerator": 0,
+          "denominator": 294
+        },
+        "variant_basis": [],
+        "sources": [
+          {
+            "field_name": "/vendor",
+            "liability": "merchant_guaranteed",
+            "certainty": "exact",
+            "is_variant_axis": false,
+            "occupied": {
+              "numerator": 2857,
+              "denominator": 2857
+            },
+            "published": {
+              "numerator": 2857,
+              "denominator": 2857
+            }
+          }
+        ],
+        "issues": []
+      },
+      {
+        "attribute": "width",
+        "dimension": "count",
+        "observed_dimensions": [
+          "count"
+        ],
+        "occupied": {
+          "numerator": 19,
+          "denominator": 2857
+        },
+        "published": {
+          "numerator": 19,
+          "denominator": 2857
+        },
+        "exact": {
+          "numerator": 19,
+          "denominator": 2857
+        },
+        "floor_eligible": {
+          "numerator": 19,
+          "denominator": 2857
+        },
+        "parsed_only": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "conflicted": {
+          "numerator": 0,
+          "denominator": 2857
+        },
+        "variant_groups": {
+          "numerator": 0,
+          "denominator": 294
+        },
+        "variant_basis": [],
+        "sources": [
+          {
+            "field_name": "/variants/*/featured_image/width",
+            "liability": "merchant_guaranteed",
+            "certainty": "exact",
+            "is_variant_axis": false,
+            "occupied": {
+              "numerator": 19,
+              "denominator": 2857
+            },
+            "published": {
+              "numerator": 19,
+              "denominator": 2857
+            }
+          }
+        ],
+        "issues": []
+      }
+    ],
+    "floor": [
+      "size"
+    ],
+    "floor_basis": "Most-published observed selection axis; otherwise most-published structured product attribute. Suggestion only; reviewer must select the floor.",
+    "no_comparable_attributes": {
+      "numerator": 0,
+      "denominator": 2857
+    },
+    "cannot_verify": {
+      "numerator": 2,
+      "denominator": 2857
+    },
+    "warnings": [
+      "attribute_diagnostics_require_review",
+      "human_review_required: catalogue frequency cannot establish the category's necessary attributes"
+    ]
+  },
+  "publication_patterns": [
+    {
+      "attributes": [
+        "available",
+        "grams",
+        "height",
+        "product_type",
+        "requires_shipping",
+        "size",
+        "src",
+        "taxable",
+        "vendor",
+        "width"
+      ],
+      "count": 19
+    },
+    {
+      "attributes": [
+        "available",
+        "grams",
+        "product_type",
+        "requires_shipping",
+        "size",
+        "taxable",
+        "vendor"
+      ],
+      "count": 2836
+    },
+    {
+      "attributes": [
+        "available",
+        "grams",
+        "product_type",
+        "requires_shipping",
+        "taxable",
+        "vendor"
+      ],
+      "count": 2
+    }
+  ],
+  "catalogue_digest": "5e8fbfdc9fe0ec6a43460bf53d95c8d5dbfcf8d614a5d90998d80e4fd0d13dd5"
+}

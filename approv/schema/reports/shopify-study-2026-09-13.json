@@ -1,0 +1,1120 @@
+{
+  "report_version": "catalogue-partner-report-v1",
+  "status": "proposal_requires_human_review",
+  "context": {
+    "merchant": "Shopify study cohort",
+    "scope": "All supplied variants in the cached shopping study. This is a curated cohort across merchants, not an estimate of any complete live store.",
+    "source": "shopper-v3.json",
+    "captured_at": "2026-09-10T00:00:00Z",
+    "source_sha256": "c4818c7b8817c0b1edb2d5e1113aec1d8adcf1b03898b9660bffddd40378c6bf"
+  },
+  "measurement": {
+    "category_id": "shopify.study.all",
+    "observed_at": "2026-09-13T00:00:00Z",
+    "derivation_version": "schema-onboarding-v1",
+    "model_version": "none-deterministic",
+    "prompt_version": "none",
+    "input_records": 33485,
+    "listings": 33485,
+    "denominator_unit": "expanded listings; one row for an unexpanded input record",
+    "interval_method": "Wilson 95%; descriptive catalogue counts, not accuracy",
+    "floor": [
+      "color"
+    ],
+    "floor_basis": "Most-published observed selection axis; otherwise most-published structured product attribute. Suggestion only; reviewer must select the floor.",
+    "no_comparable_attributes": {
+      "numerator": 0,
+      "denominator": 33485,
+      "rate": 0.0,
+      "interval": [
+        0.0,
+        0.00011471283617048133
+      ]
+    },
+    "cannot_verify": {
+      "numerator": 0,
+      "denominator": 33485,
+      "rate": 0.0,
+      "interval": [
+        0.0,
+        0.00011471283617048133
+      ]
+    },
+    "warnings": [
+      "attribute_diagnostics_require_review",
+      "human_review_required: catalogue frequency cannot establish the category's necessary attributes"
+    ]
+  },
+  "catalogue_digest": "c3cd9e69c8fb1bbdd83279010260a4db30c520d6bc4ca1c03438bdb984b0b353",
+  "proposal_id": "a824a4cf7744be62ae6a97683616c00d72cf41dfdc75a7839fcf910e8796b7d5",
+  "attributes": [
+    {
+      "attribute": "availability",
+      "dimension": "nominal",
+      "observed_dimensions": [
+        "nominal"
+      ],
+      "occupied": {
+        "numerator": 33485,
+        "denominator": 33485,
+        "rate": 1.0,
+        "interval": [
+          0.9998852871638296,
+          1.0
+        ]
+      },
+      "published": {
+        "numerator": 33485,
+        "denominator": 33485,
+        "rate": 1.0,
+        "interval": [
+          0.9998852871638296,
+          1.0
+        ]
+      },
+      "exact": {
+        "numerator": 33485,
+        "denominator": 33485,
+        "rate": 1.0,
+        "interval": [
+          0.9998852871638296,
+          1.0
+        ]
+      },
+      "floor_eligible": {
+        "numerator": 33485,
+        "denominator": 33485,
+        "rate": 1.0,
+        "interval": [
+          0.9998852871638296,
+          1.0
+        ]
+      },
+      "parsed_only": {
+        "numerator": 0,
+        "denominator": 33485,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.00011471283617048133
+        ]
+      },
+      "conflicted": {
+        "numerator": 0,
+        "denominator": 33485,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.00011471283617048133
+        ]
+      },
+      "variant_groups": {
+        "numerator": 0,
+        "denominator": 2520,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.0015221240508913078
+        ]
+      },
+      "variant_basis": [],
+      "sources": [
+        {
+          "field_name": "/details/availability",
+          "liability": "merchant_guaranteed",
+          "certainty": "exact",
+          "is_variant_axis": false,
+          "occupied": {
+            "numerator": 33485,
+            "denominator": 33485,
+            "rate": 1.0,
+            "interval": [
+              0.9998852871638296,
+              1.0
+            ]
+          },
+          "published": {
+            "numerator": 33485,
+            "denominator": 33485,
+            "rate": 1.0,
+            "interval": [
+              0.9998852871638296,
+              1.0
+            ]
+          }
+        }
+      ],
+      "issues": [],
+      "missing": {
+        "numerator": 0,
+        "denominator": 33485,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.00011471283617048133
+        ]
+      },
+      "present_but_unusable": {
+        "numerator": 0,
+        "denominator": 33485,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.00011471283617048133
+        ]
+      },
+      "not_verifiable_for_attribute": {
+        "numerator": 0,
+        "denominator": 33485,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.00011471283617048133
+        ]
+      },
+      "actions": [],
+      "action_scope": "category_review",
+      "minimum_repair_scenario": null
+    },
+    {
+      "attribute": "brand",
+      "dimension": "nominal",
+      "observed_dimensions": [
+        "nominal"
+      ],
+      "occupied": {
+        "numerator": 33485,
+        "denominator": 33485,
+        "rate": 1.0,
+        "interval": [
+          0.9998852871638296,
+          1.0
+        ]
+      },
+      "published": {
+        "numerator": 33485,
+        "denominator": 33485,
+        "rate": 1.0,
+        "interval": [
+          0.9998852871638296,
+          1.0
+        ]
+      },
+      "exact": {
+        "numerator": 33485,
+        "denominator": 33485,
+        "rate": 1.0,
+        "interval": [
+          0.9998852871638296,
+          1.0
+        ]
+      },
+      "floor_eligible": {
+        "numerator": 33485,
+        "denominator": 33485,
+        "rate": 1.0,
+        "interval": [
+          0.9998852871638296,
+          1.0
+        ]
+      },
+      "parsed_only": {
+        "numerator": 0,
+        "denominator": 33485,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.00011471283617048133
+        ]
+      },
+      "conflicted": {
+        "numerator": 0,
+        "denominator": 33485,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.00011471283617048133
+        ]
+      },
+      "variant_groups": {
+        "numerator": 0,
+        "denominator": 2520,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.0015221240508913078
+        ]
+      },
+      "variant_basis": [],
+      "sources": [
+        {
+          "field_name": "/details/brand",
+          "liability": "merchant_guaranteed",
+          "certainty": "exact",
+          "is_variant_axis": false,
+          "occupied": {
+            "numerator": 33485,
+            "denominator": 33485,
+            "rate": 1.0,
+            "interval": [
+              0.9998852871638296,
+              1.0
+            ]
+          },
+          "published": {
+            "numerator": 33485,
+            "denominator": 33485,
+            "rate": 1.0,
+            "interval": [
+              0.9998852871638296,
+              1.0
+            ]
+          }
+        }
+      ],
+      "issues": [],
+      "missing": {
+        "numerator": 0,
+        "denominator": 33485,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.00011471283617048133
+        ]
+      },
+      "present_but_unusable": {
+        "numerator": 0,
+        "denominator": 33485,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.00011471283617048133
+        ]
+      },
+      "not_verifiable_for_attribute": {
+        "numerator": 0,
+        "denominator": 33485,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.00011471283617048133
+        ]
+      },
+      "actions": [],
+      "action_scope": "category_review",
+      "minimum_repair_scenario": null
+    },
+    {
+      "attribute": "color",
+      "dimension": "nominal",
+      "observed_dimensions": [
+        "nominal"
+      ],
+      "occupied": {
+        "numerator": 33485,
+        "denominator": 33485,
+        "rate": 1.0,
+        "interval": [
+          0.9998852871638296,
+          1.0
+        ]
+      },
+      "published": {
+        "numerator": 33485,
+        "denominator": 33485,
+        "rate": 1.0,
+        "interval": [
+          0.9998852871638296,
+          1.0
+        ]
+      },
+      "exact": {
+        "numerator": 33485,
+        "denominator": 33485,
+        "rate": 1.0,
+        "interval": [
+          0.9998852871638296,
+          1.0
+        ]
+      },
+      "floor_eligible": {
+        "numerator": 33485,
+        "denominator": 33485,
+        "rate": 1.0,
+        "interval": [
+          0.9998852871638296,
+          1.0
+        ]
+      },
+      "parsed_only": {
+        "numerator": 0,
+        "denominator": 33485,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.00011471283617048133
+        ]
+      },
+      "conflicted": {
+        "numerator": 0,
+        "denominator": 33485,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.00011471283617048133
+        ]
+      },
+      "variant_groups": {
+        "numerator": 177,
+        "denominator": 2520,
+        "rate": 0.07023809523809524,
+        "interval": [
+          0.06090076100031729,
+          0.08088373133866308
+        ]
+      },
+      "variant_basis": [
+        "sibling_value_variation"
+      ],
+      "sources": [
+        {
+          "field_name": "/details/color",
+          "liability": "merchant_guaranteed",
+          "certainty": "exact",
+          "is_variant_axis": true,
+          "occupied": {
+            "numerator": 33485,
+            "denominator": 33485,
+            "rate": 1.0,
+            "interval": [
+              0.9998852871638296,
+              1.0
+            ]
+          },
+          "published": {
+            "numerator": 33485,
+            "denominator": 33485,
+            "rate": 1.0,
+            "interval": [
+              0.9998852871638296,
+              1.0
+            ]
+          }
+        }
+      ],
+      "issues": [],
+      "missing": {
+        "numerator": 0,
+        "denominator": 33485,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.00011471283617048133
+        ]
+      },
+      "present_but_unusable": {
+        "numerator": 0,
+        "denominator": 33485,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.00011471283617048133
+        ]
+      },
+      "not_verifiable_for_attribute": {
+        "numerator": 0,
+        "denominator": 33485,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.00011471283617048133
+        ]
+      },
+      "actions": [],
+      "action_scope": "publication_repair",
+      "minimum_repair_scenario": {
+        "assumption": "If every gap for this attribute becomes consistent, exact merchant evidence; other attributes remain unchanged.",
+        "additional_listings_meeting_proposed_minimum": {
+          "numerator": 0,
+          "denominator": 33485,
+          "rate": 0.0,
+          "interval": [
+            0.0,
+            0.00011471283617048133
+          ]
+        },
+        "remaining_below_proposed_minimum": {
+          "numerator": 0,
+          "denominator": 33485,
+          "rate": 0.0,
+          "interval": [
+            0.0,
+            0.00011471283617048133
+          ]
+        }
+      }
+    },
+    {
+      "attribute": "price",
+      "dimension": "money",
+      "observed_dimensions": [
+        "money"
+      ],
+      "occupied": {
+        "numerator": 33485,
+        "denominator": 33485,
+        "rate": 1.0,
+        "interval": [
+          0.9998852871638296,
+          1.0
+        ]
+      },
+      "published": {
+        "numerator": 33485,
+        "denominator": 33485,
+        "rate": 1.0,
+        "interval": [
+          0.9998852871638296,
+          1.0
+        ]
+      },
+      "exact": {
+        "numerator": 33485,
+        "denominator": 33485,
+        "rate": 1.0,
+        "interval": [
+          0.9998852871638296,
+          1.0
+        ]
+      },
+      "floor_eligible": {
+        "numerator": 33485,
+        "denominator": 33485,
+        "rate": 1.0,
+        "interval": [
+          0.9998852871638296,
+          1.0
+        ]
+      },
+      "parsed_only": {
+        "numerator": 0,
+        "denominator": 33485,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.00011471283617048133
+        ]
+      },
+      "conflicted": {
+        "numerator": 0,
+        "denominator": 33485,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.00011471283617048133
+        ]
+      },
+      "variant_groups": {
+        "numerator": 0,
+        "denominator": 2520,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.0015221240508913078
+        ]
+      },
+      "variant_basis": [],
+      "sources": [
+        {
+          "field_name": "/details/price",
+          "liability": "merchant_guaranteed",
+          "certainty": "exact",
+          "is_variant_axis": false,
+          "occupied": {
+            "numerator": 33485,
+            "denominator": 33485,
+            "rate": 1.0,
+            "interval": [
+              0.9998852871638296,
+              1.0
+            ]
+          },
+          "published": {
+            "numerator": 33485,
+            "denominator": 33485,
+            "rate": 1.0,
+            "interval": [
+              0.9998852871638296,
+              1.0
+            ]
+          }
+        }
+      ],
+      "issues": [],
+      "missing": {
+        "numerator": 0,
+        "denominator": 33485,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.00011471283617048133
+        ]
+      },
+      "present_but_unusable": {
+        "numerator": 0,
+        "denominator": 33485,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.00011471283617048133
+        ]
+      },
+      "not_verifiable_for_attribute": {
+        "numerator": 0,
+        "denominator": 33485,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.00011471283617048133
+        ]
+      },
+      "actions": [],
+      "action_scope": "publication_repair",
+      "minimum_repair_scenario": null
+    },
+    {
+      "attribute": "product_type",
+      "dimension": "nominal",
+      "observed_dimensions": [
+        "nominal"
+      ],
+      "occupied": {
+        "numerator": 33485,
+        "denominator": 33485,
+        "rate": 1.0,
+        "interval": [
+          0.9998852871638296,
+          1.0
+        ]
+      },
+      "published": {
+        "numerator": 33242,
+        "denominator": 33485,
+        "rate": 0.9927430192623563,
+        "interval": [
+          0.9917756591099829,
+          0.9935973315162441
+        ]
+      },
+      "exact": {
+        "numerator": 33242,
+        "denominator": 33485,
+        "rate": 0.9927430192623563,
+        "interval": [
+          0.9917756591099829,
+          0.9935973315162441
+        ]
+      },
+      "floor_eligible": {
+        "numerator": 33242,
+        "denominator": 33485,
+        "rate": 0.9927430192623563,
+        "interval": [
+          0.9917756591099829,
+          0.9935973315162441
+        ]
+      },
+      "parsed_only": {
+        "numerator": 0,
+        "denominator": 33485,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.00011471283617048133
+        ]
+      },
+      "conflicted": {
+        "numerator": 0,
+        "denominator": 33485,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.00011471283617048133
+        ]
+      },
+      "variant_groups": {
+        "numerator": 0,
+        "denominator": 2520,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.0015221240508913078
+        ]
+      },
+      "variant_basis": [],
+      "sources": [
+        {
+          "field_name": "/details/product_type",
+          "liability": "merchant_guaranteed",
+          "certainty": "exact",
+          "is_variant_axis": false,
+          "occupied": {
+            "numerator": 33485,
+            "denominator": 33485,
+            "rate": 1.0,
+            "interval": [
+              0.9998852871638296,
+              1.0
+            ]
+          },
+          "published": {
+            "numerator": 33242,
+            "denominator": 33485,
+            "rate": 0.9927430192623563,
+            "interval": [
+              0.9917756591099829,
+              0.9935973315162441
+            ]
+          }
+        }
+      ],
+      "issues": [
+        "unknown_or_ambiguous_unit"
+      ],
+      "missing": {
+        "numerator": 0,
+        "denominator": 33485,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.00011471283617048133
+        ]
+      },
+      "present_but_unusable": {
+        "numerator": 243,
+        "denominator": 33485,
+        "rate": 0.007256980737643721,
+        "interval": [
+          0.006402668483755938,
+          0.008224340890017084
+        ]
+      },
+      "not_verifiable_for_attribute": {
+        "numerator": 243,
+        "denominator": 33485,
+        "rate": 0.007256980737643721,
+        "interval": [
+          0.006402668483755938,
+          0.008224340890017084
+        ]
+      },
+      "actions": [
+        "First confirm that this source describes a requested product fact; incidental catalogue metadata need not become a verification requirement.",
+        "Publish a supported, unambiguous unit with the value; distinguish US from imperial fluid ounces."
+      ],
+      "action_scope": "category_review",
+      "minimum_repair_scenario": null
+    },
+    {
+      "attribute": "size",
+      "dimension": "nominal",
+      "observed_dimensions": [
+        "count",
+        "nominal"
+      ],
+      "occupied": {
+        "numerator": 33485,
+        "denominator": 33485,
+        "rate": 1.0,
+        "interval": [
+          0.9998852871638296,
+          1.0
+        ]
+      },
+      "published": {
+        "numerator": 33485,
+        "denominator": 33485,
+        "rate": 1.0,
+        "interval": [
+          0.9998852871638296,
+          1.0
+        ]
+      },
+      "exact": {
+        "numerator": 33485,
+        "denominator": 33485,
+        "rate": 1.0,
+        "interval": [
+          0.9998852871638296,
+          1.0
+        ]
+      },
+      "floor_eligible": {
+        "numerator": 33485,
+        "denominator": 33485,
+        "rate": 1.0,
+        "interval": [
+          0.9998852871638296,
+          1.0
+        ]
+      },
+      "parsed_only": {
+        "numerator": 0,
+        "denominator": 33485,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.00011471283617048133
+        ]
+      },
+      "conflicted": {
+        "numerator": 0,
+        "denominator": 33485,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.00011471283617048133
+        ]
+      },
+      "variant_groups": {
+        "numerator": 2520,
+        "denominator": 2520,
+        "rate": 1.0,
+        "interval": [
+          0.9984778759491088,
+          1.0
+        ]
+      },
+      "variant_basis": [
+        "sibling_value_variation"
+      ],
+      "sources": [
+        {
+          "field_name": "/details/size",
+          "liability": "merchant_guaranteed",
+          "certainty": "exact",
+          "is_variant_axis": true,
+          "occupied": {
+            "numerator": 33485,
+            "denominator": 33485,
+            "rate": 1.0,
+            "interval": [
+              0.9998852871638296,
+              1.0
+            ]
+          },
+          "published": {
+            "numerator": 33485,
+            "denominator": 33485,
+            "rate": 1.0,
+            "interval": [
+              0.9998852871638296,
+              1.0
+            ]
+          }
+        }
+      ],
+      "issues": [
+        "heterogeneous_selector_values_preserved_as_labels",
+        "unitless_decimal",
+        "unknown_or_ambiguous_unit"
+      ],
+      "missing": {
+        "numerator": 0,
+        "denominator": 33485,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.00011471283617048133
+        ]
+      },
+      "present_but_unusable": {
+        "numerator": 0,
+        "denominator": 33485,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.00011471283617048133
+        ]
+      },
+      "not_verifiable_for_attribute": {
+        "numerator": 0,
+        "denominator": 33485,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.00011471283617048133
+        ]
+      },
+      "actions": [],
+      "action_scope": "publication_repair",
+      "minimum_repair_scenario": null
+    },
+    {
+      "attribute": "title",
+      "dimension": "nominal",
+      "observed_dimensions": [
+        "nominal"
+      ],
+      "occupied": {
+        "numerator": 33485,
+        "denominator": 33485,
+        "rate": 1.0,
+        "interval": [
+          0.9998852871638296,
+          1.0
+        ]
+      },
+      "published": {
+        "numerator": 33463,
+        "denominator": 33485,
+        "rate": 0.9993429893982381,
+        "interval": [
+          0.9990053529464817,
+          0.999566063748923
+        ]
+      },
+      "exact": {
+        "numerator": 33463,
+        "denominator": 33485,
+        "rate": 0.9993429893982381,
+        "interval": [
+          0.9990053529464817,
+          0.999566063748923
+        ]
+      },
+      "floor_eligible": {
+        "numerator": 33463,
+        "denominator": 33485,
+        "rate": 0.9993429893982381,
+        "interval": [
+          0.9990053529464817,
+          0.999566063748923
+        ]
+      },
+      "parsed_only": {
+        "numerator": 0,
+        "denominator": 33485,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.00011471283617048133
+        ]
+      },
+      "conflicted": {
+        "numerator": 0,
+        "denominator": 33485,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.00011471283617048133
+        ]
+      },
+      "variant_groups": {
+        "numerator": 0,
+        "denominator": 2520,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.0015221240508913078
+        ]
+      },
+      "variant_basis": [],
+      "sources": [
+        {
+          "field_name": "/details/title",
+          "liability": "merchant_guaranteed",
+          "certainty": "exact",
+          "is_variant_axis": false,
+          "occupied": {
+            "numerator": 33485,
+            "denominator": 33485,
+            "rate": 1.0,
+            "interval": [
+              0.9998852871638296,
+              1.0
+            ]
+          },
+          "published": {
+            "numerator": 33463,
+            "denominator": 33485,
+            "rate": 0.9993429893982381,
+            "interval": [
+              0.9990053529464817,
+              0.999566063748923
+            ]
+          }
+        }
+      ],
+      "issues": [
+        "unknown_or_ambiguous_unit"
+      ],
+      "missing": {
+        "numerator": 0,
+        "denominator": 33485,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.00011471283617048133
+        ]
+      },
+      "present_but_unusable": {
+        "numerator": 22,
+        "denominator": 33485,
+        "rate": 0.000657010601761983,
+        "interval": [
+          0.0004339362510770324,
+          0.0009946470535183705
+        ]
+      },
+      "not_verifiable_for_attribute": {
+        "numerator": 22,
+        "denominator": 33485,
+        "rate": 0.000657010601761983,
+        "interval": [
+          0.0004339362510770324,
+          0.0009946470535183705
+        ]
+      },
+      "actions": [
+        "First confirm that this source describes a requested product fact; incidental catalogue metadata need not become a verification requirement.",
+        "Publish a supported, unambiguous unit with the value; distinguish US from imperial fluid ounces."
+      ],
+      "action_scope": "category_review",
+      "minimum_repair_scenario": null
+    },
+    {
+      "attribute": "variant",
+      "dimension": "nominal",
+      "observed_dimensions": [
+        "nominal"
+      ],
+      "occupied": {
+        "numerator": 33485,
+        "denominator": 33485,
+        "rate": 1.0,
+        "interval": [
+          0.9998852871638296,
+          1.0
+        ]
+      },
+      "published": {
+        "numerator": 33410,
+        "denominator": 33485,
+        "rate": 0.9977601911303569,
+        "interval": [
+          0.9971935627529255,
+          0.9982126205412737
+        ]
+      },
+      "exact": {
+        "numerator": 33410,
+        "denominator": 33485,
+        "rate": 0.9977601911303569,
+        "interval": [
+          0.9971935627529255,
+          0.9982126205412737
+        ]
+      },
+      "floor_eligible": {
+        "numerator": 33410,
+        "denominator": 33485,
+        "rate": 0.9977601911303569,
+        "interval": [
+          0.9971935627529255,
+          0.9982126205412737
+        ]
+      },
+      "parsed_only": {
+        "numerator": 0,
+        "denominator": 33485,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.00011471283617048133
+        ]
+      },
+      "conflicted": {
+        "numerator": 0,
+        "denominator": 33485,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.00011471283617048133
+        ]
+      },
+      "variant_groups": {
+        "numerator": 0,
+        "denominator": 2520,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.0015221240508913078
+        ]
+      },
+      "variant_basis": [],
+      "sources": [
+        {
+          "field_name": "/details/variant",
+          "liability": "merchant_guaranteed",
+          "certainty": "exact",
+          "is_variant_axis": false,
+          "occupied": {
+            "numerator": 33485,
+            "denominator": 33485,
+            "rate": 1.0,
+            "interval": [
+              0.9998852871638296,
+              1.0
+            ]
+          },
+          "published": {
+            "numerator": 33410,
+            "denominator": 33485,
+            "rate": 0.9977601911303569,
+            "interval": [
+              0.9971935627529255,
+              0.9982126205412737
+            ]
+          }
+        }
+      ],
+      "issues": [
+        "ambiguous_quantity_expression"
+      ],
+      "missing": {
+        "numerator": 0,
+        "denominator": 33485,
+        "rate": 0.0,
+        "interval": [
+          0.0,
+          0.00011471283617048133
+        ]
+      },
+      "present_but_unusable": {
+        "numerator": 75,
+        "denominator": 33485,
+        "rate": 0.002239808869643124,
+        "interval": [
+          0.0017873794587263017,
+          0.002806437247074594
+        ]
+      },
+      "not_verifiable_for_attribute": {
+        "numerator": 75,
+        "denominator": 33485,
+        "rate": 0.002239808869643124,
+        "interval": [
+          0.0017873794587263017,
+          0.002806437247074594
+        ]
+      },
+      "actions": [
+        "First confirm that this source describes a requested product fact; incidental catalogue metadata need not become a verification requirement.",
+        "Publish a single selected quantity and its unit in structured fields."
+      ],
+      "action_scope": "category_review",
+      "minimum_repair_scenario": null
+    }
+  ]
+}
