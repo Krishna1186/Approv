@@ -35,25 +35,33 @@ VERDICT: dict[Support, str] = {
 # `allow` is not a statement that everything matched: a preference can be contradicted
 # under one, and a returns agent who reads "authorised" as "nothing was wrong" will tell
 # a customer something this record does not support.
+#
+# Templates, because the subject is not always an order. A record built at shelf time
+# carries no order line, and a headline saying "this order" would assert a purchase the
+# record cannot show — the largest sentence on the page claiming the one thing missing
+# from it.
 DECISION_HEADLINE: dict[Decision, str] = {
-    Decision.ALLOW: "Approv authorised this order",
-    Decision.CONFIRM: "Approv did not authorise this order on its own",
-    Decision.REFUSE: "Approv refused this order",
+    Decision.ALLOW: "Approv authorised %s",
+    Decision.CONFIRM: "Approv did not authorise %s on its own",
+    Decision.REFUSE: "Approv refused %s",
 }
+
+ORDER_SUBJECT = "this order"
+NO_ORDER_SUBJECT = "this product comparison"
 
 DECISION_MEANS: dict[Decision, str] = {
     Decision.ALLOW: (
-        "Approv compared the request it was given against this order and found no "
-        "blocking requirement contradicted and none left unresolved."
+        "Approv compared the request it was given against %s and found no blocking "
+        "requirement contradicted and none left unresolved."
     ),
     Decision.CONFIRM: (
         "At least one blocking requirement could not be settled from the merchant's own "
         "catalogue data, so Approv asked for confirmation before purchase instead of "
-        "authorising it. Unknown never authorises."
+        "authorising %s. Unknown never authorises."
     ),
     Decision.REFUSE: (
         "The merchant's own catalogue data contradicted a blocking requirement, so "
-        "Approv refused. If the order was fulfilled anyway it was fulfilled against this "
+        "Approv refused %s. If it was fulfilled anyway it was fulfilled against this "
         "decision, and this record does not defend it."
     ),
 }
@@ -74,6 +82,25 @@ DECISION_DOES_NOT_MEAN: dict[Decision, str] = {
         "next. It says the catalogue contradicted the request at the moment of decision."
     ),
 }
+
+
+def subject(*, has_order: bool) -> str:
+    return ORDER_SUBJECT if has_order else NO_ORDER_SUBJECT
+
+
+def headline(decision: Decision, *, has_order: bool) -> str:
+    return DECISION_HEADLINE[decision] % subject(has_order=has_order)
+
+
+def means(decision: Decision, *, has_order: bool) -> str:
+    """The decision's meaning, with the subject the record can actually support.
+
+    All three sentences carry the placeholder, because `%` against a string that has none
+    raises rather than passing the text through — so a sentence rewritten without it would
+    fail loudly here instead of quietly printing "this order" over a record that has none.
+    """
+    return DECISION_MEANS[decision] % subject(has_order=has_order)
+
 
 # --- how much an attribute counted ------------------------------------------------------
 

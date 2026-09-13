@@ -463,9 +463,9 @@ def build(record: ComparisonRecord) -> Document:
     text = (record.request_text or "").strip()
     return Document(
         record=record,
-        headline=lang.DECISION_HEADLINE[decision],
+        headline=lang.headline(decision, has_order=record.order is not None),
         summary=summary_line(record),
-        means=lang.DECISION_MEANS[decision],
+        means=lang.means(decision, has_order=record.order is not None),
         does_not_mean=lang.DECISION_DOES_NOT_MEAN[decision],
         alerts=alerts(record),
         identity=identity_rows(record),

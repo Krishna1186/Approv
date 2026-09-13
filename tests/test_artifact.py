@@ -396,6 +396,16 @@ def test_a_finding_with_no_evidence_prints_the_row_and_says_so():
     assert "The catalogue published no value" in render_html(doc.record)
 
 
+def test_a_record_with_no_order_line_is_not_headlined_as_an_order():
+    """The largest sentence on the page must not assert the one thing missing from the
+    record. A shelf-time comparison headlined "Approv authorised this order" is a claim
+    about a purchase, printed in the type size people read first."""
+    doc = build(record(order=None))
+    assert lang.NO_ORDER_SUBJECT in doc.headline and lang.NO_ORDER_SUBJECT in doc.means
+    assert lang.ORDER_SUBJECT not in doc.headline
+    assert lang.ORDER_SUBJECT in build(record()).headline
+
+
 def test_a_record_with_no_order_line_says_it_is_not_a_purchase():
     """A record without an order is a comparison about a product. Only the first is a
     dispute defence and the difference has to be legible, or a shelf-time comparison gets
