@@ -124,15 +124,29 @@ observation date, derivation version, `model_version="none-deterministic"` and
 From the checkout containing this module:
 
 ```text
-python -B -m pytest approv/schema/tests -q -p no:cacheprovider
+python -m pytest -q
 ```
 
 `industrial_catalogue.json` is an independently constructed nested catalogue with
 different field names, missing values, string prices and units in values.
-`test_catalogue_acceptance.py` also exercises the complete cached Shopify study
-catalogue without its hand-authored schema or evidence, and the raw export without
-pre-mapping its option names. These tests explicitly skip when the local cache is
-absent; a skip is not an acceptance pass.
+The default suite also runs checked-in Shopify samples, without needing the local
+cache. Their assertions are shared with the exhaustive tests: source dimensions,
+variant axes, field publication counts and listing denominators are still checked.
+Samples retain sibling SKU context across available hosts; the generator and source
+hashes are in `tests/fixtures/`. They are regression fixtures, not a statistical
+estimate of catalogue behaviour.
+
+The full cached Shopify study and raw export remain available explicitly:
+
+```text
+python -m pytest --schema-exhaustive -m schema_exhaustive -q
+```
+
+These tests exercise every original row and retain their full-catalogue assertions.
+They skip in the default run before opening the caches, and also explicitly skip
+when requested without the required local cache. A skip is not an acceptance pass.
+The existing `pyproject.toml` testpaths entry must retain `approv/schema/tests` so
+both the fast tests and the exhaustive option are collected by the default command.
 
 Unsupported or ambiguous structures require review: unrelated repeated collections
 are never combined into a cartesian product, opaque multiple-value fields are not
