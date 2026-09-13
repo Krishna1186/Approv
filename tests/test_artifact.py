@@ -27,9 +27,9 @@ from approv.receipts.chain import generate_key, public_key_hex, seal
 from approv.receipts.record import build_record
 from approv.types.core import (
     Attestation, AttributeSpec, Bound, BoundOp, CategorySchema, Certainty, Channel, Claim,
-    ComparisonRecord, Constraint, Count, Criticality, Decision, Dimension, Evidence,
-    FieldProfile, Finding, CheckKind, Liability, Money, OrderLine, Quantity, ReasonCode,
-    Support, Term,
+    ComparisonRecord, Completion, Constraint, Count, Criticality, Decision, Dimension,
+    Evidence, FieldProfile, Finding, CheckKind, Liability, Money, OrderLine, Quantity,
+    ReasonCode, Support, Term,
 )
 
 SCHEMA = CategorySchema(
@@ -222,6 +222,73 @@ def test_a_misaligned_coverage_column_invalidates_the_whole_column():
     skewed = good.model_copy(update={"coverage": (lang.GUARANTEED,)})
     assert len(skewed.findings) == 2
     assert coverage_classes(skewed) == (lang.UNRECORDED, lang.UNRECORDED)
+
+
+def test_a_channel_that_earns_no_coverage_is_stated_before_any_attribute_class(tmp_path):
+    """DR 0023 put the channel's own verdict on the record. This is the module it was put
+    there for.
+
+    Two different things are called coverage: whether this kind of order earns a promise
+    at all, and which of its attributes would carry one if it did. Printing only the
+    second is exactly how a page ends up promising something on an order that was ruled
+    out before any attribute was compared — which is the failure DR 0023 closed.
+    """
+    uncovered = record().model_copy(update={
+        "hash": None, "signature": None, "covered": False,
+        "coverage_notes": ("this order could not be classified as agent-placed, so it is "
+                           "out of coverage",)})
+    doc = build(uncovered)
+
+    assert doc.channel_covered is False and doc.channel_notes
+    assert any(a.severity == STOP and "earns no coverage" in a.text for a in doc.alerts)
+    for rendering in (render_text(uncovered), render_html(uncovered)):
+        assert "earns NO coverage" in flat(rendering)
+        assert "could not be classified as agent-placed" in flat(rendering)
+
+
+def test_a_covered_channel_says_so_rather_than_staying_silent():
+    """The ordinary case is a statement too. A reader who only ever sees the warning
+    cannot tell the difference between a covered channel and a field we forgot to print."""
+    assert "is one that earns coverage" in flat(render_text(record()))
+
+
+def test_a_verification_that_did_not_complete_says_so_before_its_decision_is_read(tmp_path):
+    """DR 0004. An aborted check confirms, and that confirm is a fact about Approv's own
+    availability rather than a judgement about the order. A returns desk reading it as
+    caution about the catalogue would be reading our outage as their problem."""
+    aborted = record().model_copy(update={
+        "hash": None, "signature": None, "completion": Completion.PROVIDER_UNAVAILABLE,
+        "completion_detail": "extractor timed out after 8s"})
+    doc = build(aborted)
+
+    assert any(a.severity == STOP and "did not run to a conclusion" in a.text
+               for a in doc.alerts)
+    text = flat(render_text(aborted))
+    assert "did NOT complete: provider unavailable" in text
+    assert "extractor timed out after 8s" in text
+
+
+def test_an_ordinary_record_still_says_the_verification_completed():
+    assert "ran to a conclusion" in render_text(record())
+
+
+def test_a_row_marked_as_bad_news_still_prints_the_value_it_has():
+    """`missing` marks a row as bad news; it does not mean the value is absent.
+
+    Found by the test above: the completion row printed "(not recorded)" over "did NOT
+    complete: provider unavailable" — the one row saying the check failed, rendered as an
+    empty field. Only an actually empty value earns the placeholder.
+    """
+    from approv.artifact.document import Row
+    from approv.artifact.render import _row_lines
+
+    told = _row_lines(Row("Verification", "did NOT complete: provider unavailable",
+                          missing=True))
+    assert "did NOT complete: provider unavailable" in " ".join(told)
+    assert "(not recorded)" not in " ".join(told)
+
+    absent = _row_lines(Row("Variant", "", missing=True))
+    assert "(not recorded)" in " ".join(absent)
 
 
 def test_the_coverage_caveat_is_on_both_renderings():

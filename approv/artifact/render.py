@@ -99,7 +99,11 @@ def _row_lines(row: Row, indent: str = "  ") -> list[str]:
     with no spaces in it is never broken across lines however far it runs past the
     margin. A sentence is wrapped under the label instead.
     """
-    value = "(not recorded)" if row.missing else row.value
+    # `missing` marks a row as bad news; it does not mean the value is absent. Substituting
+    # the placeholder whenever it was set printed "(not recorded)" over "did NOT complete:
+    # provider unavailable" — the one row that says the check failed, rendered as though
+    # the field were empty. Only an actually empty value gets the placeholder.
+    value = row.value or ("(not recorded)" if row.missing else "")
     label = row.label + " " + "." * max(2, _LABEL - len(row.label))
     head = f"{indent}{label} {value}"
     if len(head) > WIDTH and " " in value.strip():
@@ -140,6 +144,35 @@ def _finding_lines(item: AttributeFinding) -> list[str]:
         lines.append(_hang(note, indent, hang))
     lines.append(_hang(f"How much it counted: {item.weight_means}", indent, hang))
     lines.append(_hang(f"Coverage: {item.coverage_means}", indent, hang))
+    return lines
+
+
+CHANNEL_COVERED = (
+    "The channel this order arrived through is one that earns coverage: a stated request "
+    "was recovered and the order was classified as agent-placed."
+)
+
+CHANNEL_UNCOVERED = (
+    "The channel this order arrived through earns NO coverage (DR 0020: no declaration, "
+    "no coverage). Nothing on this record carries a promise about this order, whatever "
+    "the per-attribute classes above say."
+)
+
+
+def _channel_lines(document: Document) -> list[str]:
+    """The channel's own coverage verdict, beside the per-attribute classes.
+
+    Two different things are called coverage and a reader is entitled to both: whether
+    this *kind of order* earns any promise at all, and which of its attributes would carry
+    one if it did. Printing only the second is how a page ends up promising something on
+    an order that was ruled out before any attribute was compared.
+    """
+    lines = [_wrap(CHANNEL_COVERED if document.channel_covered else CHANNEL_UNCOVERED,
+                   "  "), ""]
+    for note in document.channel_notes:
+        lines.append(_hang("- " + note, "  ", "    "))
+    if document.channel_notes:
+        lines.append("")
     return lines
 
 
@@ -222,6 +255,7 @@ def to_text(document: Document, *, public_key: str | None = None,
         out.append("")
     if not any(document.coverage_buckets.values()):
         out += ["  Nothing on this record carries a coverage class.", ""]
+    out += _channel_lines(document)
     out.append(_wrap(lang.COVERAGE_CAVEAT, "  "))
 
     out += ["", "-" * WIDTH, HEADINGS[4], "-" * WIDTH, ""]
@@ -400,6 +434,10 @@ def _coverage_html(document: Document) -> str:
             f"<p>{_e(lang.COVERAGE_MEANS[key])}</p></div>")
     if not out:
         out.append("<p>Nothing on this record carries a coverage class.</p>")
+    channel = CHANNEL_COVERED if document.channel_covered else CHANNEL_UNCOVERED
+    out.append('<div class="bucket%s"><h3>This channel</h3><p>%s</p>%s</div>'
+               % ("" if document.channel_covered else " out_of_coverage", _e(channel),
+                  "".join("<p>%s</p>" % _e(note) for note in document.channel_notes)))
     out.append(f'<div class="caveat-box">{_e(lang.COVERAGE_CAVEAT)}</div>')
     return "\n".join(out)
 

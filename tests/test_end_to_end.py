@@ -504,18 +504,14 @@ def test_the_ledger_refuses_a_second_decision_under_one_correlation_id(tmp_path)
 # --------------------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "SEAM 1: approv.schema emits FieldProfile.field_name as JSON-pointer paths with "
-    "wildcards and selectors (/variants/*/options/*/value#name=Colour); "
-    "surface.evidence_from_snapshot reads field_name as a dotted key path into the "
-    "snapshot dict (variant.colour). A schema derived from a catalogue reads zero "
-    "evidence from that same catalogue, silently, and every order confirms."))
 def test_a_derived_schema_reads_the_catalogue_it_was_derived_from():
     """Onboarding's output has to be the surface's input, or onboarding onboards nothing.
 
-    Nothing raises and nothing is logged: `_dig` returns None for every profile, every
-    attribute goes UNSTATED, and the deployment looks like a cautious engine rather than
-    a disconnected one. A merchant would see a 100% confirm rate and no error at all.
+    Was seam 1, cleared by a15c548: the resolver walks the pointer paths onboarding
+    actually emits, and a schema whose paths read nothing now aborts as
+    CATALOGUE_UNREADABLE instead of confirming every order in silence. Kept as a
+    regression test, because the failure it guards against was invisible — no exception,
+    no log line, just a deployment that looked cautious and was disconnected.
     """
     catalogue = [
         {"product_id": "duvet-tandem", "title": "Tandem Stripe Duvet Cover",
@@ -538,21 +534,20 @@ def test_a_derived_schema_reads_the_catalogue_it_was_derived_from():
     assert evidence, "a schema derived from this catalogue reads nothing from it"
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "SEAM 2: verify_order(signing_key=...) seals with prev_hash=None because the surface "
-    "does not know the chain head; ReceiptStore.append requires a pre-signed receipt to "
-    "extend the current head. The first append succeeds and every later one raises "
-    "ChainConflict. Two modules own sealing and neither knows about the other."))
-def test_a_surface_that_seals_can_still_append_to_the_ledger(tmp_path):
-    """The surface's own signature invites this and the ledger cannot accept it.
+def test_the_surface_hands_the_ledger_an_unsealed_record(tmp_path):
+    """One owner for sealing, and it is the one that knows the chain head.
 
-    `signing_key` and `prev_hash` on `verify_order` are usable exactly once per ledger.
-    Nothing in either signature says the two are alternatives, and the failure arrives on
-    the second order rather than the first.
+    Was seam 2, cleared by a5b4134: `verify_order` no longer takes a signing key at all,
+    which is the version of the fix that cannot be got wrong — a caller cannot pass one by
+    accident. Kept as a regression test because the failure arrived on the *second* order,
+    where a smoke test would not have found it.
     """
     store = ReceiptStore(tmp_path / "receipts.sqlite")
     key = generate_key()
-    for correlation in ("corr-one", "corr-two"):
+    import inspect
+    assert "signing_key" not in inspect.signature(verify_order).parameters
+
+    for correlation in ("corr-one", "corr-two", "corr-three"):
         result = verify_order(
             VerificationRequest(
                 merchant_id="hearth-and-loom", correlation_id=correlation,
@@ -560,8 +555,12 @@ def test_a_surface_that_seals_can_still_append_to_the_ledger(tmp_path):
                 artifact=Structured(protocol="acp",
                                     fields={"size": "King", "colour": "Frost"}),
                 product_snapshot=dict(CATALOGUE["duvet-tandem"])),
-            schemas={"bedding": SCHEMA}, signing_key=key)
-        store.append(result.record, key)
+            schemas={"bedding": SCHEMA})
+        assert result.record.hash is None and result.record.signature is None
+        sealed = store.append(result.record, key)
+        assert sealed.hash and sealed.signature
+
+    assert len(store.export()["records"]) == 3
 
 
 @pytest.mark.xfail(strict=True, reason=(
@@ -584,14 +583,13 @@ def test_a_retried_verification_returns_the_receipt_it_already_wrote(tmp_path):
     assert first.hash == second.hash
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "SEAM 4: intake decides whether a channel earns coverage at all (DR 0020: no "
-    "declaration, no coverage) and returns it on VerificationResult.covered, which is not "
-    "a field of ComparisonRecord. The verdict is dropped the moment the record is stored "
-    "or rendered, so the dispute artifact prints per-finding 'Covered' for an order intake "
-    "had already ruled out of coverage. Nothing downstream can see the contradiction."))
 def test_an_order_whose_channel_earns_no_coverage_guarantees_nothing():
     """The two coverage notions have to agree on the page, or one of them is a lie.
+
+    Was seam 4, cleared by DR 0023: `covered` and `coverage_notes` are fields of the
+    record now, inside the digest, and `coverage_of` withdraws the guarantee when the
+    channel earned none. Kept as a regression test, and extended to assert the verdict
+    survives onto the record rather than only into the per-finding classes.
 
     An on-site search with no agent detection is out of coverage as a channel: DR 0020
     makes the declaration the thing coverage attaches to. The findings underneath are
@@ -616,6 +614,8 @@ def test_an_order_whose_channel_earns_no_coverage_guarantees_nothing():
         schemas={"bedding": SCHEMA}, extract=extract)
 
     assert result.covered is False, "this channel is out of coverage by intake's own rule"
+    assert result.record.covered is False, "and the record has to carry it"
+    assert result.record.coverage_notes, "with the reason, or it cannot be explained"
     document = build(result.record)
     guaranteed = [row.attribute for row in document.findings
                   if row.coverage == lang.GUARANTEED]
@@ -623,16 +623,59 @@ def test_an_order_whose_channel_earns_no_coverage_guarantees_nothing():
         "the document promises %s on an order intake ruled out of coverage" % guaranteed)
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "SEAM 5: on-site search states the same attribute twice -- once as a filter "
+    "(search.filters.size, TOOL_ARGUMENT) and once inside the query text (search.query, "
+    "AGENT_MESSAGE) -- and algebra.runner raises DUPLICATE_CLAIM for any two claims on one "
+    "attribute without comparing their values. Two claims that AGREE are corroboration, "
+    "not a disambiguation problem, and treating them as unresolved escalates the order. "
+    "Measured on a synthetic week: 20 of 24 on-site-search orders confirmed for this "
+    "reason alone. Found by reading the weekly partner report, not by any module's tests."))
+def test_a_filter_and_a_query_that_agree_are_corroboration_not_a_conflict():
+    """The second fidelity tier of DR 0020, made unusable by a rule written for the first.
+
+    A shopper who types "king duvet" into the box and ticks the King filter has stated the
+    same requirement on two channels at once. That is the strongest evidence in the record
+    that they meant King, and it currently produces the weakest outcome available: both
+    findings UNSTATED at confidence 0.0, the attribute unresolved, the order escalated.
+
+    The rule is right for what it was written for — an agent asserting two different values
+    for one attribute is a real conflict nobody can resolve. It does not check whether the
+    two values differ.
+    """
+    result = verify_order(
+        VerificationRequest(
+            merchant_id="hearth-and-loom", correlation_id="corr-search-agrees",
+            category_id="bedding", order=order_for("duvet-tandem"),
+            artifact=Search(query="king duvet in frost", filters={"size": "King"}),
+            product_snapshot=dict(CATALOGUE["duvet-tandem"])),
+        schemas={"bedding": SCHEMA},
+        extract=extractor(("size", "King", "king duvet"),
+                          ("colour", "Frost", "in frost")))
+
+    stated = [c for c in result.record.request_constraints if c.attribute == "size"]
+    assert len(stated) == 2, "the filter and the query both state size"
+    assert len({c.value.surface for c in stated}) == 1, "and they agree"
+
+    size = [f for f in result.record.findings if f.attribute == "size"]
+    assert not any(f.support is Support.UNSTATED for f in size), (
+        "two agreeing statements of one attribute left it unresolved: %s"
+        % [(f.support.value, [r.value for r in f.reasons]) for f in size])
+
+
 def test_the_seams_are_the_only_known_gaps():
     """A roll-call, so a seam cannot be quietly deleted along with its marker.
 
     If a seam is fixed, its `xfail(strict=True)` fails and the marker comes off. If one is
     *removed* rather than fixed, this count changes and says so. The number is the claim:
-    four known breaks between four modules, all reported, none accommodated.
+    Two open: seam 3 (retry identity) and seam 5 (agreeing duplicate claims).
+    Seams 1, 2 and 4 were cleared by their owners and their tests stayed as
+    regressions -- which is what the strict marker is for: a fix cannot land
+    silently, and neither can a seam being deleted instead of fixed.
     """
     marked = {name: obj for name, obj in vars(sys.modules[__name__]).items()
               if callable(obj) and any(mark.name == "xfail"
                                        for mark in getattr(obj, "pytestmark", ()))}
-    assert len(marked) == 4, sorted(marked)
+    assert len(marked) == 2, sorted(marked)
     assert all("SEAM" in obj.pytestmark[0].kwargs["reason"] for obj in marked.values())
     assert all(obj.pytestmark[0].kwargs["strict"] for obj in marked.values())

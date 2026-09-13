@@ -37,7 +37,7 @@ from decimal import Decimal
 
 from approv.artifact import language as lang
 from approv.types.core import (
-    CheckKind, ComparisonRecord, Criticality, Decision, Finding, Support,
+    CheckKind, ComparisonRecord, Completion, Criticality, Decision, Finding, Support,
 )
 
 VERSION = "artifact-v1"
@@ -124,6 +124,11 @@ class Document:
     coverage_buckets: dict[str, tuple[str, ...]] = field(default_factory=dict)
     integrity: tuple[Row, ...] = ()
     signed: bool = False
+    # DR 0023: whether the channel this order arrived through earns coverage at all, and
+    # why not. A per-finding class means nothing over a channel that earns none, and this
+    # document is where the two would otherwise contradict each other in front of a reader.
+    channel_covered: bool = True
+    channel_notes: tuple[str, ...] = ()
 
 
 # --------------------------------------------------------------------------------------
@@ -368,6 +373,13 @@ def integrity_rows(record: ComparisonRecord) -> tuple[Row, ...]:
         Row("Signing key", record.key_id or "", missing=record.key_id is None,
             note="the published Approv key that signed this record."),
         Row("Signature format", record.signature_version),
+        # Printed on every record, including the ordinary one. "Completed" is a fact a
+        # reader needs stated rather than inferred from the absence of a warning.
+        Row("Verification", "ran to a conclusion"
+            if record.completion is Completion.COMPLETED
+            else "did NOT complete: " + record.completion.value.replace("_", " "),
+            missing=record.completion is not Completion.COMPLETED,
+            note=record.completion_detail),
         Row("Who signed which half", lang.ATTESTATION[record.attestation]),
         Row("Engine version", record.evaluator_version),
         Row("Reading version", "%s, prompt %s" % (record.model_version,
@@ -397,6 +409,17 @@ def alerts(record: ComparisonRecord) -> tuple[Alert, ...]:
                          "No requirement was recovered from the request, so this record "
                          "cannot show that the order matched anything that was asked "
                          "for."))
+    if record.completion is not Completion.COMPLETED:
+        out.append(Alert(STOP,
+                         "This verification did not run to a conclusion (%s). Its "
+                         "decision is a fact about Approv's own availability, not a "
+                         "judgement about this order, and nothing on it is covered."
+                         % record.completion.value.replace("_", " ")))
+    if not record.covered:
+        out.append(Alert(STOP,
+                         "The channel this order arrived through earns no coverage at "
+                         "all. Whatever the per-attribute classes below say, this record "
+                         "carries no promise about this order."))
     if record.findings and lang.UNRECORDED in coverage_classes(record):
         out.append(Alert(STOP,
                          "This record does not carry a usable coverage class for its "
@@ -489,4 +512,6 @@ def build(record: ComparisonRecord) -> Document:
         coverage_buckets=_buckets(record),
         integrity=integrity_rows(record),
         signed=bool(record.hash and record.signature),
+        channel_covered=record.covered,
+        channel_notes=tuple(record.coverage_notes),
     )
