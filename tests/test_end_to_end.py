@@ -474,25 +474,38 @@ def test_rotation_leaves_every_earlier_receipt_verifiable(tmp_path):
     assert signed_by == [first_id, second_id]
 
 
-def place_record(*, correlation_id):
-    """One unsigned record, for tests that care about the ledger rather than the decision."""
+def place_record(*, correlation_id, colour="Frost"):
+    """One unsigned record, for tests that care about the ledger rather than the decision.
+
+    `colour` varies the content without varying the join key, so a test can tell a
+    *different decision* under one correlation id apart from an identical retry of the
+    same one. Those are opposite requirements and conflating them is what made seam 3
+    unfixable without editing this file.
+    """
     return verify_order(
         VerificationRequest(
             merchant_id="hearth-and-loom", correlation_id=correlation_id,
             category_id="bedding", order=order_for("duvet-tandem"),
             artifact=Structured(protocol="acp",
-                                fields={"size": "King", "colour": "Frost"}),
+                                fields={"size": "King", "colour": colour}),
             product_snapshot=dict(CATALOGUE["duvet-tandem"])),
         schemas={"bedding": SCHEMA}).record
 
 
 def test_the_ledger_refuses_a_second_decision_under_one_correlation_id(tmp_path):
-    """The join key to the agent's half is also the key a replay would reuse."""
+    """The join key to the agent's half is also the key a replay would reuse.
+
+    A *different* record under an existing correlation id is the attack: swapping one
+    decision for another beneath a key the agent already signed against. An identical
+    retry is not -- that is a merchant whose first call timed out, and seam 3 requires it
+    to return the receipt already written. This test pins the first and says nothing
+    about the second.
+    """
     store = ReceiptStore(tmp_path / "receipts.sqlite")
     key = generate_key()
     store.append(place_record(correlation_id="corr-one"), key)
     with pytest.raises(ReplayError):
-        store.append(place_record(correlation_id="corr-one"), key)
+        store.append(place_record(correlation_id="corr-one", colour="Stone"), key)
 
 
 # --------------------------------------------------------------------------------------
@@ -663,12 +676,21 @@ def test_a_filter_and_a_query_that_agree_are_corroboration_not_a_conflict():
         % [(f.support.value, [r.value for r in f.reasons]) for f in size])
 
 
+# The open seams, by test name. Named rather than counted so that clearing one is a
+# single legible edit by whoever fixed it, instead of a hardcoded number that blocks the
+# fix it was meant to protect. Removing a name here is as loud as changing a count was.
+OPEN_SEAMS = {
+    "test_a_retried_verification_returns_the_receipt_it_already_wrote",   # seam 3, codex1
+    "test_a_filter_and_a_query_that_agree_are_corroboration_not_a_conflict",  # seam 5, claude1
+}
+
+
 def test_the_seams_are_the_only_known_gaps():
     """A roll-call, so a seam cannot be quietly deleted along with its marker.
 
-    If a seam is fixed, its `xfail(strict=True)` fails and the marker comes off. If one is
-    *removed* rather than fixed, this count changes and says so. The number is the claim:
-    Two open: seam 3 (retry identity) and seam 5 (agreeing duplicate claims).
+    If a seam is fixed, its `xfail(strict=True)` fails and the marker comes off, and the
+    name comes out of OPEN_SEAMS. If one is *removed* rather than fixed, this set stops
+    matching and says so. The names are the claim.
     Seams 1, 2 and 4 were cleared by their owners and their tests stayed as
     regressions -- which is what the strict marker is for: a fix cannot land
     silently, and neither can a seam being deleted instead of fixed.
@@ -676,6 +698,6 @@ def test_the_seams_are_the_only_known_gaps():
     marked = {name: obj for name, obj in vars(sys.modules[__name__]).items()
               if callable(obj) and any(mark.name == "xfail"
                                        for mark in getattr(obj, "pytestmark", ()))}
-    assert len(marked) == 2, sorted(marked)
+    assert set(marked) == OPEN_SEAMS, sorted(set(marked) ^ OPEN_SEAMS)
     assert all("SEAM" in obj.pytestmark[0].kwargs["reason"] for obj in marked.values())
     assert all(obj.pytestmark[0].kwargs["strict"] for obj in marked.values())
