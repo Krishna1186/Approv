@@ -1,0 +1,87 @@
+{
+  "version": "catalogue-locator-v1",
+  "positive": [
+    {
+      "id": "cached-flat-sku",
+      "catalogue_fixture": "shopify_cached_sample.json",
+      "record_index": 0,
+      "expected": [
+        {"attribute": "size", "field_name": "/details/size", "value": {"kind": "term", "surface": "3XL"}},
+        {"attribute": "color", "field_name": "/details/color", "value": {"kind": "term", "surface": "Carbon"}},
+        {"attribute": "price", "field_name": "/details/price", "value": {"kind": "money", "amount": "78.00", "currency": "USD"}}
+      ]
+    },
+    {
+      "id": "raw-numbered-option-selected-first-sku",
+      "catalogue_fixture": "shopify_raw_sample.json",
+      "record_index": 0,
+      "variant_path": ["variants"],
+      "variant_index": 0,
+      "expected": [
+        {"attribute": "size", "field_name": "/variants/*/option1#name=Size", "value": {"kind": "term", "surface": "13.5"}},
+        {"attribute": "grams", "field_name": "/variants/*/grams", "value": {"kind": "quantity", "magnitude": "960", "unit": "g", "dimension": "mass"}}
+      ],
+      "absent": ["color", "price"]
+    },
+    {
+      "id": "raw-numbered-option-selected-second-sku",
+      "catalogue_fixture": "shopify_raw_sample.json",
+      "record_index": 0,
+      "variant_path": ["variants"],
+      "variant_index": 1,
+      "expected": [
+        {"attribute": "size", "field_name": "/variants/*/option1#name=Size", "value": {"kind": "term", "surface": "8"}}
+      ],
+      "absent": ["color", "price"]
+    },
+    {
+      "id": "nested-pairs-units-money-and-parent",
+      "catalogue_fixture": "industrial_catalogue.json",
+      "record_index": 0,
+      "variant_path": ["stock", "editions"],
+      "variant_index": 0,
+      "expected": [
+        {"attribute": "finish", "field_name": "/stock/editions/*/selections/*/selection#name=Finish", "value": {"kind": "term", "surface": "matte"}},
+        {"attribute": "bore", "field_name": "/stock/editions/*/selections/*/selection#name=Bore", "value": {"kind": "quantity", "magnitude": "12", "unit": "mm", "dimension": "length"}},
+        {"attribute": "reach", "field_name": "/stock/editions/*/properties/reach", "value": {"kind": "quantity", "magnitude": "2", "unit": "m", "dimension": "length"}},
+        {"attribute": "invoice", "field_name": "/stock/editions/*/invoice", "value": {"kind": "money", "amount": "19.90", "currency": "GBP"}},
+        {"attribute": "display", "field_name": "/maker/display", "value": {"kind": "term", "surface": "Estuary Works"}},
+        {"attribute": "wall_thickness", "field_name": "/narrative", "certainty": "parsed", "value": {"kind": "quantity", "magnitude": "2", "unit": "mm", "dimension": "length"}}
+      ]
+    },
+    {
+      "id": "nested-selected-null-is-missing",
+      "catalogue_fixture": "industrial_catalogue.json",
+      "record_index": 0,
+      "variant_path": ["stock", "editions"],
+      "variant_index": 2,
+      "expected": [
+        {"attribute": "finish", "field_name": "/stock/editions/*/selections/*/selection#name=Finish", "value": {"kind": "term", "surface": "waxed"}}
+      ],
+      "absent": ["reach"]
+    },
+    {
+      "id": "escaped-keys-and-unicode-selector",
+      "catalogue_fixture": "locator_catalogue.json",
+      "record_index": 0,
+      "expected": [
+        {"attribute": "coat.tone", "field_name": "/spec~1sheet/coat.tone", "value": {"kind": "term", "surface": "navy"}},
+        {"attribute": "star*field", "field_name": "/spec~1sheet/star~2field", "value": {"kind": "term", "surface": "matte"}},
+        {"attribute": "hash#field", "field_name": "/spec~1sheet/hash~3field", "value": {"kind": "term", "surface": "woven"}},
+        {"attribute": "tilde~field", "field_name": "/spec~1sheet/tilde~0field", "value": {"kind": "term", "surface": "linen"}},
+        {"attribute": "couleur_/_été_#1", "field_name": "/selection/value#name=Couleur%20%2F%20%C3%A9t%C3%A9%20%231", "value": {"kind": "term", "surface": "bleu"}},
+        {"attribute": "finish", "field_name": "/description", "certainty": "parsed", "value": {"kind": "term", "surface": "matte"}},
+        {"attribute": "wall_thickness", "field_name": "/description", "certainty": "parsed", "value": {"kind": "quantity", "magnitude": "2", "unit": "mm", "dimension": "length"}}
+      ]
+    }
+  ],
+  "negative": [
+    {"id": "numbered-option-renamed", "base": "raw-numbered-option-selected-first-sku", "mutations": [{"path": ["options", 0, "name"], "value": "Material"}], "absent": ["size", "color"]},
+    {"id": "numbered-option-wrong-case", "base": "raw-numbered-option-selected-first-sku", "mutations": [{"path": ["options", 0, "name"], "value": "size"}], "absent": ["size", "color"]},
+    {"id": "numbered-option-metadata-absent", "base": "raw-numbered-option-selected-first-sku", "mutations": [{"path": ["options"], "value": []}], "absent": ["size", "color"]},
+    {"id": "unselected-multiple-skus", "base": "raw-numbered-option-selected-first-sku", "keep_all_variants": true, "absent": ["size", "color", "grams", "price"]},
+    {"id": "pair-label-mismatch", "base": "nested-pairs-units-money-and-parent", "mutations": [{"path": ["stock", "editions", 0, "selections", 0, "label"], "value": "Material"}], "absent": ["finish"]},
+    {"id": "duplicate-pair-selector", "base": "nested-pairs-units-money-and-parent", "mutations": [{"path": ["stock", "editions", 0, "selections"], "value": [{"label": "Finish", "selection": "matte"}, {"label": "Finish", "selection": "gloss"}]}], "absent": ["finish"]},
+    {"id": "literal-locator-key-cannot-spoof-a-path", "base": "cached-flat-sku", "mutations": [{"path": ["details", "size"], "value": null}, {"path": ["/details/size"], "value": "spoofed"}], "absent": ["size"]}
+  ]
+}
