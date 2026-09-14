@@ -229,3 +229,33 @@ def test_a_label_that_only_failed_to_type_is_read_by_both_halves(records):
                  if source.field_name == "/variants/*/size"]
     assert published and all(source.published.numerator == 2 for source in published)
     assert [e for e in read_selected(product, proposal) if e.field_name == "/variants/*/size"]
+
+
+def test_an_enumerated_price_like_label_survives_and_an_empty_slot_does_not(records):
+    """DR 0029's two edges, both found by measurement rather than by reading the diff.
+
+    A gift card sold as `$35` is an enumerated selector value: the merchant listed the
+    complete domain, so it is a label, and `read_value` refuses it as money because `$` is
+    not an ISO currency. A first cut of the shared rule dropped it and the cohort's correct
+    rate fell from 98.51% to 98.10% -- 44 slots, all gift cards.
+
+    The same rule must still refuse an option slot the variant left empty, which the other
+    cut admitted as the literal label `None`.
+    """
+    product = deepcopy(records[0])
+    product["options"] = [{"name": "Denomination", "position": 1, "values": ["$35", "Custom"]}]
+    # A sibling that reads as plain text is what settles the axis as NOMINAL; a lone
+    # money-shaped value settles it as MONEY, where none of this applies.
+    product["variants"][0]["option1"] = "$35"
+    product["variants"][1]["option1"] = "Custom"
+    product["variants"].append({"id": 173, "sku": "three", "option1": None, "price": "12.00"})
+    proposal = propose_schema([product], category_id="synthetic")
+    denomination = [row for row in proposal.report.attributes if row.attribute == "denomination"]
+    assert denomination, "an enumerated selector is still an attribute"
+    assert denomination[0].published.numerator == 2, "two labels published, and not the empty slot"
+    assert denomination[0].published.denominator == 3
+
+    emitted = [e for e in read_selected(product, proposal) if e.attribute == "denomination"]
+    assert [e.value.surface for e in emitted] == ["$35"]
+    assert not [e for e in read_selected(product, proposal, index=2)
+                if e.attribute == "denomination"]

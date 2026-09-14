@@ -13,7 +13,7 @@ from approv.types.core import (
     Liability, Term,
 )
 
-from .catalogue import Cell, discover
+from .catalogue import Cell, discover, nominal_label
 from .models import (
     AttributeReport, ConfirmedSchema, PublicationPattern, SchemaProposal, Share,
     SourcePolicy, SourceReport, VerifiabilityReport,
@@ -53,11 +53,8 @@ def _usable(cell: Cell, dimension: Dimension | None) -> bool:
     if dimension is None:
         return False
     if dimension is Dimension.NOMINAL:
-        # Full labels can remain labels, but an invalid price cannot. DR 0029: the same
-        # pair as `surface.verification._LABEL_SAFE`, and not narrowed to selectors -- a
-        # merchant publishing `3XL` in a field called size has published a label whether
-        # or not the feed also enumerated it, and the reader reads it either way.
-        return cell.value is not None or cell.issue in {"unitless_decimal", "unknown_or_ambiguous_unit"}
+        # DR 0029: the same function the reader uses, so the two cannot drift apart.
+        return nominal_label(cell) is not None
     return cell.value is not None and cell.dimension is dimension
 
 

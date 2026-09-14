@@ -140,6 +140,44 @@ class Cell:
     present: bool = True
 
 
+# The readings that may still be compared as a label even though typing them failed.
+# `3XL` is not a unit and `13.5` has none; the whole surface text is what the merchant
+# published either way.
+_LABEL_SAFE = frozenset({"unitless_decimal", "unknown_or_ambiguous_unit"})
+# And the ones where there is no honest surface text at all: stringifying a money object,
+# copying six hundred characters of description into a label, or keeping a string that
+# holds two quantity readings -- `1 fl oz | 30 ml`, out of a description -- would each
+# manufacture the comparison that having no value correctly refuses.
+_NOT_TEXT = frozenset({"unsupported_object", "invalid_money_amount", "invalid_number",
+                       "multivalued_field_requires_mapping", "invalid_typed_value",
+                       "prose_requires_labelled_extraction", "ambiguous_quantity_expression"})
+
+
+def nominal_label(cell: "Cell") -> str | None:
+    """The text this cell may be compared as when its attribute is NOMINAL, or None.
+
+    DR 0029. One function because there were two: `derive._usable` decided what counted as
+    published and `surface.verification._settled_value` decided what the reader emitted,
+    they were written months apart, and on real feeds they disagreed 29 times out of 7,179
+    probed variants -- derivation calling a source never usable while the reader emitted
+    guaranteed evidence from it. Agreement between two rules is a thing that has to be
+    maintained; one rule is a thing that cannot drift.
+
+    Three ways to be a label, and the third is DR 0028: the merchant *enumerated* this
+    value, so the whole string is one of the choices on offer whatever we failed to make of
+    it. A gift card sold as `$35` is a selector label, not a money amount we may guess a
+    currency for. Prose gets no such licence, which is the whole of the distinction.
+    """
+    # An absent cell has nothing to compare. It has to be refused here rather than by each
+    # caller, because the selector branch below would otherwise read an empty option slot
+    # as the label `None` -- which is what the two-rule version quietly did on one side.
+    if not cell.present or cell.issue in _NOT_TEXT:
+        return None
+    if cell.value is not None or cell.issue in _LABEL_SAFE or cell.option:
+        return cell.raw
+    return None
+
+
 @dataclass(frozen=True)
 class Listing:
     group: str | None

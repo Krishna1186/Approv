@@ -48,17 +48,43 @@ separates them is the *issue code*, not where the cell came from:
 
 ## The decision
 
-**One rule, named once and shared.** `_LABEL_SAFE = {unitless_decimal,
-unknown_or_ambiguous_unit}`, applied identically by `derive._usable` and
-`_settled_value`, with no `option` condition on either side.
-`ambiguous_quantity_expression` joins `_NOT_TEXT`.
+**One function, `schema.catalogue.nominal_label`, called by both.** Not two rules kept in
+agreement — agreement is a thing that has to be maintained, and these two were written
+months apart and drifted. Three ways to be a label:
 
-Consequences, both intended:
+1. the reading succeeded;
+2. it failed only to *type* a whole label — `unitless_decimal`,
+   `unknown_or_ambiguous_unit`. This is `3XL`;
+3. the merchant **enumerated** it. DR 0028's principle: the value is one of the choices on
+   offer, whatever we failed to make of it.
 
-- The reader stops emitting from prose it could not resolve. 29 of 7,179 probed variants
-  on the cohort; zero after.
-- Derivation starts counting `3XL`-shaped labels as published wherever they appear, not
-  only inside a selector, which is what the reader was already doing.
+`ambiguous_quantity_expression` joins `_NOT_TEXT`, and an absent cell is refused inside the
+function rather than beside it.
+
+## Two corrections the measurement made, which reading the diff did not
+
+**The first cut dropped the enumerated branch** on the grounds that `3XL` proved `option`
+was not the axis. It is not the *only* axis. Gift cards are sold as `$35`, `read_value`
+refuses that as money because `$` is not an ISO currency, and the value is neither typed
+nor `_LABEL_SAFE` — so the reader went silent on it. The cohort's correct rate fell from
+**98.51% to 98.10%**, 44 selected slots, every one a gift card. A selector value the
+merchant listed is a label; that branch is load-bearing and it is back.
+
+**The second cut then read an empty option slot as the literal label `None`**, because
+`option` alone admitted a cell with no value and no issue. Caught by an onboarding
+fixture whose published count went from 4 to 5. `present` is now checked inside the
+function, which is where the two-rule version had it on one side only.
+
+Both are pinned. The audit found the first and the suite found the second, which is the
+argument for running both against every change to this rule.
+
+## Measured consequence
+
+- The reader stops emitting from prose it could not resolve: 29 of 7,179 probed variants
+  before, zero after.
+- Derivation counts `3XL`-shaped labels wherever they appear rather than only inside a
+  selector, which is what the reader already did.
+- Correct and wrong selected slots are unchanged — 98.5% and 0.0%.
 
 ## What this costs
 
