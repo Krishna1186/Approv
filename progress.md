@@ -679,7 +679,7 @@ ask for. It waits for the agent-side product, which DR 0020 keeps and does not b
 
 Do not wire it. Its tests keep passing, which is the whole cost of keeping it.
 
-## Fifty real catalogues, and the two things they found (14 September)
+## Fifty real catalogues, and the three things they found (14 September)
 
 The first time onboarding met catalogues nobody here chose the shape of: a frozen
 purposive cohort of fifty D2C Shopify stores, ten each across apparel, footwear, grocery,
@@ -697,37 +697,44 @@ real: four 404s with no feed at that path, three 403s, one 401, one robots denia
 challenge page, one endpoint that is not a product feed, and one host whose TLS fails
 twice.
 
-**The reader is right about what it reads.** Across 6,158 probed variants and 9,460
-selected slots in the audited stores: **98.50% of slots correct, 0.00% wrong, 1.14%
-missing.** Wrong is the number that matters — it is the confident-wrong class §7 ranks
-first — and the independent oracle, which imports no Approv code, found none of it. The
-probes were adversarially tested first: a deliberately sabotaged reader scores 2 of 2
-wrong, and a silent reader scores 2 of 2 missing, so a zero here is a measurement rather
-than a hole in the instrument.
+**The reader is right about what it reads.** Across 7,179 probed variants and 10,842
+selected slots in the 38 audited stores — 120,459 listings — **98.51% of slots correct,
+0.00% wrong, 1.18% missing.** Wrong is the number that matters: it is the confident-wrong
+class §7 ranks first, and the independent oracle, which imports no Approv code, found none
+of it. The probes were adversarially tested before being believed — a deliberately
+sabotaged reader scores 2 of 2 wrong, a silent one 2 of 2 missing — so the zero is a
+measurement rather than a hole in the instrument.
 
-**What it was wrong about was what it chose to read.** Two defects, both pinned as strict
-xfails by the audit and both now ruled on:
+**What it was wrong about was what it chose to read.** Three defects, each pinned as a
+strict xfail by the audit and each now ruled on. Measured on the 38-store cohort at
+`2fcaff4` against the same cohort before the rulings:
 
 | | before | after |
 |---|---|---|
-| variants carrying image metadata as evidence (DR 0027) | 2,468 / 6,158 — **40.1%** | 0 |
-| stores with media attribute profiles | 24 / 32 — **75%** | 0 |
-| variants where derivation and the reader disagreed (DR 0028) | 34 / 6,158 — 0.55% | 0 |
-| slots correct | 9,318 / 9,460 — 98.50% | **unchanged** |
+| variants carrying image metadata as evidence (DR 0027) | **40.1%** | 0 |
+| stores with media attribute profiles | 24 of 32 — **75%** | 0 of 38 |
+| derivation and the reader disagreeing (DR 0028, DR 0029) | 29 / 7,179 — 0.40% | 0 |
+| slots correct | 10,680 / 10,842 — 98.51% | **unchanged** |
 | slots wrong | 0 | **unchanged** |
 
-Both fixes removed the defect and moved nothing else, which is the only shape that
-justifies a change to a shared walk.
+Each removed its defect and moved nothing else, which is the only shape that justifies a
+change to a shared walk — and *demonstrating* that took three audit runs rather than one.
+DR 0029's first cut dropped the enumerated-selector branch and cost 44 slots, all gift
+cards sold as `$35`; its second admitted an empty option slot as the literal label `None`.
+The audit caught the first and the unit suite caught the second. Neither alone was enough,
+and the suite was green through the first.
 
 The locator shapes are unanimous and that is itself a finding: object pointers, variant
-array fields and option-table selected slots appear in **32 of 32** audited stores, named
-pair selectors and labelled prose selectors in **none**. The shapes we built for are the
-shapes that exist; the two we also built for are not in this cohort. Proposed floors are
-`size` (18 stores), `color` (9), `shade` (3), `quantity` (1), `grams` (1).
+array fields and option-table selected slots appear in **every audited store**, named pair
+selectors and labelled prose selectors in **none**. The shapes we built for are the shapes
+that exist; two we also built for are not in this cohort. Proposed floors are `size` (19
+stores), `color` (11), `shade` (4), and one each of `quantity`, `grams`, `charm` and
+`skin_solution_(shade)` — the last two being exactly the "review this before adopting it"
+case the proposal is supposed to raise rather than settle.
 
-`binding_unassessed_missing_sku` is 5.75% — variants the feed publishes with no SKU, where
-`OrderLine` cannot be constructed at all. That is the onboarding prerequisite already in
-the partner handoff, now with a rate against it.
+`binding_unassessed_missing_sku` is **8.51%** — variants the feed publishes with no SKU,
+where `OrderLine` cannot be constructed at all. That is the first onboarding prerequisite
+in the partner handoff, now with a rate against it.
 
 **Terms screening is a recorded flag, not legal clearance, and the ruling behind it is
 the founder's.** The retrieval above uses `--terms-policy record-only`: twenty-seven of
