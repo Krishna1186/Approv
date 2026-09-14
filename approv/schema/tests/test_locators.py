@@ -36,4 +36,4 @@ def test_every_profile_in_acceptance_fixtures_obeys_the_shared_wire_grammar():
         assert proposal.proposed_schema.field_profiles
         for profile in proposal.proposed_schema.field_profiles:
             locator = parse_locator(profile.field_name)
-            assert format_locator(locator.segments, selector=locator.selector) == profile.field_name
+            assert format_locator(locator.segments, selector=locator.selector, table=locator.table) == profile.field_name

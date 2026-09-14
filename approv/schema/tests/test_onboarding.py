@@ -128,7 +128,7 @@ def test_literal_keys_cannot_impersonate_a_dynamic_option_source():
     p = propose([{"options": [{"name": "Size", "values": ["S"]}],
                   "variants": [{"sku": "a", "option1": "S", "option1#name=Size": "malicious"}]}])
     sources = {f.field_name for f in p.proposed_schema.field_profiles}
-    assert "/variants/*/option1#name=Size" in sources
+    assert "/variants/*/option1#name=Size&table=%2Foptions" in sources
     assert "/variants/*/option1~3name=Size" in sources
     with pytest.raises(ValueError, match="control characters"):
         propose([{chr(0): "hidden"}])

@@ -1,0 +1,26 @@
+[
+  {
+    "id": "flat-a", "product_id": "flat-family",
+    "options": [{"name": "Color", "position": 2, "values": ["navy", "sand"]}, {"name": "Size", "position": 1, "values": ["8", "9"]}],
+    "option1": "8", "option2": "navy"
+  },
+  {
+    "id": "flat-b", "product_id": "flat-family",
+    "options": [{"name": "Size", "position": 1, "values": ["8", "9"]}, {"name": "Color", "position": 2, "values": ["navy", "sand"]}],
+    "option1": "9", "option2": "sand"
+  },
+  {
+    "envelope": {
+      "names/#~*": [{"name": "Bore", "values": ["12 mm", "16 mm"]}],
+      "editions": [{"sku": "bore-a", "option1": "12 mm"}, {"sku": "bore-b", "option1": "16 mm"}]
+    }
+  },
+  {
+    "id": "nested-local-table",
+    "options": [{"name": "Unrelated ancestor label", "values": ["unused"]}],
+    "variants": [
+      {"sku": "local-a", "choice_names": [{"name": "Finish & tone", "position": 1, "values": ["matte", "gloss"]}], "option1": "matte"},
+      {"sku": "local-b", "choice_names": [{"name": "Finish & tone", "position": 1, "values": ["matte", "gloss"]}], "option1": "gloss"}
+    ]
+  }
+]
