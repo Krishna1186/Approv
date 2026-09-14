@@ -14,6 +14,7 @@ from approv.ops.app import Application, Runtime
 from approv.ops.telemetry import Operation
 from approv.receipts.chain import verify
 from approv.receipts.keys import KeyStore
+from approv.receipts.store import ReceiptStore
 
 
 def call(runtime, method="GET", path="/livez", body=None, *, authorized=True, raw=None):
@@ -79,6 +80,27 @@ def test_missing_store_is_not_replaced_with_an_empty_ledger(deployment):
     with pytest.raises(ValueError, match="missing"):
         Runtime(deployment)
     assert not file.exists()
+
+
+def test_sandbox_runtime_requires_its_own_store_and_ignores_no_namespace_override(runtime, body):
+    sandbox_path = runtime.deployment.base / "sandbox.sqlite3"
+    ReceiptStore(sandbox_path, namespace="sandbox")
+    deployment = replace(runtime.deployment,
+                         settings=runtime.deployment.settings.model_copy(update={"store": sandbox_path}))
+    with pytest.raises(ValueError, match="namespace"):
+        Runtime(deployment, interpreter_factory=runtime.extractor.interpreter_factory)
+    sandbox = Runtime(deployment, namespace="sandbox", interpreter_factory=runtime.extractor.interpreter_factory)
+    response = call(sandbox, "POST", "/v1/verify", body)
+    assert response.status_code == 200
+    original = response.json()
+    assert original["record"]["store_namespace"] == "sandbox"
+    verify(original["record"], deployment.public_keys)
+    assert call(sandbox, "POST", "/v1/verify", body).json() == original
+    assert call(sandbox, path="/readyz").json()["store_namespace"] == "sandbox"
+    assert runtime.store.export()["records"] == []
+    for field in ("namespace", "store_namespace", "sandbox"):
+        assert call(runtime, "POST", "/v1/verify", {**body, field: "sandbox"}).status_code == 422
+    assert runtime.store.export()["records"] == []
 
 
 def test_authentication_and_deployment_values_are_not_caller_controlled(runtime, body):

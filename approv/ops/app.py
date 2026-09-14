@@ -28,13 +28,13 @@ from approv.types.core import Completion, Evidence, UnreadPolicy
 
 
 class Runtime:
-    def __init__(self, deployment, *, interpreter_factory=None, kms_client=None):
+    def __init__(self, deployment, *, namespace="production", interpreter_factory=None, kms_client=None):
         self.deployment = deployment
         config, base = deployment.settings, deployment.base
         # No silent empty ledger, ephemeral key, missing extractor or automatic migration.
         config.api_token.read(base)
         config.extractor.credential.read(base)
-        self.store = ReceiptStore(base / config.store, create=False, migrate=False)
+        self.store = ReceiptStore(base / config.store, namespace=namespace, create=False, migrate=False)
         audit(self.store, deployment.public_keys)
         self.signers = SignerLoader(deployment, kms_client=kms_client)
         self.signers.load()
@@ -77,6 +77,7 @@ class Runtime:
                     except Exception:
                         checks[name] = "unavailable"
                 self._ready = {"status": "ready" if all(v == "ok" for v in checks.values()) else "not_ready",
+                               "store_namespace": self.store.namespace,
                                "checks": checks, "deployment_hash": self.deployment.digest,
                                "checked_at_unix": time.time(),
                                "cache_seconds": self.deployment.settings.readiness_ttl_seconds}
@@ -248,4 +249,6 @@ class Application:
 
 
 def create_app():
+    # The factory is deliberately production-only. Sandbox requires an explicit CLI
+    # --namespace or Runtime argument and a separately initialized database.
     return Application(Runtime(load_deployment()))
