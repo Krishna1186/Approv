@@ -324,6 +324,53 @@ def test_the_merchants_reason_is_kept_verbatim():
     assert kept[0].merchant_reason == words
 
 
+def test_the_desks_own_reason_code_is_a_field_of_its_own():
+    """Their coding, beside their words and not read out of them. Classifying the free
+    text into a taxonomy we chose would mean grading our own work against categories we
+    picked — we would decide what counts as a wrong item and then report how often we got
+    wrong items right."""
+    kept = []
+    ingest_outcome(outcome(merchant_reason="looked nothing like the photo",
+                           reason_code="RTN-COLOUR"), record_outcome=kept.append)
+
+    assert kept[0].reason_code == "RTN-COLOUR"
+    assert kept[0].merchant_reason == "looked nothing like the photo"
+
+
+def test_kept_is_derivable_from_a_ship_date_and_a_window():
+    """Without these a keep is not observable at all: a return is known the day it
+    happens, a keep only by a window expiring. A feed of shipped and returned events has
+    a denominator containing every return and no keeps, so precision over it is 100% by
+    construction and the report is right to refuse to print it."""
+    kept = []
+    ingest_outcome(outcome(kind=OutcomeKind.SHIPPED,
+                           ship_date=datetime(2026, 8, 1, tzinfo=timezone.utc),
+                           return_window_days=30), record_outcome=kept.append)
+
+    assert kept[0].ship_date and kept[0].return_window_days == 30
+
+
+def test_a_partner_who_can_send_the_close_date_outright_is_believed():
+    """Preferred over ship-plus-days by anything reading both: a partner computing this
+    has already applied their own holiday rules and goodwill exceptions, and recomputing
+    it from a nominal window length would overwrite their answer with our arithmetic."""
+    closes = datetime(2026, 9, 1, tzinfo=timezone.utc)
+    kept = []
+    ingest_outcome(outcome(return_window_closes_at=closes), record_outcome=kept.append)
+
+    assert kept[0].return_window_closes_at == closes
+
+
+def test_every_added_outcome_field_is_optional():
+    """Partners arrive at different tiers. A required field would turn "cannot answer that
+    yet" into "cannot be onboarded", and the report already prints the reason a row cannot
+    be computed instead of a number."""
+    bare = outcome()
+
+    assert (bare.reason_code, bare.ship_date, bare.return_window_days,
+            bare.return_window_closes_at) == (None, None, None, None)
+
+
 def test_nothing_in_the_decision_path_can_read_an_outcome():
     """The field most likely to be quietly promoted into a signal. The moment a merchant's
     free text reaches criticality or the evaluator, §1's central claim is false — so it is

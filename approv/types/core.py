@@ -146,6 +146,13 @@ class OrderOutcome(BaseModel):
 
     `mode` travels with the outcome so a sandbox result can never be joined to a live
     record. Nothing here is a decision; it is evidence about one already made.
+
+    **Everything below `merchant_reason` is optional, and that is the point.** Partners
+    arrive at different tiers: some send a returns export with nothing but a date, some
+    code every return, some can say when a window closed. A feed must degrade honestly
+    rather than refuse — a required field would turn "this partner cannot answer that yet"
+    into "this partner cannot be onboarded", and the report already knows how to print the
+    reason a row cannot be computed instead of a number.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -155,6 +162,32 @@ class OrderOutcome(BaseModel):
     mode: Mode = Mode.SHADOW
     merchant_id: str | None = None
     merchant_reason: str | None = None
+    # The returns desk's **own** code, verbatim and as a field of its own rather than a
+    # reading of the free text beside it.
+    #
+    # A string, deliberately not an enum of ours. Classifying `merchant_reason` into an
+    # Approv taxonomy would mean grading our own work against categories we chose, which
+    # measures nothing: we would decide what counts as "wrong item" and then report how
+    # often we got "wrong item" right. Their coding is evidence because they chose it, and
+    # they chose it before knowing what we would do with it. A consumer that recognises
+    # the code may use it; one that does not keeps it raw and says so.
+    reason_code: str | None = None
+    # When the line shipped and how long the customer has to send it back. Between them
+    # these make **kept** derivable — window closed, nothing came back — and without one
+    # of them it is not derivable at all.
+    #
+    # This is the difference between a precision figure and a tautology. A return is known
+    # on the day it happens; a keep is only ever known by a window expiring. So a feed of
+    # shipped/returned events alone has a denominator containing every return and no keeps,
+    # and any rate over it is 100% by construction. `report.outcomes` refuses to print such
+    # a number, correctly, and these fields are what let it print one instead.
+    ship_date: datetime | None = None
+    return_window_days: int | None = Field(default=None, ge=0)
+    # The close date outright, where the partner can send it. Preferred over ship-plus-days
+    # by anything that reads both: a partner computing this has already applied their own
+    # holiday rules, extensions and goodwill exceptions, and recomputing it from a nominal
+    # window length would overwrite their answer with our arithmetic.
+    return_window_closes_at: datetime | None = None
     # What the merchant shipped or took back, when they say. Free of any claim that it
     # matches the order line: a returns desk records what came back, not what was owed.
     sku: str | None = None
