@@ -31,6 +31,7 @@ coverage language, or a number that will be published. Nothing else does.
 | [0021](0021-what-unread-means.md) | What `unread` means, and why two definitions were live | closed |
 | [0022](0022-what-an-unread-request-does.md) | What an unread request does to the answer | closed |
 | [0023](0023-coverage-belongs-on-the-record.md) | Coverage belongs on the record | closed |
+| [0024](0024-evidence-is-scoped-to-the-ordered-line.md) | Evidence is scoped to the ordered line | closed |
 
 ## The open ones, and whether they still matter
 

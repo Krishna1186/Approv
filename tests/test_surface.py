@@ -8,8 +8,8 @@ from approv.evaluator import decide
 from approv.intake import AgentPresence, FreeText, Reading, Search, Structured, Undeclared
 from approv.receipts.chain import generate_key, public_key_hex, seal, verify
 from approv.surface.verification import (
-    ModeMismatch, ProductMismatch, UnknownCategory, VerificationRequest,
-    evidence_from_snapshot, ingest_outcome, snapshot_digest, verify_order,
+    ModeMismatch, ProductMismatch, UnknownCategory, VariantMismatch, VerificationRequest,
+    evidence_from_snapshot, ingest_outcome, selected_listing, snapshot_digest, verify_order,
 )
 from approv.types.core import (
     AttributeSpec, CategorySchema, Certainty, Channel, Constraint, Criticality, Decision,
@@ -541,6 +541,133 @@ def test_a_sparse_snapshot_is_not_a_shape_mismatch():
     on legitimately sparse traffic."""
     assert verify_order(request(snapshot={}), schemas=SCHEMAS).record.completion \
         is Completion.COMPLETED
+
+
+# --- seam 6: the ordered variant, and the shapes a real export actually has ----------------
+
+APPAREL = [
+    {"product_id": "tee-loom", "title": "Loom Tee",
+     "options": [{"name": "Size", "position": 1, "values": ["S", "M", "L"]},
+                 {"name": "Colour", "position": 2, "values": ["Frost", "Ash"]}],
+     "variants": [
+         {"id": "var-1", "sku": "LOOM-S-FROST", "option1": "S", "option2": "Frost"},
+         {"id": "var-9", "sku": "LOOM-M-ASH", "option1": "M", "option2": "Ash"},
+         {"id": "var-3", "sku": "LOOM-L-FROST", "option1": "L", "option2": "Frost"}]},
+    {"product_id": "tee-halden", "title": "Halden Tee",
+     "options": [{"name": "Size", "position": 1, "values": ["S", "M"]},
+                 {"name": "Colour", "position": 2, "values": ["Ash"]}],
+     "variants": [
+         {"id": "var-7", "sku": "HAL-S-ASH", "option1": "S", "option2": "Ash"},
+         {"id": "var-8", "sku": "HAL-M-ASH", "option1": "M", "option2": "Ash"}]},
+]
+
+
+def apparel_schema():
+    return derived_schema(APPAREL)
+
+
+def test_the_flat_export_reads_its_option_names_out_of_the_option_table():
+    """`/variants/*/option1#name=Size` is the standard Shopify flat export, not an exotic
+    shape — the option *names* live in a separate table on the record, so the selector is
+    not a sibling of the value and has to be resolved through that table. It used to read
+    nothing here, which was safe and useless."""
+    one = dict(APPAREL[0], variants=[APPAREL[0]["variants"][1]])
+    read = {e.attribute: e.value.surface
+            for e in evidence_from_snapshot(one, apparel_schema())}
+
+    assert read["size"] == "M" and read["colour"] == "Ash"
+
+
+def test_evidence_is_scoped_to_the_variant_that_was_ordered():
+    """The serious one. Reading a neighbouring SKU's colour is not a conservative answer,
+    it is a WRONG one — stated as confidently as a right one and signed into the same
+    record — and it fires on essentially every apparel catalogue."""
+    result = verify_order(
+        request(artifact=Search(query="medium tee in ash", filters={"size": "M", "colour": "Ash"}),
+                snapshot=APPAREL[0], order=order(product_id="tee-loom", sku="LOOM-M-ASH",
+                                                 variant_id="var-9")),
+        schemas={SCHEMA.category_id: apparel_schema()})
+    read = {f.attribute: f.support for f in result.record.findings}
+
+    assert result.record.decision is Decision.ALLOW, [
+        (f.attribute, f.support.value) for f in result.record.findings]
+    assert read["size"] is Support.SATISFIED and read["colour"] is Support.SATISFIED
+
+
+def test_a_neighbouring_sku_never_answers_for_the_ordered_one():
+    """The same catalogue, the same request, one SKU along. If scoping were cosmetic this
+    would allow too, because some variant in the record does say Frost."""
+    result = verify_order(
+        request(artifact=Search(query="medium tee in frost", filters={"size": "M", "colour": "Frost"}),
+                snapshot=APPAREL[0], order=order(product_id="tee-loom", sku="LOOM-M-ASH",
+                                                 variant_id="var-9")),
+        schemas={SCHEMA.category_id: apparel_schema()})
+
+    assert result.record.decision is Decision.REFUSE
+    assert [f.support for f in result.record.findings if f.attribute == "colour"]         == [Support.VIOLATED]
+
+
+def test_a_snapshot_that_does_not_hold_the_ordered_line_is_refused_as_a_mismatch():
+    """The same defect as posting product A's snapshot with product B's order line, one
+    level down. Every reading available belongs to somebody else's SKU, so there is no
+    cautious version of this — only a wrong one or none."""
+    with pytest.raises(ProductMismatch, match="different SKU"):
+        verify_order(request(snapshot=APPAREL[0],
+                             order=order(product_id="tee-loom", sku="LOOM-XL-FROST")),
+                     schemas={SCHEMA.category_id: apparel_schema()})
+
+
+def test_a_stale_variant_id_beside_a_good_sku_is_a_contradiction_not_a_match():
+    """`var-9` is really in this catalogue and `LOOM-XL-FROST` is not. Taking whichever
+    identifier happened to hit first would read var-9's colour and sign it against a SKU
+    the merchant never sold."""
+    with pytest.raises(VariantMismatch):
+        verify_order(request(snapshot=APPAREL[0],
+                             order=order(product_id="tee-loom", sku="LOOM-XL-FROST",
+                                         variant_id="var-9")),
+                     schemas={SCHEMA.category_id: apparel_schema()})
+
+
+def test_an_identifier_shaped_attribute_never_vetoes_the_line():
+    """`color_code` matches the same pattern `sku` does. Comparing an order's SKU against
+    a colour code would reject every variant in the array and call the catalogue wrong."""
+    quirky = dict(APPAREL[0], variants=[
+        dict(v, color_code="FRO") for v in APPAREL[0]["variants"]])
+    chosen = selected_listing(quirky, order(sku="LOOM-M-ASH", variant_id=None))
+
+    assert [v["sku"] for v in chosen["variants"]] == ["LOOM-M-ASH"]
+
+
+def test_the_record_keeps_the_snapshot_the_merchant_sent():
+    """Scoping is a reading rule, not an edit to the evidence. The merchant recomputes the
+    digest from the payload they posted, and the projection is reproducible from the order
+    line the record already carries."""
+    sent = APPAREL[0]
+    result = verify_order(
+        request(snapshot=sent, order=order(product_id="tee-loom", sku="LOOM-M-ASH")),
+        schemas={SCHEMA.category_id: apparel_schema()})
+
+    assert result.record.product_snapshot == sent
+    assert result.record.snapshot_hash == snapshot_digest(sent)
+
+
+def test_an_unselected_snapshot_reads_only_what_every_sku_agrees_on():
+    """The reader called directly, without an order to scope by. It is one listing short
+    of an answer, so it gives the parent fields and leaves the axes unstated rather than
+    pooling three variants or picking the first."""
+    read = {e.attribute for e in evidence_from_snapshot(APPAREL[0], apparel_schema())}
+
+    assert "title" in read
+    assert not read & {"size", "colour"}
+
+
+def test_a_single_variant_snapshot_is_left_alone():
+    """Nothing to choose between, so nothing to choose. A merchant whose export is one
+    record per SKU never enters the projection at all."""
+    one = dict(APPAREL[0], variants=[APPAREL[0]["variants"][1]])
+
+    assert selected_listing(one, order(sku="LOOM-M-ASH")) is one
+    assert selected_listing(SNAPSHOT, order()) is SNAPSHOT
 
 
 # --- the entry point ----------------------------------------------------------------------

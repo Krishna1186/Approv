@@ -42,13 +42,6 @@ def snapshot(case, *, keep_all_variants=False):
     return selected, proposal
 
 
-_SEAM6_POSITIVE = {"cached-flat-sku", "raw-numbered-option-selected-first-sku",
-                   "raw-numbered-option-selected-second-sku",
-                   "nested-pairs-units-money-and-parent",
-                   "escaped-keys-and-unicode-selector"}
-_SEAM6_NEGATIVE = {"unselected-multiple-skus", "duplicate-pair-selector"}
-
-
 @pytest.mark.parametrize("case", CONTRACT["positive"], ids=lambda case: case["id"])
 def test_derived_profiles_publish_the_fixture_contract(case):
     _, proposal = snapshot(case)
@@ -62,15 +55,7 @@ def test_derived_profiles_publish_the_fixture_contract(case):
         assert row.published.numerator > 0, (row.attribute, row.published)
 
 
-# Seam 6, owned by claude1. The surface resolver does not yet handle the flat export,
-# the numbered-option shape, escaped/unicode selectors, or variant scoping -- so it can
-# read evidence from the WRONG variant on a multi-variant catalogue. Pinned strict, the
-# way this repo pins every known seam: main stays green, the defect stays visible, and
-# the suite fails the day it is fixed so the marker cannot outlive it.
-@pytest.mark.parametrize("case", [
-    pytest.param(c, marks=[pytest.mark.xfail(strict=True, reason="seam 6: locator shapes")]
-                 if c["id"] in _SEAM6_POSITIVE else [])
-    for c in CONTRACT["positive"]], ids=lambda case: case["id"])
+@pytest.mark.parametrize("case", CONTRACT["positive"], ids=lambda case: case["id"])
 def test_surface_reads_nonzero_typed_evidence_from_the_catalogue_that_derived_its_schema(case):
     selected, proposal = snapshot(case)
     # This is conformance, not deployment or approval of the proposed schema.
@@ -87,15 +72,7 @@ def test_surface_reads_nonzero_typed_evidence_from_the_catalogue_that_derived_it
     assert not {e.attribute for e in actual} & set(case.get("absent", ()))
 
 
-# Seam 6, owned by claude1. The surface resolver does not yet handle the flat export,
-# the numbered-option shape, escaped/unicode selectors, or variant scoping -- so it can
-# read evidence from the WRONG variant on a multi-variant catalogue. Pinned strict, the
-# way this repo pins every known seam: main stays green, the defect stays visible, and
-# the suite fails the day it is fixed so the marker cannot outlive it.
-@pytest.mark.parametrize("case", [
-    pytest.param(c, marks=[pytest.mark.xfail(strict=True, reason="seam 6: variant scoping")]
-                 if c["id"] in _SEAM6_NEGATIVE else [])
-    for c in CONTRACT["negative"]], ids=lambda case: case["id"])
+@pytest.mark.parametrize("case", CONTRACT["negative"], ids=lambda case: case["id"])
 def test_surface_never_borrows_evidence_from_a_different_selector_or_sku(case):
     selected, proposal = snapshot(CASES[case["base"]], keep_all_variants=case.get("keep_all_variants", False))
     for mutation in case.get("mutations", ()):

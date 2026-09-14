@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import hashlib
 import time
-from urllib.parse import unquote
 from typing import Annotated, Callable, Mapping, Union
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
@@ -41,6 +40,8 @@ from approv.intake import (
 )
 from approv.receipts.chain import canonical_json
 from approv.receipts.record import build_record
+from approv.schema.catalogue import Cell, discover, is_identifier, variant_collections
+from approv.schema.values import semantic_key
 from approv.types.core import (
     Attestation, CategorySchema, ComparisonRecord, Completion, Count, Dimension, Evidence,
     Finding, Mode, Money, OrderLine, OrderOutcome, Quantity, Term, UnreadPolicy, Value,
@@ -67,11 +68,6 @@ Sink = Callable[[OrderOutcome], None]
 # The discriminated value union, for a catalogue that exports typed values.
 _VALUE_ADAPTER = TypeAdapter(Value)
 
-# The array marker in a derived field path. A sentinel rather than the string "*", so a key
-# that really is an asterisk (written `~2` on the wire) cannot collide with it once
-# unescaped.
-_ANY = type("ArrayMarker", (), {"__repr__": lambda self: "*"})()
-
 # Only the unambiguous units. A bare number with no unit, or a unit we do not recognise,
 # yields no evidence rather than a guessed dimension.
 _DIMENSIONS = {
@@ -87,6 +83,16 @@ class UnknownCategory(LookupError):
 
 class ProductMismatch(ValueError):
     """The catalogue snapshot and the order line name different products."""
+
+
+class VariantMismatch(ProductMismatch):
+    """A multi-SKU snapshot that does not contain the ordered line.
+
+    The same defect as posting product A's snapshot with product B's order line, one level
+    down, and it is reported the same way. A snapshot holding six sizes and an order line
+    naming a seventh cannot be compared at all: the only readings available belong to
+    somebody else's SKU.
+    """
 
 
 class VerificationRequest(BaseModel):
@@ -133,76 +139,86 @@ class VerificationResult(BaseModel):
     intake_notes: tuple[str, ...] = ()
 
 
-def _split_pointer(field_name: str) -> tuple[list, str | None]:
-    """A JSON pointer with an optional `#name=` selector, into tokens and the selector.
+def _catalogue_cells(snapshot: Mapping[str, object]) -> dict[tuple[str, str], Cell]:
+    """This snapshot flattened by the same walk that emitted the schema's field paths.
 
-    `approv.schema` writes a `#` inside a key as `~3` and URL-quotes the selector value, so
-    the first `#` is unambiguously the separator. `*` is the array marker; a literal `*` in
-    a key arrives as `~2`. Unescaping puts `~0` last, or a key containing `~1` would be
-    decoded twice.
+    **The producer is the resolver.** `approv.schema.catalogue.flatten` is the code that
+    turns a catalogue record into `(locator, attribute, value)` triples in the first place,
+    and every locator in a derived schema was written by it. A second walk on this side
+    would have to reproduce its option table, its currency inheritance, its pair
+    detection, its labelled-clause extraction and its child-over-parent rule *exactly*, and
+    the day one of them drifted the surface would read a merchant's catalogue differently
+    from the schema derived out of it — which is seam 1 again, silently. So this calls the
+    producer's own walk and indexes the result; agreement is by construction rather than by
+    test.
+
+    The key is `(locator, attribute)`, not the locator alone, because a prose field is one
+    locator carrying several attributes: `/description` holds both "Finish: matte" and
+    "Wall thickness: 2 mm", and handing the whole description to each of them is how a
+    description ends up quoted as evidence for an attribute it never mentioned.
+
+    Two rules drop a reading rather than guessing at it, both from the locator contract:
+
+    *A source must resolve to a unique value.* Two pairs both labelled `Finish` are
+    ambiguous even when they agree, because "they happen to agree" is not a resolution —
+    it is a coincidence that will stop holding on the next record.
+
+    *An unselected multi-SKU array contributes no SKU-specific evidence.* `discover`
+    returns one listing per variant, so anything that is not identical across all of them
+    belongs to a particular SKU, and we were not told which one. Picking the first, or
+    pooling them, is the wrong-variant read this exists to prevent.
     """
-    path, _, selector = field_name.partition("#")
-    tokens = []
-    for token in path.split("/")[1:]:
-        if token == "*":
-            tokens.append(_ANY)
+    listings, _ = discover([dict(snapshot)])
+    if not listings:
+        return {}
+    per_listing: dict[tuple[str, str], list[list[Cell]]] = {}
+    for listing in listings:
+        grouped: dict[tuple[str, str], list[Cell]] = {}
+        for cell in listing.cells:
+            grouped.setdefault((cell.field, cell.name), []).append(cell)
+        for key, group in grouped.items():
+            per_listing.setdefault(key, []).append(group)
+    resolved = {}
+    for key, groups in per_listing.items():
+        if len(groups) != len(listings) or any(len(group) != 1 for group in groups):
             continue
-        for code, char in (("~1", "/"), ("~2", "*"), ("~3", "#"), ("~0", "~")):
-            token = token.replace(code, char)
-        tokens.append(token)
-    name = unquote(selector[len("name="):]) if selector.startswith("name=") else None
-    return tokens, name
+        found = [group[0] for group in groups]
+        if len({(cell.raw, repr(cell.value)) for cell in found}) != 1:
+            continue
+        resolved[key] = found[0]
+    return resolved
 
 
-def _walk(node: object, tokens: list):
-    """Every node this pointer reaches. A `*` fans out over a list rather than indexing."""
-    if not tokens:
-        yield node
-        return
-    token, rest = tokens[0], tokens[1:]
-    if token is _ANY:
-        if isinstance(node, (list, tuple)):
-            for item in node:
-                yield from _walk(item, rest)
-    elif isinstance(node, Mapping) and token in node:
-        yield from _walk(node[token], rest)
+# Issues `read_value` reports when the raw was not text at all — an object, a list, a
+# number it could not parse, or prose too long to be a label. A NOMINAL attribute reads
+# the surface text, and for these there is no honest surface text to read: stringifying a
+# money object, or copying six hundred characters of description into a Term, would
+# manufacture the comparison that having no value at all correctly refuses.
+_NOT_TEXT = frozenset({"unsupported_object", "invalid_money_amount", "invalid_number",
+                       "multivalued_field_requires_mapping", "invalid_typed_value",
+                       "prose_requires_labelled_extraction"})
 
 
-def _same_label(left: str, right: str) -> bool:
-    return left.strip().casefold() == right.strip().casefold()
+def _settled_value(cell: Cell, dimension: Dimension | None) -> Value | None:
+    """One catalogue cell as the value this attribute is actually compared in.
 
+    Resolving the path is not enough: the cell was typed by looking at one field in
+    isolation, and the schema knows something that reading cannot — what the attribute
+    settled as across the whole catalogue. Size `3XL` reads as an unrecognised unit and
+    size `13.5` as a unitless decimal, and both are simply labels once the schema says the
+    attribute is NOMINAL. Taking the surface text there is what the contract means by
+    preserving a whole nominal selector as a label.
 
-def _pointer_values(snapshot: Mapping[str, object], field_name: str) -> list:
-    """The values a derived `field_name` names in this snapshot.
-
-    In `/variants/*/options/*/value#name=Colour` the container is a label/value pair and
-    the selector is **load-bearing**: the same path also carries Size, and reading it wrong
-    crosses two attributes. So a selector must match a sibling of the value, and a
-    container labelled with anything else is a *different attribute* rather than a
-    fallback — falling back to the path would hand every option value to whichever
-    attribute asked first.
-
-    That rule costs one shape. `approv.schema` also writes
-    `/variants/*/option1#name=Colour` for flat exports whose option names live in a
-    separate table, and there the label is not a sibling at all, so this reader returns
-    nothing for it. Deliberate: reading nothing is caught loudly by `_reads_nothing`, and
-    reading the wrong attribute is not caught at all. A merchant on that shape supplies
-    their own `Reader`.
+    Everywhere else the dimensions must agree. A cell read as a Count against an attribute
+    compared in MASS is not a near miss to be coerced — the comparison would be
+    INCOMMENSURABLE, which is the answer, and inventing a conversion is how a guarantee
+    gets made out of a field nobody understood.
     """
-    tokens, selector = _split_pointer(field_name)
-    if not tokens:
-        return []
-    last = tokens[-1]
-    if not isinstance(last, str):
-        return []
-    candidates = [(parent, parent[last]) for parent in _walk(snapshot, tokens[:-1])
-                  if isinstance(parent, Mapping) and last in parent]
-    if selector is None:
-        return [value for _, value in candidates]
-    return [value for parent, value in candidates
-            if any(_same_label(sibling, selector)
-                   for key, sibling in parent.items()
-                   if key != last and isinstance(sibling, str))]
+    if not cell.present:
+        return None
+    if dimension is Dimension.NOMINAL:
+        return None if cell.issue in _NOT_TEXT else Term(surface=cell.raw)
+    return cell.value if cell.dimension is dimension else None
 
 
 def _dotted(snapshot: Mapping[str, object], field_name: str):
@@ -276,24 +292,37 @@ def evidence_from_snapshot(snapshot: Mapping[str, object],
     adapter needs, and it was already being authored per category for the comparison to
     work at all. A merchant whose export is shaped differently supplies their own `Reader`;
     this is the case where they do not have to.
+
+    Two formats, disjoint by construction rather than by guessing: a locator always begins
+    with `/`, so nothing here is ever asked to choose. Locators are resolved by the walk
+    that wrote them (`_catalogue_cells`). Dotted names predate `approv.schema` and are
+    still in tests and deployments, so they keep the flat lookup they have always had.
+
+    **This reader expects one selected listing.** Handed a snapshot whose variant array
+    still holds every SKU, it reads only what all of them agree on and leaves the rest
+    unstated. Selecting the ordered line is the caller's job, because only the caller has
+    the order — `verify_order` does it before this is ever called.
     """
+    cells = _catalogue_cells(snapshot) if any(
+        profile.field_name.startswith("/") for profile in schema.field_profiles) else {}
+    dimensions = {spec.name: spec.dimension for spec in schema.attributes}
     out = []
     for profile in schema.field_profiles:
-        if profile.field_name.startswith("/"):
-            raw = _pointer_values(snapshot, profile.field_name)
-        else:
-            found = _dotted(snapshot, profile.field_name)
-            raw = [] if found is None else [found]
-        for one in raw:
-            value = _as_value(one)
+        for attribute in profile.attributes:
+            if profile.field_name.startswith("/"):
+                cell = cells.get((profile.field_name, attribute))
+                value = None if cell is None else _settled_value(
+                    cell, dimensions.get(attribute))
+            else:
+                found = _dotted(snapshot, profile.field_name)
+                value = None if found is None else _as_value(found)
             if value is None:
                 continue
-            for attribute in profile.attributes:
-                out.append(Evidence(attribute=attribute, value=value,
-                                    field_name=profile.field_name,
-                                    liability=profile.liability,
-                                    certainty=profile.certainty,
-                                    is_advice=profile.is_advice))
+            out.append(Evidence(attribute=attribute, value=value,
+                                field_name=profile.field_name,
+                                liability=profile.liability,
+                                certainty=profile.certainty,
+                                is_advice=profile.is_advice))
     return tuple(out)
 
 
@@ -344,6 +373,7 @@ def verify_order(
     if schema is None:
         raise UnknownCategory(request.category_id)
     _bind_snapshot_to_order(request)
+    reading = selected_listing(request.product_snapshot, request.order)
 
     started = time.monotonic()
     completion, detail = Completion.COMPLETED, None
@@ -357,10 +387,10 @@ def verify_order(
         parse_failure=Completion.UNREADABLE_RESPONSE)
     if failure is None:
         evidence, failure = _run(
-            lambda: read_evidence(request.product_snapshot, schema),
+            lambda: read_evidence(reading, schema),
             Completion.CATALOGUE_UNREADABLE, "reading the catalogue snapshot")
     if failure is None:
-        failure = _reads_nothing(evidence, request.product_snapshot, schema)
+        failure = _reads_nothing(evidence, reading, schema)
     if failure is None:
         findings = check_constraints(
             taken.constraints, evidence, schema, returns=returns,
@@ -506,6 +536,92 @@ def ingest_outcome(outcome: OrderOutcome, *, record_outcome: Sink,
                            % (outcome.mode.value, mode.value))
     record_outcome(outcome)
     return outcome
+
+
+# Identifier keys that name a *line* rather than the product it belongs to. The grouping
+# keys are deliberately absent: every variant in a record carries the same `product_id`, so
+# matching on one would select all of them and call that a selection.
+_NOT_A_LINE = frozenset({"product_id", "parent_id", "family_id", "group_id",
+                         "item_group_id", "style_id", "merchant_id", "store_id"})
+
+
+def _is_ordered_line(variant: Mapping[str, object], order: OrderLine) -> bool:
+    """Whether this variant is the line that was bought: it answers to one of the order's
+    identifiers and contradicts neither.
+
+    Both halves are needed. Matching alone would accept a variant whose `id` is the one the
+    order names while its `sku` is somebody else's — a stale variant id on an otherwise
+    correct order line, which is a contradiction rather than a match, and resolving it by
+    taking whichever identifier happened to hit first is how the wrong SKU gets read with
+    full confidence.
+
+    Only a key of the *same kind* can contradict: an order's SKU is compared against the
+    variant's SKU, its variant id against the variant's own id. Every other
+    identifier-shaped key — `stock_ref` on one export, `color_code` on another — may
+    identify the line but never vetoes it, because `color_code` is an attribute wearing an
+    identifier's name and vetoing on it would reject every variant in the array.
+    """
+    matched = False
+    for key, value in variant.items():
+        if not isinstance(key, str) or not is_identifier(key):
+            continue
+        name = semantic_key(key)
+        if name in _NOT_A_LINE or isinstance(value, bool) or not isinstance(value, (str, int)):
+            continue
+        text = str(value)
+        same_kind = order.sku if name.endswith("sku") else (
+            order.variant_id if name in {"id", "variant_id"} else None)
+        if same_kind is not None and text != str(same_kind):
+            return False
+        if text in {str(one) for one in (order.variant_id, order.sku) if one}:
+            matched = True
+    return matched
+
+
+def selected_listing(snapshot: Mapping[str, object], order: OrderLine) -> Mapping[str, object]:
+    """The snapshot with only the ordered SKU left in its variant array.
+
+    **Evidence is scoped to the variant that was bought.** Reading a neighbouring SKU's
+    colour is not a cautious answer that happens to be incomplete — it is a *wrong* one,
+    stated with the same confidence as a right one and signed into the same record, and on
+    an apparel catalogue every single order has a dozen wrong answers available. Nothing
+    downstream can tell that a Frost reading came from the Ash variant.
+
+    The projection keeps the root, its metadata and the enclosing objects, so inherited
+    fields — currency, the option-name table, the parent's own attributes — still read.
+    Only the array is narrowed. The record keeps the snapshot the merchant actually sent;
+    this rule is deterministic from `order`, so a returns desk can reproduce exactly what
+    was read from the record alone.
+
+    A snapshot with one variant, or none, is returned untouched. A multi-SKU snapshot that
+    does not contain the ordered line raises, because there is no reading of it that is
+    about this order.
+    """
+    try:
+        collections = variant_collections(dict(snapshot))
+    except ValueError:
+        # A malformed record. Left alone so the reader fails on it with a named catalogue
+        # reason rather than being rejected here as if the order line were at fault.
+        return snapshot
+    if len(collections) != 1:
+        return snapshot
+    path, variants = collections[0]
+    if len(variants) < 2:
+        return snapshot
+    chosen = [variant for variant in variants
+              if isinstance(variant, Mapping) and _is_ordered_line(variant, order)]
+    if len(chosen) != 1:
+        raise VariantMismatch(
+            "the snapshot holds %d variants and %d of them is the ordered line "
+            "(variant_id=%r, sku=%r); a reading of it would be about a different SKU"
+            % (len(variants), len(chosen), order.variant_id, order.sku))
+    projected = dict(snapshot)
+    node = projected
+    for key in path[:-1]:
+        node[key] = dict(node[key])
+        node = node[key]
+    node[path[-1]] = chosen
+    return projected
 
 
 def _bind_snapshot_to_order(request: VerificationRequest) -> None:
