@@ -98,24 +98,34 @@ the exhaustive derivation. No full-catalogue work runs in the default test suite
 
 ## Integration status
 
-The locator contract is in `approv/schema/LOCATOR_CONTRACT.md`. On base `9484f81`,
-the default production reader returns no evidence for the positive derived-schema
-fixtures and accepts a literal locator-looking root key as a nested field. The seam
-has 7 failures / 19 checks, with 12 passes / 19 checks, and remains a **surface blocker**.
-The new contract tests are in the default suite and deliberately expose it. No surface
-change or replacement resolver was made in this work.
+The locator contract is in `approv/schema/LOCATOR_CONTRACT.md`. The earlier surface
+seam failures are closed on `1ff539a`; surface now uses schema's discovery walk.
+Agreement between these two readers cannot independently establish correctness.
+The [fresh public-catalogue study](public-catalogue-study.md) therefore checks raw
+option tables without importing the producer, its value parser, or the algebra.
 
-The report is an independent audit of onboarding's deterministic reader and proposed
-minimum. It is not evidence that the production verification seam is complete.
-The adapter matrix remains blocked pending the user's explicit unblock; no workaround
-for signed event eligibility was introduced.
+The study spans fresh stores in every requested sector, with failed endpoints and
+partial captures explicitly retained. Its standalone reports are review drafts,
+not an authorisation to adopt their schemas.
+The discovered image-metadata defect is an Approv mapping issue requiring correction.
+No production reader or decision-path change is included in that study.
 
-Validation on this branch: the default command collected 654 / 654 tests. It recorded
-639 passes / 654 collected, 7 failures / 654 collected (the surface seam above),
-4 skips / 654 collected, and 4 existing expected failures / 654 collected, in 16.42
-seconds for that full run. The focused report and locator-codec run passed 26 / 26
-checks. The complete local catalogues were audited explicitly through the report CLI;
-they were not added to the default test workload. Both PDFs were rendered to images
-and visually inspected; attribute names, proposal IDs and page margins were also
-checked against their source JSON. The HTML was generated and checked for escaped
-input; a browser was unavailable for visual HTML inspection.
+Adapter billing classification remains dependent on the order-evidence record type
+and the surface/intake fixes assigned to claude1. This report changes none of them.
+
+## Pilot prerequisites: confirm before accepting an order
+
+| Prerequisite | Merchant handoff | Failure if absent |
+| --- | --- | --- |
+| Order-addressable identity | Demonstrate a real order line naming the catalogue product and exactly one selected variant. Preserve SKU and variant-ID namespaces; confirm their crosswalk if the order system uses different identifiers. | A catalogue with no identifier the order can name cannot be integrated. A multi-variant snapshot with no unique matching line raises a hard mismatch. A title, array position, or another variant's identifier is not an acceptable substitute. |
+| Nonempty order SKU | Supply the SKU required by `OrderLine`, even if the public feed omits it; establish its relationship to the published variant ID. | A public numeric variant ID can support binding but does not fill an absent order SKU. Do not manufacture one from product text. |
+| Order-time commercial facts | Supply quantity, charged unit price, explicit ISO currency, and the snapshot/version used at the time. | Raw price strings cannot establish currency, checkout discounts, taxes, or historical availability. |
+| Selected-option context | Retain the option-name table, its positions and the variant's selected values together. | A bare `option1` value loses its meaning. A whole variant array is not permission to borrow evidence from another SKU. |
+| Reviewed source scope | Identify actual product fields; exclude image dimensions, image URLs and other operational metadata from product requirements. Review opaque UUID-valued selectors. | A well-typed value can describe the wrong thing. Producer/consumer agreement does not make image pixels a product attribute. |
+| Category and floor confirmation | Split mixed categories; review differently named and component-specific selectors before choosing the minimum. Confirm the proposal ID explicitly through the onboarding API. | A common label such as `size` is not a universal category requirement. Bundle component sizes may exist under other names; a missing exact attribute is not proof all sizing information is absent. |
+| Request and provenance | Supply what the agent stated, with its source/channel and attestation. | A cart with no usable request supports order evidence only. It must not receive an intent-verification label or price. |
+| Fulfilment and retention | Retain the exact order, original product snapshot and corresponding fulfilment record so the comparison can be replayed and the shipped item identified. | Today's public feed cannot establish what the merchant offered or shipped on an earlier order. |
+
+These are integration prerequisites, not a financial-coverage offer. A merchant must
+confirm which publication gaps matter to its actual request traffic before using
+listing shares to prioritise work. No messages have been sent to any merchant.
