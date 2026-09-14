@@ -81,7 +81,7 @@ def _immutable(db, tables):
                 SELECT RAISE(ABORT, 'append-only ledger'); END""")
 
 
-def migrate(db, initial_schema, *, namespace="production"):
+def migrate(db, initial_schema, *, namespace="production", validate=None):
     """Hold the writer lock through version check, DDL and version advance.
 
     executescript is deliberately avoided: it commits an open transaction before DDL.
@@ -90,6 +90,7 @@ def migrate(db, initial_schema, *, namespace="production"):
     db.execute("BEGIN IMMEDIATE")
     try:
         version = db.execute("PRAGMA user_version").fetchone()[0]
+        original_version = version
         if version > CURRENT_VERSION:
             raise ValueError("receipt store is newer than this application")
         if version == 0:
@@ -117,6 +118,10 @@ def migrate(db, initial_schema, *, namespace="production"):
             db.execute("PRAGMA user_version=3")
         check_schema(db)
         check_namespace(db, namespace)
+        # The store verifies the original signed JSON and all retained bindings while
+        # DDL is still reversible. Bad historical evidence must not advance the version.
+        if validate is not None and original_version != CURRENT_VERSION:
+            validate(db)
         db.commit()
     except BaseException:
         db.rollback()

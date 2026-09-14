@@ -98,7 +98,7 @@ class ReceiptStore:
             self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connection(_create=create) as db:
             if migrate:
-                migrate_store(db, _SCHEMA, namespace=namespace)
+                migrate_store(db, _SCHEMA, namespace=namespace, validate=self._read)
                 db.execute("PRAGMA journal_mode=WAL")
             else:
                 check_schema(db)
@@ -215,13 +215,22 @@ class ReceiptStore:
         work runs inside it. All new rows commit together or none do. Retrying a
         committed batch returns its original receipts in input order, including duplicates.
         """
-        prepared = [require_unsealed(record) for record in records]
+        with self.batch_writer() as writer:
+            return writer.append_many(records, signing_key)
+
+    @contextmanager
+    def batch_writer(self):
+        """Reuse one audited connection across independently committed offline batches.
+
+        A foreign commit invalidates the audit; our own writes are verified before
+        commit. Not thread-shareable. Exiting never rolls back earlier successful batches.
+        """
         with self._connection() as db:
-            db.execute("BEGIN IMMEDIATE")
-            self._read(db)
-            result = [load_receipt(self._append(db, record, signing_key)) for record in prepared]
-            db.commit()
-            return result
+            writer = ReceiptBatchWriter(self, db)
+            try:
+                yield writer
+            finally:
+                writer._closed = True
 
     def _append(self, db, record, signing_key, submission=None) -> dict:
         payload = record_json(record)
@@ -245,16 +254,20 @@ class ReceiptStore:
             return original
         head = db.execute("SELECT sequence, hash FROM receipts ORDER BY sequence DESC LIMIT 1").fetchone()
         sequence, previous = (head["sequence"] + 1, head["hash"]) if head else (1, None)
-        key_id = self._register(db, public_key_hex(signing_key))
+        public = public_key_hex(signing_key)
+        key_id = self._register(db, public)
         payload["timestamp"] = datetime.now(timezone.utc)
         if self.namespace == "sandbox":
             payload.update(store_namespace="sandbox", store_id=store_id)
         stamped = load_receipt(payload)
         sealed = seal(stamped, signing_key, previous)
         body = record_json(sealed)
+        verify(body, public)
         db.execute("INSERT INTO receipts VALUES (?, ?, ?, ?, ?, ?)",
                    (sequence, sealed.correlation_id, sealed.hash, sealed.prev_hash,
                     _content_hash(body), canonical_json(body)))
+        if db.execute("SELECT changes()").fetchone()[0] != 1:
+            raise ValueError("receipt insertion did not write exactly one row")
         checkpoint = {"format": "approv-receipt-checkpoint-v1", "store_id": store_id,
                       "store_namespace": self.namespace, "count": sequence,
                       "head_hash": sealed.hash, "key_id": key_id,
@@ -272,7 +285,10 @@ class ReceiptStore:
                                      "response_hash": hashlib.sha256(response.encode()).hexdigest()}
         digest = record_hash(checkpoint, None)
         checkpoint.update(hash=digest, signature=signing_key.sign(digest.encode("utf-8")).hex())
+        verify(checkpoint, public)
         db.execute("INSERT INTO checkpoints VALUES (?, ?)", (sequence, canonical_json(checkpoint)))
+        if db.execute("SELECT changes()").fetchone()[0] != 1:
+            raise ValueError("checkpoint insertion did not write exactly one row")
         return body
 
     def get(self, correlation_id: str) -> ComparisonRecord | None:
@@ -293,10 +309,34 @@ class ReceiptStore:
         return json.loads(row["response_body"])
 
     def lookup_verification(self, correlation_id: str, request_hash: str) -> dict | None:
+        return self.lookup_verifications(((correlation_id, request_hash),))[0]
+
+    def lookup_verifications(self, requests: Iterable[tuple[str, str]]) -> list[dict | None]:
+        """Bulk retry lookup in input order, with one audit and no signing/extraction."""
+        requests = list(requests)
         with self._connection() as db:
             db.execute("BEGIN")
             self._read(db)
-            return self._lookup(db, correlation_id, request_hash)
+            return [self._lookup(db, correlation_id, request_hash) for correlation_id, request_hash in requests]
+
+    @staticmethod
+    def _progress(db) -> dict:
+        head = db.execute("SELECT sequence, correlation_id FROM receipts ORDER BY sequence DESC LIMIT 1").fetchone()
+        checkpoint = db.execute("SELECT body FROM checkpoints ORDER BY sequence DESC LIMIT 1").fetchone()
+        return {"format": "approv-store-progress-v1",
+                "store_id": db.execute("SELECT store_id FROM metadata").fetchone()[0],
+                "store_namespace": db.execute("SELECT namespace FROM ledger_namespace").fetchone()[0],
+                "receipt_count": head["sequence"] if head else 0,
+                "submission_count": db.execute("SELECT COUNT(*) FROM submissions").fetchone()[0],
+                "last_correlation_id": head["correlation_id"] if head else None,
+                "checkpoint": json.loads(checkpoint["body"]) if checkpoint else None}
+
+    def progress(self) -> dict:
+        """Verified committed progress, never uncommitted attempts or an import row count."""
+        with self._connection() as db:
+            db.execute("BEGIN")
+            self._read(db)
+            return self._progress(db)
 
     def commit_verification(self, response: dict, request_hash: str,
                             deployment: dict, signing_key) -> dict:
@@ -306,22 +346,8 @@ class ReceiptStore:
     def commit_verifications(self, submissions: Iterable[tuple[dict, str]],
                              deployment: dict, signing_key) -> list[dict]:
         """Batch equivalent of commit_verification; retains full request/deployment bindings."""
-        prepared = []
-        manifest = json.loads(canonical_json(deployment))
-        for response, request_hash in submissions:
-            response = json.loads(canonical_json(response))
-            record = require_unsealed(load_receipt(response["record"]))
-            prepared.append((record, {"response": response, "request_hash": request_hash,
-                                      "deployment": manifest}))
-        with self._connection() as db:
-            db.execute("BEGIN IMMEDIATE")
-            self._read(db)
-            result = []
-            for record, submission in prepared:
-                self._append(db, record, signing_key, submission)
-                result.append(self._lookup(db, record.correlation_id, submission["request_hash"]))
-            db.commit()
-            return result
+        with self.batch_writer() as writer:
+            return writer.commit_verifications(submissions, deployment, signing_key)
 
     def probe_writable(self) -> None:
         """A real committed write, in a separate operational table, never a fake receipt."""
@@ -348,3 +374,79 @@ class ReceiptStore:
         with self._connection() as db:
             return {"format": "approv-public-keys-v1",
                     "keys": dict(db.execute("SELECT key_id, public_hex FROM public_keys"))}
+
+
+class ReceiptBatchWriter:
+    """Use through ReceiptStore.batch_writer(); each method owns its transaction.
+
+    data_version is meaningful only on this one connection. Read it after acquiring
+    the writer lock; remember that value, not a post-COMMIT value that could include
+    a racing foreign writer. No caller-owned SQL connection is exposed by this API.
+    """
+
+    def __init__(self, store, db):
+        self._store, self._db = store, db
+        self._verified_version = None
+        self._closed = False
+        self._active = False
+        stat = store.path.stat()
+        self._file_identity = stat.st_dev, stat.st_ino
+
+    @contextmanager
+    def _transaction(self):
+        if self._closed:
+            raise ValueError("batch writer is closed")
+        if self._active:
+            raise ValueError("batch writer is already in a transaction")
+        stat = self._store.path.stat()
+        if (stat.st_dev, stat.st_ino) != self._file_identity:
+            raise ValueError("receipt database was replaced; close and reopen the writer")
+        db = self._db
+        self._active = True
+        try:
+            db.execute("BEGIN IMMEDIATE")
+            version = db.execute("PRAGMA data_version").fetchone()[0]
+            if version != self._verified_version:
+                check_schema(db)
+                self._store._read(db)
+            yield db
+            db.commit()
+            self._verified_version = version
+        except BaseException:
+            self._verified_version = None
+            if db.in_transaction:
+                db.rollback()
+            raise
+        finally:
+            self._active = False
+
+    def append_many(self, records: Iterable[UnsealedRecord], signing_key) -> list[ComparisonRecord]:
+        prepared = [require_unsealed(record) for record in records]
+        with self._transaction() as db:
+            result = [load_receipt(self._store._append(db, record, signing_key)) for record in prepared]
+        return result
+
+    def commit_verifications(self, submissions: Iterable[tuple[dict, str]],
+                             deployment: dict, signing_key) -> list[dict]:
+        prepared = []
+        manifest = json.loads(canonical_json(deployment))
+        for response, request_hash in submissions:
+            response = json.loads(canonical_json(response))
+            record = require_unsealed(load_receipt(response["record"]))
+            prepared.append((record, {"response": response, "request_hash": request_hash,
+                                      "deployment": manifest}))
+        with self._transaction() as db:
+            result = []
+            for record, submission in prepared:
+                self._store._append(db, record, signing_key, submission)
+                result.append(self._store._lookup(db, record.correlation_id, submission["request_hash"]))
+        return result
+
+    def lookup_verifications(self, requests: Iterable[tuple[str, str]]) -> list[dict | None]:
+        requests = list(requests)
+        with self._transaction() as db:
+            return [self._store._lookup(db, correlation_id, request_hash) for correlation_id, request_hash in requests]
+
+    def progress(self) -> dict:
+        with self._transaction() as db:
+            return self._store._progress(db)

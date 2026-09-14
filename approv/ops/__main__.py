@@ -78,8 +78,7 @@ def main(argv=None):
                 print(json.dumps({"status": "configuration_valid", "deployment_hash": runtime.deployment.digest}))
         elif args.command == "migrate":
             store = ReceiptStore(args.store, namespace=args.namespace)
-            store.export()
-            print(json.dumps({"status": "migrated", "store": str(store.path), "store_namespace": store.namespace}))
+            print(json.dumps({"status": "migrated", "store": str(store.path), **store.progress()}))
         elif args.command == "rotate-local-key":
             password = SecretFile(file=args.password_file.resolve()).read(Path.cwd())
             keys = KeyStore(args.directory, password=password)
@@ -99,7 +98,10 @@ def main(argv=None):
                     result = backup(store, args.destination, keys)
                     print(json.dumps({"status": "backup_complete", "path": str(result)}))
                 else:
-                    print(json.dumps({"status": "verified", "count": len(bundle["records"])}))
+                    print(json.dumps({"status": "verified", "count": len(bundle["records"]),
+                                      "store_namespace": store.namespace,
+                                      "last_correlation_id": bundle["records"][-1]["correlation_id"] if bundle["records"] else None,
+                                      "checkpoint": bundle["checkpoint"]}))
         return 0
     except Exception as error:
         # No traceback, repr, provider prose, schema contents or secret values on stdout.
