@@ -224,6 +224,16 @@ class OrderOutcome(BaseModel):
     # holiday rules, extensions and goodwill exceptions, and recomputing it from a nominal
     # window length would overwrite their answer with our arithmetic.
     return_window_closes_at: datetime | None = None
+    # Which attribute the customer complained about, where the desk codes one at all —
+    # most do not. Their word for it, not a value mapped onto this category's schema:
+    # where it exists attribution gets sharper, and where it does not the report says so
+    # rather than guessing. Named for what it is, because `attribute` alone on an outcome
+    # reads like the schema attributes every other type here carries.
+    complained_attribute: str | None = None
+    # The desk's own assessment of whether the fault was theirs. Never inferred and never
+    # overridden: if their returns desk concluded it was their error, that is evidence
+    # about their process and it belongs in the report as theirs.
+    merchant_fault: bool | None = None
     # What the merchant shipped or took back, when they say. Free of any claim that it
     # matches the order line: a returns desk records what came back, not what was owed.
     sku: str | None = None

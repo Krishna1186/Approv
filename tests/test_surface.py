@@ -362,6 +362,18 @@ def test_a_partner_who_can_send_the_close_date_outright_is_believed():
     assert kept[0].return_window_closes_at == closes
 
 
+def test_the_desks_own_attribution_is_carried_as_theirs():
+    """Rare — most desks do not code which attribute the customer complained about — and
+    never inferred where it is absent. Where it exists, attribution gets sharper; where it
+    does not, the report says so rather than guessing."""
+    kept = []
+    ingest_outcome(outcome(complained_attribute="colour", merchant_fault=True),
+                   record_outcome=kept.append)
+
+    assert kept[0].complained_attribute == "colour"
+    assert kept[0].merchant_fault is True
+
+
 def test_every_added_outcome_field_is_optional():
     """Partners arrive at different tiers. A required field would turn "cannot answer that
     yet" into "cannot be onboarded", and the report already prints the reason a row cannot
@@ -369,7 +381,8 @@ def test_every_added_outcome_field_is_optional():
     bare = outcome()
 
     assert (bare.reason_code, bare.ship_date, bare.return_window_days,
-            bare.return_window_closes_at) == (None, None, None, None)
+            bare.return_window_closes_at, bare.complained_attribute,
+            bare.merchant_fault) == (None,) * 6
 
 
 def test_nothing_in_the_decision_path_can_read_an_outcome():
