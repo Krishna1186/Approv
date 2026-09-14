@@ -1094,9 +1094,12 @@ def test_the_outcome_wire_type_has_not_grown_a_field_we_are_not_reading():
     fail. This fails instead - the moment `OrderOutcome` grows or loses anything, someone
     has to decide whether the fold should read it and which rung it unlocks.
 
-    It has already earned its place once: `reason_code`, `ship_date`,
-    `return_window_days` and `return_window_closes_at` landed while this module was being
-    written, under exactly the names the fold looks for, and this is what said so.
+    It has already earned its place twice. `reason_code`, `ship_date`,
+    `return_window_days` and `return_window_closes_at` landed under exactly the names the
+    fold looks for. Then `complained_attribute` landed under a name the fold did *not*
+    look for - it was asking for `attribute` - which is the silent miss this exists to
+    catch: the field present, nothing raised, and the attribution table quietly resting
+    on its weaker fallback forever.
 
     Fixing it is a one-line edit to this set. Deleting it is the thing not to do.
     """
@@ -1105,7 +1108,7 @@ def test_the_outcome_wire_type_has_not_grown_a_field_we_are_not_reading():
              "merchant_reason", "sku", "quantity",
              # Landed for the report. Each one moves a partner up a rung.
              "reason_code", "ship_date", "return_window_days",
-             "return_window_closes_at"}
+             "return_window_closes_at", "complained_attribute", "merchant_fault"}
     fields = set(OrderOutcome.model_fields)
     assert not fields - known, (
         "OrderOutcome grew %s. Check whether from_order_outcomes should read it (see "
@@ -1114,7 +1117,7 @@ def test_the_outcome_wire_type_has_not_grown_a_field_we_are_not_reading():
     # And the other direction, which matters now that the fold depends on them: a rename
     # or a removal reads as a partner who sent less, with nothing raised.
     for name in ("reason_code", "ship_date", "return_window_days",
-                 "return_window_closes_at"):
+                 "return_window_closes_at", "complained_attribute", "merchant_fault"):
         assert name in fields, (
             "%s is gone from OrderOutcome. from_order_outcomes reads it by name with "
             "getattr, so every feed now silently reads one rung lower than it is." % name)
@@ -1195,3 +1198,79 @@ def test_the_instruction_lists_every_rung_between_here_and_there():
             assert item in blocked, (rung, item)
     # And nothing from a rung they are already on.
     assert t.TIERS[t.Tier.RETURNS_ONLY].supplies[0] not in blocked
+
+
+# --- the cart-only receipt, counted apart from every rate ---------------------------------
+
+def evidence_record(correlation_id="corr-cart"):
+    """A cart-only receipt, built through the real builder rather than posed.
+
+    `OrderEvidenceRecord` has no decision, no findings and no stated request. The report
+    has to count it in two places and nowhere else, and getting either half wrong is
+    silent: leaving it out of provenance's denominator computes the provenance rate over
+    the orders that had provenance, and leaving it in a decision distribution reports an
+    order nobody decided about as one we would have authorised.
+    """
+    from approv.receipts.record import build_order_evidence
+    from approv.types.core import Money, OrderLine
+
+    return build_order_evidence(
+        correlation_id=correlation_id, schema=SCHEMA,
+        order=OrderLine(order_id="SO-CART", line_id="1", product_id="duvet-1",
+                        sku="SKU-1", quantity=1,
+                        unit_price=Money(amount="118.00", currency="GBP")),
+        product_snapshot={"product_id": "duvet-1"}, snapshot_hash="d" * 64,
+        model_version="extract-v6", prompt_version="prompt-v6",
+        reasons=("no stated request accompanied this order",),
+        merchant_id="hearth-and-loom")
+
+
+def test_an_order_with_no_stated_request_is_in_the_provenance_denominator():
+    """It is the clearest case of an order with no recoverable stated request there is -
+    that is why it is a different receipt - so excluding it would compute provenance over
+    the orders that had provenance and return a number near one every week."""
+    records = [record("ORD-1"), record("ORD-2"), evidence_record()]
+    measure = m.provenance(m.orders_only(records))
+
+    assert (measure.numerator, measure.denominator) == (2, 3)
+    assert "order evidence rather than a verification" in measure.denominator_note
+
+
+def test_an_order_with_no_stated_request_is_in_no_decision_distribution():
+    """Nothing was authorised, refused or escalated: no request arrived to decide about.
+    Counting it as an allow would report an order nobody decided on as one we waved
+    through."""
+    records = [record("ORD-1", decision=Decision.ALLOW), evidence_record()]
+    document = build(records)
+
+    assert document.evidence_only == 1
+    for block in document.populations:
+        for measure in block.decisions.values():
+            assert measure.denominator <= 1, measure.name
+        assert block.coverage_eligible.denominator <= 1
+
+
+def test_the_volume_table_says_what_the_rates_below_it_exclude():
+    """The row exists so that a reader comparing "order events observed" with a rate's
+    denominator is not left to work out the difference, or to assume there isn't one."""
+    document = build([record("ORD-1"), evidence_record()])
+    page = " ".join(to_text(document).split())
+
+    assert "Order events observed .. 2" in page or "Order events observed" in page
+    assert "produced order evidence only" in page
+    assert "excluded from every rate on this report" in page
+    assert "Orders compared against a stated request" in page
+
+
+def test_a_week_of_nothing_but_cart_only_orders_reports_zero_provenance_not_no_data():
+    """The failure this is really guarding: a merchant whose integration sends carts and
+    no requests would otherwise get a report with empty populations and no explanation,
+    which reads as Approv having nothing to say rather than as their traffic carrying
+    nothing to check."""
+    document = build([evidence_record("corr-1"), evidence_record("corr-2")])
+    page = " ".join(to_text(document).split())
+
+    assert document.provenance.numerator == 0
+    assert document.provenance.denominator == 2
+    assert "2 of 2" in page
+    assert "produced order evidence only" in page

@@ -350,9 +350,25 @@ INGESTION_FIELDS = (
     ("return_window_days", "how long that window is, in days"),
     ("return_window_closes_at", "or the close date outright, if it is easier to send"),
     ("reason_code", "the desk's own code for why it came back"),
-    ("attribute", "which attribute the customer complained about, where it is coded"),
+    ("complained_attribute",
+     "which attribute the customer complained about, where it is coded"),
     ("merchant_fault", "the desk's own fault assessment, recorded as theirs"),
 )
+
+# The short spelling, still read. The wire type calls it `complained_attribute`; this
+# module asked for `attribute` and a fixture or an adapter may still say that. Reading
+# both costs a line and the alternative is the exact silent miss the canary exists to
+# catch - the field present, the fold not looking at it, and the report a rung lower for
+# no reason anybody could see.
+ATTRIBUTE_NAMES = ("complained_attribute", "attribute")
+
+
+def _complained(event):
+    for name in ATTRIBUTE_NAMES:
+        value = getattr(event, name, None)
+        if value is not None:
+            return value
+    return None
 
 
 def ingestion_status(outcome_type) -> tuple[tuple[str, str, bool], ...]:
@@ -465,7 +481,7 @@ def from_order_outcomes(events: Iterable, *, source: FeedSource, description: st
                 status=Status.RETURNED, reason_code=code, reason_code_raw=raw,
                 # Never parsed. Carried so a person can read it, and read by nothing.
                 reason_text=event.merchant_reason,
-                attribute=getattr(event, "attribute", None),
+                attribute=_complained(event),
                 merchant_fault=getattr(event, "merchant_fault", None),
                 disputed=disputed, resolved_at=event.occurred_at,
                 window_closes_at=closes,

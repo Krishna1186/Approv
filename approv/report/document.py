@@ -163,6 +163,10 @@ class ReportDocument:
     # and which carry the reason they do not.
     tier: t.Tier = t.Tier.NONE
     capabilities: tuple[Row, ...] = ()
+    # Orders that produced an order-evidence receipt rather than a verification, because
+    # no stated request reached us. Held as a count on the document so a renderer cannot
+    # print the populations without being able to say what is missing from them.
+    evidence_only: int = 0
     sources: tuple[Row, ...] = ()
     volume: tuple[Row, ...] = ()
     populations: tuple[PopulationBlock, ...] = ()
@@ -171,17 +175,30 @@ class ReportDocument:
     caveats: tuple[str, ...] = CAVEATS
 
 
-def _volume_rows(records, grouped) -> tuple[Row, ...]:
-    rows = [Row("Order events observed", str(len(records)),
+def _volume_rows(records, grouped, evidence=()) -> tuple[Row, ...]:
+    total = len(records) + len(evidence)
+    rows = [Row("Order events observed", str(total),
                 note="records bound to an order line. A comparison run without an order "
                      "is not an order event and is not counted here.")]
+    if evidence:
+        rows.append(Row(
+            "  of which produced order evidence only", "%d of %d" % (len(evidence), total),
+            missing=True,
+            note="no stated request reached Approv for these, so there was nothing to "
+                 "compare and no decision was made. They are a different and weaker "
+                 "receipt, they are counted in the provenance denominator below, and "
+                 "they are excluded from every rate on this report - including the "
+                 "decision distribution, which would otherwise read as though we had "
+                 "authorised them."))
+    rows.append(Row("Orders compared against a stated request", str(len(records)),
+                    note="the population every rate below is computed over."))
     for origin in m.Origin:
         count = len(grouped[origin])
         # The denominator travels with the share rather than sitting in the row above it
         # (invariant 6). No interval: this is a count of what was observed, not an
         # estimate of anything, and an interval would imply it was sampled.
         share = " (%.1f%%)" % (100 * count / len(records)) if records else ""
-        rows.append(Row("  " + m.POPULATION_LABEL[origin],
+        rows.append(Row("    " + m.POPULATION_LABEL[origin],
                         "%d of %d%s" % (count, len(records), share)))
     split = m.channel_split(records)
     if split:
@@ -190,7 +207,8 @@ def _volume_rows(records, grouped) -> tuple[Row, ...]:
                                   for name, count in sorted(split.items())),
                         note="counts only, never rates: the two tiers are one population "
                              "for coverage (DR 0020) and are measured together."))
-    incomplete = sum(1 for r in records if r.completion is not Completion.COMPLETED)
+    incomplete = sum(1 for r in list(records) + list(evidence)
+                     if r.completion is not Completion.COMPLETED)
     rows.append(Row("Verifications that did not complete", str(incomplete),
                     note="ours, not yours. An aborted check escalates and never "
                          "authorises, and its decision is excluded from every "
@@ -350,18 +368,32 @@ def _sources_rows(records, feed: OutcomeFeed, ledger: str | None) -> tuple[Row, 
 
 def build(records: list[ComparisonRecord], feed: OutcomeFeed | None = None, *,
           partner: str = "", period: str = "", ledger: str | None = None,
-          generated_at: datetime | None = None) -> ReportDocument:
+          generated_at: datetime | None = None, notices: tuple[str, ...] = (),
+          extra_caveats: tuple[str, ...] = ()) -> ReportDocument:
     """One period of receipts, one outcome feed, one report.
 
     `feed` may be omitted entirely. That produces a complete receipt-side report with
     every outcome row printed unanswered, which is the correct output for a pilot in its
     first week — and a far better one than quietly dropping the half of the report the
     partner is actually waiting for.
+
+    `notices` join the banner at the top and `extra_caveats` the standing limits at the
+    bottom. They exist for the caller that knows something about how the numbers were
+    produced which the records cannot show — a backtest run with no extractor, say, whose
+    provenance rate is a fact about our configuration rather than their traffic. A caller
+    with that knowledge and no way to put it on the page would be the report's worst
+    failure mode: a true number under a false heading.
     """
     feed = feed or empty_feed("no outcome feed was supplied")
     orders = m.orders_only(records)
-    grouped = m.by_origin(orders)
-    joined = m.join(orders, feed)
+    # Two receipt products, and only one of them carries a decision. An order-evidence
+    # receipt is an order that arrived with no stated request at all, so it appears in the
+    # volume table and in provenance's denominator and in nothing else: it has no decision
+    # to distribute, no finding to cover and no comparison to be right or wrong about.
+    compared = m.comparisons(orders)
+    evidence = m.evidence_only(orders)
+    grouped = m.by_origin(compared)
+    joined = m.join(compared, feed)
 
     blocks = []
     for origin in m.MEASURED:
@@ -382,6 +414,7 @@ def build(records: list[ComparisonRecord], feed: OutcomeFeed | None = None, *,
 
     feed_note = NO_OUTCOMES if not feed.outcomes else (
         FIXTURE_WARNING if not feed.is_real else "")
+    feed_note = "  ".join(x for x in (feed_note, *notices) if x)
     tier = t.tier_of(feed)
     framing, mixed = mode_note(orders)
     if mixed:
@@ -393,8 +426,10 @@ def build(records: list[ComparisonRecord], feed: OutcomeFeed | None = None, *,
         shadow_note=framing, feed_note=feed_note,
         fixture=bool(feed.outcomes) and not feed.is_real,
         tier=tier, capabilities=_capability_rows(feed),
+        evidence_only=len(evidence),
         sources=_sources_rows(orders, feed, ledger),
-        volume=_volume_rows(orders, grouped),
+        volume=_volume_rows(compared, grouped, evidence),
         populations=tuple(blocks),
         provenance=m.provenance(orders),
-        join_quality=_join_rows(joined))
+        join_quality=_join_rows(joined),
+        caveats=tuple(extra_caveats) + CAVEATS)

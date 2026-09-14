@@ -37,7 +37,7 @@ import pytest
 from approv.artifact import build, render_html, render_text
 from approv.artifact import language as lang
 from approv.artifact import signature as artifact_signature
-from approv.intake import FreeText, Reading, Search, Structured
+from approv.intake import FreeText, Reading, Search, Structured, Undeclared
 from approv.receipts.chain import generate_key, public_key_hex
 from approv.receipts.keys import KeyStore
 from approv.receipts.store import ReceiptStore, ReplayError
@@ -661,6 +661,36 @@ def test_a_filter_and_a_query_that_agree_are_corroboration_not_a_conflict():
         % [(f.support.value, [r.value for r in f.reasons]) for f in size])
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "SEAM 7: `verify_order` returns an `OrderEvidenceRecord` for cart-only traffic and "
+    "`ReceiptStore.append_many` accepts only a `ComparisonRecord` (`require_unsealed` "
+    "raises TypeError), so the one receipt product built for orders with no stated "
+    "request cannot be sealed, chained or verified at all. The type and the surface path "
+    "landed; the ledger has not been told about them. Found by running the backtest over "
+    "an export whose requests file leaves rows undeclared."))
+def test_an_order_with_no_stated_request_can_be_sealed_like_any_other_receipt(tmp_path):
+    """The cart-only receipt is a receipt or it is nothing.
+
+    Its whole claim is that it is "signed and chained like any other receipt" - that is
+    the sentence on the type and the sentence the artifact prints. Until the store accepts
+    it, the population DR 0020 most wants measured produces evidence that cannot go in the
+    evidence chain, and a backtest either drops those orders or reports them outside the
+    ledger it asks the partner to check.
+    """
+    store = ReceiptStore(tmp_path / "receipts.sqlite")
+    result = verify_order(
+        VerificationRequest(
+            merchant_id="hearth-and-loom", correlation_id="corr-cart-only",
+            category_id="bedding", order=order_for("duvet-tandem"),
+            artifact=Undeclared(),
+            product_snapshot=dict(CATALOGUE["duvet-tandem"])),
+        schemas={"bedding": SCHEMA})
+
+    assert result.record.kind == "order_evidence", "cart-only is its own product"
+    sealed = store.append(result.record, generate_key())
+    assert sealed.hash and sealed.signature
+
+
 # The open seams, by test name. Named rather than counted so that clearing one is a
 # single legible edit by whoever fixed it, instead of a hardcoded number that blocks the
 # fix it was meant to protect. Removing a name here is as loud as changing a count was.
@@ -670,7 +700,9 @@ def test_a_filter_and_a_query_that_agree_are_corroboration_not_a_conflict():
 # same round, which is why this set met itself in a merge conflict. An empty set is the
 # strongest state it can be in and the easiest to regress -- adding a name back means a
 # module pair has started disagreeing again.
-OPEN_SEAMS: set[str] = set()
+OPEN_SEAMS = {
+    "test_an_order_with_no_stated_request_can_be_sealed_like_any_other_receipt",  # seam 7, claude1 (type) and codex1 (store)
+}
 
 
 

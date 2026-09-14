@@ -1,0 +1,5 @@
+# These fixtures are byte-exact on purpose: a UTF-8 BOM, CRLF line endings from a
+# Windows spreadsheet export, and cp1252 smart quotes in a customer note are the mess
+# the importer exists to survive. Line-ending normalisation would quietly fix the very
+# things under test.
+* -text

@@ -748,3 +748,106 @@ def test_the_plain_text_rendering_stays_ascii_for_an_ascii_record():
     that can ever arrive mangled."""
     text = render_text(record(unread=("Unsupported requirement: hotel weight",)))
     assert text.isascii(), [c for c in text if not c.isascii()][:10]
+
+
+# --- the cart-only receipt is a different, lesser document on its face --------------------
+
+def evidence_record(**kw):
+    """A cart-only receipt, built through the real builder rather than posed.
+
+    `build_order_evidence` takes no findings and no decision by construction, which is the
+    property under test: there is no path by which cart-only traffic becomes a
+    verification-shaped object because a caller omitted something.
+    """
+    from approv.receipts.record import build_order_evidence
+    from approv.types.core import Money, OrderLine
+
+    return build_order_evidence(
+        correlation_id=kw.pop("correlation_id", "corr-cart"),
+        schema=SCHEMA,
+        order=OrderLine(order_id="SO-1", line_id="1", product_id="duvet-1", sku="SKU-1",
+                        quantity=1, unit_price=Money(amount="118.00", currency="GBP")),
+        product_snapshot={"product_id": "duvet-1", "title": "Percale Duvet Cover"},
+        snapshot_hash="d" * 64, model_version="extract-v6", prompt_version="prompt-v6",
+        reasons=kw.pop("reasons", ("no stated request accompanied this order",)),
+        merchant_id="hearth-and-loom", **kw)
+
+
+def test_the_cart_only_receipt_renders_as_a_different_document_not_a_shorter_one():
+    """A returns desk reads the heading. A page headed like the dispute artifact, over a
+    record that happens to be shorter, is read as a verification that went quietly - which
+    is the exact failure `OrderEvidenceRecord` was created to end, arriving on the reading
+    surface instead of in the type."""
+    from approv.artifact import evidence, render_text
+    from approv.artifact import render as artifact_render
+
+    page = render_text(evidence_record())
+    assert page.startswith("~" * evidence.WIDTH), "banded differently, before a word"
+    assert "ORDER EVIDENCE" in page
+    assert "NOT A VERIFICATION" in page
+    assert artifact_render.is_evidence(evidence_record())
+
+    # None of the dispute artifact's load-bearing furniture, because none of it applies.
+    for absent in ("THE DECISION", "WHAT WAS CHECKED", "Covered", "Met", "NOT MET"):
+        assert absent not in page, absent
+
+
+def test_the_cart_only_page_states_its_limits_above_the_details():
+    """A reader who finds what they came for stops reading, so the four things this
+    document does not establish sit above the order line rather than below it."""
+    from approv.artifact import render_text
+
+    page = render_text(evidence_record())
+    limits = page.index("WHAT THIS DOES NOT ESTABLISH")
+
+    assert limits < page.index("THE ORDER")
+    for sentence in ("Nothing was authorised", "No attribute was checked",
+                     "Nothing here is covered"):
+        assert sentence in " ".join(page.split())
+
+
+def test_the_cart_only_page_never_prints_a_coverage_promise():
+    """`eligible` is hard-wired false on the type. The page must not contain a word that
+    could be read as a guarantee attaching to anything."""
+    from approv.artifact import render_html, render_text
+
+    for page in (render_text(evidence_record()), render_html(evidence_record())):
+        flat = " ".join(page.split()).lower()
+        assert "guaranteed" not in flat
+        assert "out of coverage" not in flat, "there is no coverage to be out of"
+        assert "nothing here is covered" in flat
+
+
+def test_why_there_was_no_request_is_printed_verbatim_or_its_absence_is():
+    """A record that said only "no request" invites the reader to supply their own reason
+    for it, and a reader supplying a reason on a dispute document is the problem."""
+    from approv.artifact import render_text
+
+    page = render_text(evidence_record(
+        reasons=("this order could not be classified as agent-placed, so it is out of "
+                 "coverage",)))
+    assert "could not be classified as agent-placed" in " ".join(page.split())
+
+    bare = render_text(evidence_record(reasons=()))
+    assert "carries no account of why" in " ".join(bare.split())
+    assert "not evidence that the order was ordinary" in " ".join(bare.split())
+
+
+def test_an_unsigned_cart_only_receipt_says_it_cannot_be_checked():
+    """Same rule as the dispute artifact: a record with no signature is not evidence, and
+    the page says so rather than printing verification instructions that cannot work."""
+    from approv.artifact import render_text
+
+    page = " ".join(render_text(evidence_record()).split())
+    assert "carries no signature" in page
+
+
+def test_the_html_page_is_visibly_not_the_dispute_artifact():
+    """Across a desk, before reading. Different header, different band, and a limits block
+    that is part of the page furniture rather than a footnote."""
+    from approv.artifact import render_html
+    page = render_html(evidence_record())
+    assert "<title>ORDER EVIDENCE" in page
+    assert 'class="lesser"' in page
+    assert "What this does not establish" in page
+    assert page.count("<section>") >= 5

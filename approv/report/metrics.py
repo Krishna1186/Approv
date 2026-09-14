@@ -144,6 +144,31 @@ def origin_of(record: ComparisonRecord) -> Origin:
     return Origin.ONSITE_SEARCH if search else Origin.AGENT_STATED
 
 
+def is_evidence(record) -> bool:
+    """Whether this receipt is the cart-only product rather than a comparison.
+
+    Read off the record's own signed `kind`. The alternative - "it has no findings, so it
+    must be cart-only" - is the inference `OrderEvidenceRecord` was created to remove, and
+    it would be wrong anyway: a verification that aborted also has no findings, and the
+    two are opposite facts.
+    """
+    return getattr(record, "kind", "") == "order_evidence"
+
+
+def comparisons(records: Iterable) -> list:
+    """The records that carry a decision. Every rate on the report is over these.
+
+    An order-evidence receipt has no decision, no findings and no stated request, so it
+    cannot appear in a decision distribution, a precision figure or a coverage class. It
+    is counted in its own row and in provenance's denominator, and nowhere else.
+    """
+    return [r for r in records if not is_evidence(r)]
+
+
+def evidence_only(records: Iterable) -> list:
+    return [r for r in records if is_evidence(r)]
+
+
 def orders_only(records: Iterable[ComparisonRecord]) -> list[ComparisonRecord]:
     """Records bound to an order line, which is the only thing a return can happen to.
 
@@ -331,13 +356,20 @@ def provenance(records: Sequence[ComparisonRecord]) -> Measure:
     The denominator is orders *submitted to Approv*, not the partner's orders. An order
     their system never sent us is invisible here, and no number in this report can see it
     — which is why the unmatched-outcome count matters.
+
+    **Order-evidence receipts are in the denominator.** They are orders that arrived with
+    no stated request at all — that is the whole reason they are a different receipt — so
+    leaving them out would compute the provenance rate over the orders that had provenance
+    and return a number close to one every week.
     """
     return Measure(
         name="orders carrying a recoverable stated request",
-        numerator=sum(1 for r in records
+        numerator=sum(1 for r in comparisons(records)
                       if origin_of(r) is not Origin.NO_STATED_REQUEST),
         denominator=len(records), population="all orders observed",
-        denominator_note="order events submitted to Approv in the period, of any origin")
+        denominator_note="order events submitted to Approv in the period, of any origin, "
+                         "including those that produced order evidence rather than a "
+                         "verification because no stated request reached us")
 
 
 # --------------------------------------------------------------------------------------

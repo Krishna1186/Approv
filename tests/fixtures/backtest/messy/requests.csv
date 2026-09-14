@@ -1,0 +1,13 @@
+order_ref,line,type,protocol,slots,search_query,facets,declared_intent
+SO-1001,1,structured,acp,"{""size"": ""King"", ""colour"": ""Frost""}",,,
+SO-1002,1,search,,,"queen duvet stone","size=Queen",
+SO-1003,1,free_text,,,,,"a double duvet in ash, please “nothing too dark”"
+SO-1004,1,structured,acp,"{""size"": ""King"", ""colour"": ""Clay""}",,,
+SO-1005,1,,acp,"size=King;colour=Frost",,,
+SO-1006,1,search,,,"stone queen duvet","size=Queen;colour=Stone",
+SO-1007,1,undeclared,,,,,
+SO-1008,1,structured,ap2,"{""size"": ""King"", ""colour"": ""Clay""}",,,
+SO-1009,1,structured,acp,"{""size"": ""King"", ""colour"": ""Frost""}",,,
+SO-1010,1,search,,,"queen stone duvet","size=Queen",
+SO-1011,1,free_text,,,,,"double duvet, ash"
+SO-1012,1,structured,acp,"{""size"": ""King"", ""colour"": ""Clay""}",,,

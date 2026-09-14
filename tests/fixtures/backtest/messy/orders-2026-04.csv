@@ -1,0 +1,14 @@
+﻿Order Ref.;Line;Product Type;Product;SKU;Variant;Qty;Unit Price;Currency;Order Date;Stock Status;Warehouse
+SO-1001;1;bedding;duvet-frost-king;SKU-1001;v-king-frost;1;118.00;GBP;03/04/2026;in_stock;LEEDS
+SO-1002;1;bedding;duvet-stone-queen;SKU-1002;v-queen-stone;2;96.00;GBP;04/04/2026;in_stock;LEEDS
+SO-1003;1;bedding;duvet-ash-double;SKU-1003;v-double-ash;1;1.234,56;GBP;2026-04-05T09:14:00Z;backorder;YORK
+SO-1004;1;bedding;duvet-clay-king;SKU-1004;v-king-clay;1;118.00;GBP;06/04/2026;in_stock;LEEDS
+SO-1005;1;bedding;duvet-frost-king;SKU-1005;v-king-frost;1;118.00;GBP;07/04/2026;in_stock;YORK
+SO-1006;1;bedding;duvet-stone-queen;SKU-1006;v-queen-stone;1;96.00;GBP;2026-04-08;in_stock;LEEDS
+SO-1007;1;bedding;duvet-ash-double;SKU-1007;v-double-ash;1;104.00;GBP;09/04/2026;in_stock;YORK
+SO-1008;1;bedding;duvet-clay-king;SKU-1008;v-king-clay;1;118.00;GBP;10/04/2026;in_stock;LEEDS
+SO-1001;1;bedding;duvet-frost-king;SKU-1001;v-king-frost;1;118.00;GBP;03/04/2026;in_stock;LEEDS
+SO-1009;1;bedding;duvet-frost-king;SKU-1009;v-king-frost;1;118.00;GBP;11/04/2026;in_stock;YORK
+SO-1010;1;bedding;duvet-stone-queen;SKU-1010;v-queen-stone;1;96.00;GBP;12/04/2026;in_stock;LEEDS
+SO-1011;1;bedding;duvet-ash-double;SKU-1011;v-double-ash;1;104.00;GBP;13/04/2026;in_stock;YORK
+SO-1012;1;bedding;duvet-clay-king;SKU-1012;v-king-clay;1;118.00;GBP;14/04/2026;in_stock;LEEDS

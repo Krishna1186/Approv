@@ -15,6 +15,7 @@ from __future__ import annotations
 import html as html_escape
 import textwrap
 
+from approv.artifact import evidence
 from approv.artifact import language as lang, signature
 from approv.artifact.document import (
     STOP, AttributeFinding, Document, Requirement, Row, build,
@@ -571,11 +572,28 @@ def to_html(document: Document, *, public_key: str | None = None,
 # --------------------------------------------------------------------------------------
 
 
+def is_evidence(record) -> bool:
+    """Whether this is the cart-only receipt rather than a comparison.
+
+    Read off the record's own `kind`, which is signed, rather than by checking whether
+    some field is empty. "Empty request means cart-only" is the inference the separate
+    type exists to remove, and reintroducing it on the reading surface would put it back
+    in the one place the reader can see.
+    """
+    return getattr(record, "kind", "") == "order_evidence"
+
+
 def render_text(record: ComparisonRecord, *, public_key: str | None = None,
                 record_file: str = "record.json") -> str:
+    if is_evidence(record):
+        return evidence.render_text(record, public_key=public_key,
+                                    record_file=record_file)
     return to_text(build(record), public_key=public_key, record_file=record_file)
 
 
 def render_html(record: ComparisonRecord, *, public_key: str | None = None,
                 record_file: str = "record.json") -> str:
+    if is_evidence(record):
+        return evidence.render_html(record, public_key=public_key,
+                                    record_file=record_file)
     return to_html(build(record), public_key=public_key, record_file=record_file)

@@ -18,7 +18,8 @@ signed record does not carry.
 """
 
 from approv.artifact.document import VERSION, Document, build
-from approv.artifact.render import render_html, render_text, to_html, to_text
+from approv.artifact.evidence import EvidenceDocument, build_evidence
+from approv.artifact.render import is_evidence, render_html, render_text, to_html, to_text
 
-__all__ = ["VERSION", "Document", "build", "render_html", "render_text", "to_html",
-           "to_text"]
+__all__ = ["VERSION", "Document", "build", "EvidenceDocument", "build_evidence",
+           "is_evidence", "render_html", "render_text", "to_html", "to_text"]

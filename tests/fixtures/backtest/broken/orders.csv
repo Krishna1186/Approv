@@ -1,0 +1,2 @@
+order_id,line_id,category_id,product_id,sku,quantity,unit_price,currency,ordered_at
+SO-2001,1,bedding,duvet-not-in-catalogue,SKU-2001,1,118.00,GBP,2026-04-03

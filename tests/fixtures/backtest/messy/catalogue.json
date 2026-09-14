@@ -1,0 +1,33 @@
+{
+  "duvet-frost-king": {
+    "title": "Percale Duvet Cover",
+    "variant": {
+      "size": "King",
+      "colour": "Frost"
+    },
+    "description": "Brushed cotton percale, 200 thread count."
+  },
+  "duvet-stone-queen": {
+    "title": "Percale Duvet Cover",
+    "variant": {
+      "size": "Queen",
+      "colour": "Stone"
+    },
+    "description": "Brushed cotton percale."
+  },
+  "duvet-ash-double": {
+    "title": "Linen Duvet Cover",
+    "variant": {
+      "size": "Double"
+    },
+    "description": "Washed linen. Colour shown: Ash."
+  },
+  "duvet-clay-king": {
+    "title": "Percale Duvet Cover",
+    "variant": {
+      "size": "King",
+      "colour": "Stone"
+    },
+    "description": "Brushed cotton percale."
+  }
+}

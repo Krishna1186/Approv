@@ -1,0 +1,53 @@
+{
+  "category_id": "bedding",
+  "version": "pilot-1",
+  "attributes": [
+    {
+      "name": "size",
+      "dimension": "nominal",
+      "criticality": "hard",
+      "feed_aliases": [],
+      "tolerance": "0.005"
+    },
+    {
+      "name": "colour",
+      "dimension": "nominal",
+      "criticality": "hard",
+      "feed_aliases": [],
+      "tolerance": "0.005"
+    }
+  ],
+  "field_profiles": [
+    {
+      "field_name": "variant.size",
+      "attributes": [
+        "size"
+      ],
+      "liability": "merchant_guaranteed",
+      "certainty": "exact",
+      "is_advice": false,
+      "is_variant_axis": true
+    },
+    {
+      "field_name": "variant.colour",
+      "attributes": [
+        "colour"
+      ],
+      "liability": "merchant_guaranteed",
+      "certainty": "exact",
+      "is_advice": false,
+      "is_variant_axis": true
+    },
+    {
+      "field_name": "description",
+      "attributes": [
+        "colour"
+      ],
+      "liability": "merchant_guaranteed",
+      "certainty": "parsed",
+      "is_advice": false,
+      "is_variant_axis": false
+    }
+  ],
+  "floor": []
+}

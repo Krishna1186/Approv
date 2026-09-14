@@ -1,0 +1,20 @@
+order_ref,line,event,date,reason,return_code,dispatched_at
+SO-1001,1,dispatched,05/04/2026,,,05/04/2026
+SO-1002,1,dispatched,06/04/2026,,,06/04/2026
+SO-1002,1,returned,20/04/2026,customer says the colour is wrong,not_as_described,06/04/2026
+SO-1003,1,dispatched,07/04/2026,,,07/04/2026
+SO-1004,1,dispatched,08/04/2026,,,08/04/2026
+SO-1004,1,returned,19/04/2026,wrong shade,RTN-COLOUR,08/04/2026
+SO-1005,1,dispatched,09/04/2026,,,09/04/2026
+SO-1006,1,dispatched,10/04/2026,,,10/04/2026
+SO-1006,1,returned,25/04/2026,changed their mind,changed_mind,10/04/2026
+SO-1007,1,dispatched,11/04/2026,,,11/04/2026
+SO-1008,1,dispatched,12/04/2026,,,12/04/2026
+SO-1008,1,returned,21/04/2026,not what was ordered,not_as_described,12/04/2026
+SO-1008,1,chargeback,02/05/2026,,,12/04/2026
+SO-1009,1,dispatched,13/04/2026,,,13/04/2026
+SO-1010,1,dispatched,14/04/2026,,,14/04/2026
+SO-1011,1,dispatched,15/04/2026,,,15/04/2026
+SO-1012,1,dispatched,16/04/2026,,,16/04/2026
+SO-1012,1,returned,27/04/2026,wrong colour,not_as_described,16/04/2026
+SO-9999,1,returned,22/04/2026,never reached Approv,not_as_described,10/04/2026
