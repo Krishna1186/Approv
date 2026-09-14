@@ -6,7 +6,7 @@ import pytest
 
 from approv.schema import propose_schema
 from approv.schema.public_catalogues import audit, fetch, oracle
-from approv.types.core import Term
+from approv.types.core import Money, OrderLine, Term
 
 
 @pytest.fixture
@@ -182,3 +182,50 @@ def test_failed_store_is_not_a_zero_missingness_catalogue(tmp_path):
     assert summary["metrics"]["usable_proposals_retrieved"]["rate"] is None
     html = (tmp_path / "index.html").read_text()
     assert "Unmeasured" in html and "<script>" not in html and "&lt;script&gt;" in html
+
+
+def read_selected(product, proposal, index=0):
+    """What the deployed reader emits for one ordered variant of one product."""
+    variant = product["variants"][index]
+    order = OrderLine(order_id="probe", product_id=str(product["id"]), sku=str(variant["sku"]),
+                      variant_id=str(variant["id"]), quantity=1,
+                      unit_price=Money(amount=0, currency="XXX"))
+    return audit.evidence_from_snapshot(audit.selected_listing(product, order),
+                                        proposal.proposed_schema)
+
+
+def test_prose_holding_two_quantities_is_read_by_neither_half(records):
+    """DR 0029, in the shape the cohort found it.
+
+    ILIA writes `Size: 1 fl oz | 30 ml` into a description. Derivation refused it and the
+    reader emitted it anyway, as a nominal label on a merchant-guaranteed source -- and a
+    label of those exact characters matches no request anybody will ever make, so the
+    attribute could only ever come back violated. Both halves now refuse it, by one rule.
+    """
+    product = deepcopy(records[0])
+    product["body_html"] = "<p><strong>What else:</strong><br>Size: 1 fl oz | 30 ml</p>"
+    proposal = propose_schema([product], category_id="synthetic")
+    prose = [source for row in proposal.report.attributes for source in row.sources
+             if source.field_name == "/body_html"]
+    assert all(source.published.numerator == 0 for source in prose)
+    assert not [e for e in read_selected(product, proposal) if e.field_name == "/body_html"]
+
+
+def test_a_label_that_only_failed_to_type_is_read_by_both_halves(records):
+    """The counter-case, and why DR 0029 is not simply "refuse harder".
+
+    `3XL` is a size label that failed to type because XL is not a unit, and here it sits in
+    a plain field rather than a selector. The reader always read it; derivation did not
+    count it as published unless a selector had named it. Now both do, and a partner's
+    report stops understating an axis we verify.
+    """
+    product = deepcopy(records[0])
+    # A sibling that types cleanly is what settles the attribute as NOMINAL; `3XL` alone
+    # gives the schema no dimension to read it in, which is a different gap.
+    product["variants"][0]["size"] = "3XL"
+    product["variants"][1]["size"] = "Medium"
+    proposal = propose_schema([product], category_id="synthetic")
+    published = [source for row in proposal.report.attributes for source in row.sources
+                 if source.field_name == "/variants/*/size"]
+    assert published and all(source.published.numerator == 2 for source in published)
+    assert [e for e in read_selected(product, proposal) if e.field_name == "/variants/*/size"]

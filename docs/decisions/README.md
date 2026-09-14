@@ -1,6 +1,6 @@
 # Decision records — index
 
-28 records, **9 still open**. Read this
+29 records, **9 still open**. Read this
 file instead of opening them. Full text is kept for the reasoning, not for re-reading.
 
 Under the 10 September contract only a §3.8 change earns a new record: the decision path,
@@ -36,6 +36,7 @@ coverage language, or a number that will be published. Nothing else does.
 | [0026](0026-an-unread-request-is-not-an-agreeing-one.md) | Request text nothing read is unknown, not agreement | closed |
 | [0027](0027-image-metadata-is-not-product-evidence.md) | Image metadata is not product evidence | closed |
 | [0028](0028-a-published-option-value-is-a-label.md) | A value the merchant enumerated is a label, not an expression | closed |
+| [0029](0029-one-usability-rule-for-both-halves.md) | One usability rule, applied by both halves | closed |
 
 ## The open ones, and whether they still matter
 

@@ -53,8 +53,11 @@ def _usable(cell: Cell, dimension: Dimension | None) -> bool:
     if dimension is None:
         return False
     if dimension is Dimension.NOMINAL:
-        # Full selector labels can remain labels, but an invalid price cannot.
-        return cell.value is not None or (cell.option and cell.issue in {"unitless_decimal", "unknown_or_ambiguous_unit"})
+        # Full labels can remain labels, but an invalid price cannot. DR 0029: the same
+        # pair as `surface.verification._LABEL_SAFE`, and not narrowed to selectors -- a
+        # merchant publishing `3XL` in a field called size has published a label whether
+        # or not the feed also enumerated it, and the reader reads it either way.
+        return cell.value is not None or cell.issue in {"unitless_decimal", "unknown_or_ambiguous_unit"}
     return cell.value is not None and cell.dimension is dimension
 
 

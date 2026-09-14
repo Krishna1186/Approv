@@ -197,9 +197,19 @@ def _catalogue_cells(snapshot: Mapping[str, object]) -> dict[tuple[str, str], Ce
 # the surface text, and for these there is no honest surface text to read: stringifying a
 # money object, or copying six hundred characters of description into a Term, would
 # manufacture the comparison that having no value at all correctly refuses.
+#
+# `ambiguous_quantity_expression` joined them under DR 0029, and it is the interesting one.
+# It does not mean *we could not type this label*; it means the string holds more than one
+# quantity reading -- `1 fl oz | 30 ml`, out of a description. Keeping that as a Term
+# manufactures a label no request will ever state, so the attribute can only come back
+# violated or unstated, on a guaranteed source, from marketing copy.
 _NOT_TEXT = frozenset({"unsupported_object", "invalid_money_amount", "invalid_number",
                        "multivalued_field_requires_mapping", "invalid_typed_value",
-                       "prose_requires_labelled_extraction"})
+                       "prose_requires_labelled_extraction", "ambiguous_quantity_expression"})
+# The readings that may still be kept as a label: the whole surface text is what the
+# merchant published, and the failure was only to *type* it -- `3XL` is not a unit, `13.5`
+# has none. `schema.derive._usable` holds the same pair, and the two must stay identical.
+_LABEL_SAFE = frozenset({"unitless_decimal", "unknown_or_ambiguous_unit"})
 
 
 def _settled_value(cell: Cell, dimension: Dimension | None) -> Value | None:
@@ -220,7 +230,12 @@ def _settled_value(cell: Cell, dimension: Dimension | None) -> Value | None:
     if not cell.present:
         return None
     if dimension is Dimension.NOMINAL:
-        return None if cell.issue in _NOT_TEXT else Term(surface=cell.raw)
+        if cell.issue in _NOT_TEXT:
+            return None
+        # DR 0029. The same question was being answered by two rules -- this one and
+        # `schema.derive._usable` -- and on real feeds they disagreed.
+        return (Term(surface=cell.raw)
+                if cell.value is not None or cell.issue in _LABEL_SAFE else None)
     return cell.value if cell.dimension is dimension else None
 
 
