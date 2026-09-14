@@ -22,7 +22,8 @@ def test_key_uses_explicit_position_and_rejects_duplicate_table_positions(record
     product["options"][0]["position"] = 2
     expected, ambiguous = oracle.option_key(product, {"option1": "wrong", "option2": "chosen"})
     assert expected[0]["raw"] == "chosen"
-    assert expected[0]["field_name"] == "/variants/*/option2#name=Finish%20%2F%20tone"
+    assert expected[0]["field_name"] == (
+        "/variants/*/option2#name=Finish%20%2F%20tone&table=%2Foptions")
     assert not ambiguous
     product["options"].append({"name": "Other", "position": 2, "values": []})
     assert oracle.option_key(product, {"option2": "chosen"}) == ([], [2])

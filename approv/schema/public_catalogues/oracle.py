@@ -17,10 +17,18 @@ def name_key(value):
     return re.sub(r"\s+", "_", value.strip().casefold())
 
 
+# The key a Shopify feed publishes its option definitions under. Named here rather than
+# discovered because the oracle's job is to state the answer from the feed's own
+# conventions; a reader that binds `option1` to a name table somewhere else is exactly the
+# confident-wrong-variant defect these probes exist to catch, and it should show up as a
+# disagreement rather than be absorbed by searching for whatever table agrees.
+OPTION_TABLE = "options"
+
+
 def option_key(product, variant):
     definitions = {}
     ambiguous = set()
-    for index, option in enumerate(product.get("options", []), 1):
+    for index, option in enumerate(product.get(OPTION_TABLE, []), 1):
         if not isinstance(option, dict):
             continue
         position = option.get("position", index)
@@ -29,13 +37,18 @@ def option_key(product, variant):
         if position in definitions:
             ambiguous.add(position)
         definitions[position] = option["name"]
+    # The locator syntax is spelled out rather than imported, like everything else here.
+    # A numbered slot means nothing without the table that named it, so the guard carries
+    # both: `#name=` is which option this is, `&table=` is which table said so.
+    table = "&table=" + quote("/" + OPTION_TABLE, safe="")
     expected = []
     for position, label in definitions.items():
         slot = "option" + str(position)
         raw = variant.get(slot)
         if position in ambiguous or not label.strip() or raw is None or str(raw).strip() == "":
             continue
-        expected.append({"attribute": name_key(label), "field_name": f"/variants/*/{slot}#name=" + quote(label, safe=""),
+        expected.append({"attribute": name_key(label),
+                         "field_name": f"/variants/*/{slot}#name=" + quote(label, safe="") + table,
                          "raw": str(raw).strip(), "position": position})
     return expected, sorted(ambiguous)
 
