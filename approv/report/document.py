@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from approv.report import metrics as m
+from approv.report import tiers as t
 from approv.report.outcomes import FeedSource, OutcomeFeed, empty_feed
 from approv.types.core import ComparisonRecord, Completion, Decision, Mode
 
@@ -100,8 +101,21 @@ CAVEATS = (
     "A rate over fewer than %d observations is a description of a handful of orders. The "
     "interval is printed beside every rate and is the honest reading of a small week."
     % m.THIN,
+    "Every rate is computed only over orders whose return window has closed - returns "
+    "included. A week reported days after it ended therefore has small denominators that "
+    "fill in as windows close, and the outcome half of any week is three weeks behind "
+    "its decision half. Counting the returns that have already happened against the "
+    "keeps that have not finished happening would make every young period look like a "
+    "catastrophe.",
     m.ORIGIN_IS_A_CONVENTION,
 )
+
+
+# The two decision classes whose rates are printed side by side. `CONFIRM` is excluded
+# on purpose: in shadow nobody acted on an escalation, so its orders were fulfilled
+# exactly like authorised ones, and a third row would invite a reader to compare three
+# numbers of which only two are a contrast.
+RATED = (Decision.REFUSE, Decision.ALLOW)
 
 
 @dataclass(frozen=True)
@@ -128,6 +142,12 @@ class PopulationBlock:
     payout_proxy: m.Measure
     open_window: m.Measure
     attribution: m.Attributed
+    # The minimum tier's pair and the best tier's pair. Held as dicts keyed by decision
+    # rather than as `refused`/`allowed` fields because the pair is the point: each is
+    # meaningless alone, and a shape that lets one be rendered without the other invites
+    # exactly that.
+    return_rates: dict[Decision, m.Measure] = field(default_factory=dict)
+    dispute_rates: dict[Decision, m.Measure] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -138,6 +158,11 @@ class ReportDocument:
     shadow_note: str
     feed_note: str
     fixture: bool
+    # Which rung of the data ladder this partner's feed reached, derived from the feed's
+    # own capability flags and never asserted. It decides which rows below carry a number
+    # and which carry the reason they do not.
+    tier: t.Tier = t.Tier.NONE
+    capabilities: tuple[Row, ...] = ()
     sources: tuple[Row, ...] = ()
     volume: tuple[Row, ...] = ()
     populations: tuple[PopulationBlock, ...] = ()
@@ -191,7 +216,45 @@ def _join_rows(joined: m.Joined) -> tuple[Row, ...]:
             note="orders your returns desk saw and Approv never did. This is the share "
                  "of your traffic that is not reaching us, and no other number in this "
                  "report can see it."),
-    )
+    ) + _quality_rows(joined.feed)
+
+
+def _quality_rows(feed: OutcomeFeed) -> tuple[Row, ...]:
+    """What the feed could not settle, printed whether or not it blocked anything.
+
+    Each of these suppresses a number quietly rather than blocking it, which makes them
+    more dangerous than the rows that print NOT COMPUTED. An uncoded return is counted as
+    not-a-wrong-item and drags precision *down*; a row we could not decide is held open
+    and drops out of every denominator. Both are safe directions to be wrong in and
+    neither is safe to leave unsaid, because a partner whose desk codes half its returns
+    is reading a number set by their data quality and would otherwise read it as ours.
+    """
+    rows = []
+    if feed.uncoded_returns:
+        rows.append(Row("Returns with no reason code", str(feed.uncoded_returns),
+                        missing=True,
+                        note="counted as not-wrong-item, which understates precision "
+                             "rather than overstating it. Your desk's coding rate is "
+                             "therefore a ceiling on the headline above."))
+    if feed.unrecognised_codes:
+        rows.append(Row("Reason codes we do not publish",
+                        ", ".join(feed.unrecognised_codes), missing=True,
+                        note="recorded as sent and counted as `other`. Approv does not "
+                             "guess what one of your codes means: tell us which of ours "
+                             "it corresponds to and it starts counting."))
+    if feed.undecidable:
+        rows.append(Row("Orders whose outcome could not be decided",
+                        str(feed.undecidable), missing=True,
+                        note="shipped, nothing since, and no ship date and window length "
+                             "to tell a kept order from an open one. Held open and "
+                             "excluded from every rate."))
+    return tuple(rows)
+
+
+def _capability_rows(feed: OutcomeFeed) -> tuple[Row, ...]:
+    """The flags the report actually acts on, beside the rung they add up to."""
+    return tuple(Row("  " + label, "yes" if value else "no", missing=not value)
+                 for label, value in t.capability_flags(feed))
 
 
 def _versions(records) -> tuple[Row, ...]:
@@ -214,7 +277,46 @@ def _versions(records) -> tuple[Row, ...]:
                 "More than one version ran in this period, so the numbers above are "
                 "computed over a mixture. A version change part-way through a week makes "
                 "the week two populations reported as one.")]
+    rows.extend(_schemas(records))
     return tuple(rows)
+
+
+def _schemas(records) -> tuple[Row, ...]:
+    """The category schema behind every finding, and whether one changed mid-period.
+
+    Same hazard as an engine change and it needed saying separately: the schema decides
+    which attributes are checked at all and at what criticality, so adding one HARD
+    attribute part-way through a week moves the refusal rate without anything in the
+    engine changing. The week is then two populations reported as one, exactly as a
+    version bump would make it, and nothing else on the page would show it.
+
+    Grouped **by category**, which is the part that is easy to get wrong. A partner
+    selling bedding and lighting runs two schemas at two versions every week of the pilot
+    and that is not a mixture; counting distinct versions across categories would fire the
+    warning permanently and train the reader to ignore it. Only a second version *within
+    one category* is the event.
+
+    `OrderLine.catalogue_version` is deliberately not here. The merchant's catalogue
+    changes whenever they edit a product, which is constantly and by design, and warning
+    about it would be warning about them doing their job.
+    """
+    seen: dict[str, dict[str, int]] = {}
+    for record in records:
+        seen.setdefault(record.category_id, {})
+        versions = seen[record.category_id]
+        versions[record.category_version] = versions.get(record.category_version, 0) + 1
+    split = sorted(name for name, versions in seen.items() if len(versions) > 1)
+    value = "; ".join(
+        "%s %s" % (name, ", ".join("%s (%d receipts)" % (version, count)
+                                   for version, count in sorted(versions.items())))
+        for name, versions in sorted(seen.items())) or "none"
+    return (Row("Category schema versions", value, missing=bool(split),
+                note=None if not split else
+                "The schema changed part-way through this period for: %s. The schema "
+                "decides which attributes are checked and at what criticality, so the "
+                "rates above are computed over a mixture of two different checks. Split "
+                "the period at the change before comparing it with another week."
+                % ", ".join(split)),)
 
 
 def _sources_rows(records, feed: OutcomeFeed, ledger: str | None) -> tuple[Row, ...]:
@@ -274,10 +376,13 @@ def build(records: list[ComparisonRecord], feed: OutcomeFeed | None = None, *,
             recall_flagged=m.recall(joined, origin, flagged=True),
             payout_proxy=m.payout_proxy(joined, origin),
             open_window=m.open_window(joined, origin),
-            attribution=m.attribution(joined, origin)))
+            attribution=m.attribution(joined, origin),
+            return_rates={d: m.return_rate(joined, origin, d) for d in RATED},
+            dispute_rates={d: m.dispute_rate(joined, origin, d) for d in RATED}))
 
     feed_note = NO_OUTCOMES if not feed.outcomes else (
         FIXTURE_WARNING if not feed.is_real else "")
+    tier = t.tier_of(feed)
     framing, mixed = mode_note(orders)
     if mixed:
         feed_note = (framing + "  " + feed_note).strip()
@@ -287,6 +392,7 @@ def build(records: list[ComparisonRecord], feed: OutcomeFeed | None = None, *,
         generated_at=generated_at or datetime.now(timezone.utc),
         shadow_note=framing, feed_note=feed_note,
         fixture=bool(feed.outcomes) and not feed.is_real,
+        tier=tier, capabilities=_capability_rows(feed),
         sources=_sources_rows(orders, feed, ledger),
         volume=_volume_rows(orders, grouped),
         populations=tuple(blocks),

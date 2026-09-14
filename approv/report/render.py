@@ -19,7 +19,8 @@ import html as html_escape
 import textwrap
 
 from approv.report import metrics as m
-from approv.report.document import PopulationBlock, ReportDocument, Row, build
+from approv.report import tiers as t
+from approv.report.document import RATED, PopulationBlock, ReportDocument, Row, build
 from approv.report.outcomes import OutcomeFeed
 from approv.types.core import ComparisonRecord, Decision
 
@@ -38,8 +39,10 @@ HEADINGS = (
     "5. WHY IT CAME BACK",
     "6. HOW MUCH OF YOUR TRAFFIC CARRIES A STATED REQUEST",
     "7. THE PAYOUT PROXY",
-    "8. THE DATA THIS WAS BUILT FROM",
-    "9. WHAT THIS REPORT DOES NOT SAY",
+    "8. THE EXPENSIVE TAIL: DISPUTES AND CHARGEBACKS",
+    "9. THE DATA THIS WAS BUILT FROM",
+    "10. WHAT YOUR DATA CAN AND CANNOT SUPPORT",
+    "11. WHAT THIS REPORT DOES NOT SAY",
 )
 
 HEADLINE_MEANS = (
@@ -66,6 +69,23 @@ ATTRIBUTION_MEANS = (
     "actually shows. Where your desk coded which attribute the customer complained "
     "about, that coding decides it; where it did not, the record as a whole does, and "
     "that is the weaker instrument."
+)
+
+RETURN_RATE_MEANS = (
+    "Not precision, and it must not be read as precision. This counts every return in "
+    "each class - changed mind, damaged in transit, looked different in the room - and "
+    "Approv never claimed to predict any of those. Neither row means anything alone: the "
+    "signal is whether the orders we would have refused came back more often than the "
+    "ones we would have authorised. It is what your data can support one tier before the "
+    "headline above can be computed."
+)
+
+DISPUTE_MEANS = (
+    "A return is money and logistics. A dispute is the ratio your card acceptance is "
+    "measured against, which is why it is reported apart from returns rather than "
+    "folded into them. Read it the same way as the pair above: the comparison between "
+    "the two classes, never either number on its own. Disputes are rare, so these "
+    "denominators are usually small and the interval is the only honest reading."
 )
 
 PAYOUT_MEANS = (
@@ -149,6 +169,58 @@ def _attribution_lines(block: PopulationBlock, indent: str = "    ") -> list[str
     return lines
 
 
+def _ladder_lines(document: ReportDocument, indent: str = "  ") -> list[str]:
+    """The data ladder, with the partner's own rung marked.
+
+    Printed on every report rather than only on the incomplete ones. A partner at the top
+    rung needs to read what even the top rung cannot say, and a ladder that appears only
+    when something is missing turns into a dunning notice.
+    """
+    current = document.tier
+    lines = [_wrap(t.LADDER_MEANS, indent), "",
+             "%sYOU ARE AT: %s" % (indent, t.TIERS[current].name),
+             _wrap(t.TIERS[current].headline, indent + "  "), ""]
+    for row in document.capabilities:
+        lines += _row_lines(row, indent)
+    lines += ["", _wrap(t.CAPABILITIES_ARE_THE_TRUTH, indent), ""]
+    for spec in t.LADDER:
+        mark = ">" if spec.tier == current else " "
+        state = ("  (you are here)" if spec.tier == current else
+                 "  (already sent)" if spec.tier < current else "  (not yet sent)")
+        lines.append("%s%s %s%s" % (indent, mark, spec.name, state))
+        lines.append(_wrap(spec.headline, indent + "    "))
+        for item in spec.supplies:
+            lines.append(_hang("send: " + item, indent + "    ", indent + "          "))
+        for item in spec.unlocks:
+            lines.append(_hang("buys: " + item, indent + "    ", indent + "          "))
+        for item in spec.cannot:
+            lines.append(_hang("still cannot: " + item, indent + "    ",
+                               indent + "                  "))
+        lines.append("")
+    return lines
+
+
+def _ladder_html(document: ReportDocument) -> str:
+    current = document.tier
+    rungs = []
+    for spec in t.LADDER:
+        state = ("you are here" if spec.tier == current else
+                 "already sent" if spec.tier < current else "not yet sent")
+        cls = "rung here" if spec.tier == current else "rung"
+        items = "".join('<li class="send">send: %s</li>' % _e(i) for i in spec.supplies)
+        items += "".join('<li class="buys">buys: %s</li>' % _e(i) for i in spec.unlocks)
+        items += "".join('<li class="cannot">still cannot: %s</li>' % _e(i)
+                         for i in spec.cannot)
+        rungs.append('<div class="%s"><h3>%s <span class="state">%s</span></h3>'
+                     '<p class="means">%s</p><ul class="ladder">%s</ul></div>'
+                     % (cls, _e(spec.name), _e(state), _e(spec.headline), items))
+    return ('<p class="means">%s</p><p><strong>You are at: %s</strong></p>%s'
+            '<p class="means">%s</p>%s'
+            % (_e(t.LADDER_MEANS), _e(t.TIERS[current].name),
+               _rows_html(document.capabilities), _e(t.CAPABILITIES_ARE_THE_TRUTH),
+               "".join(rungs)))
+
+
 def to_text(document: ReportDocument) -> str:
     out: list[str] = ["=" * WIDTH, TITLE,
                       "%s  |  %s" % (document.partner, document.period),
@@ -164,6 +236,16 @@ def to_text(document: ReportDocument) -> str:
         out += _measure_lines(block.open_window)
         out.append("")
     out.append(_wrap(NEVER_POOLED, "  "))
+    # The pair sits under the headline rather than in a section of its own, because at
+    # the tiers where the headline cannot be computed this is what a partner is actually
+    # reading, and a report that sends them hunting for it two pages later has answered
+    # "what does my data buy" with "look elsewhere".
+    out += ["", "  WHAT YOUR DATA SUPPORTS TODAY", "", _wrap(RETURN_RATE_MEANS, "  "), ""]
+    for block in document.populations:
+        out.append("  %s" % block.label)
+        for decision in RATED:
+            out += _measure_lines(block.return_rates[decision])
+        out.append("")
 
     out += ["", "-" * WIDTH, HEADINGS[1], "-" * WIDTH, ""]
     for row in document.volume:
@@ -201,14 +283,24 @@ def to_text(document: ReportDocument) -> str:
         out += _measure_lines(block.payout_proxy)
         out.append("")
 
-    out += ["-" * WIDTH, HEADINGS[7], "-" * WIDTH, ""]
+    out += ["-" * WIDTH, HEADINGS[7], "-" * WIDTH, "", _wrap(DISPUTE_MEANS, "  "), ""]
+    for block in document.populations:
+        out.append("  %s" % block.label)
+        for decision in RATED:
+            out += _measure_lines(block.dispute_rates[decision])
+        out.append("")
+
+    out += ["-" * WIDTH, HEADINGS[8], "-" * WIDTH, ""]
     for row in document.sources:
         out += _row_lines(row)
     out.append("")
     for row in document.join_quality:
         out += _row_lines(row)
 
-    out += ["", "-" * WIDTH, HEADINGS[8], "-" * WIDTH, ""]
+    out += ["", "-" * WIDTH, HEADINGS[9], "-" * WIDTH, ""]
+    out += _ladder_lines(document)
+
+    out += ["", "-" * WIDTH, HEADINGS[10], "-" * WIDTH, ""]
     for caveat in document.caveats:
         out.append(_hang("- " + caveat, "  ", "    "))
         out.append("")
@@ -240,6 +332,9 @@ section > h2 { font-size: .82rem; letter-spacing: .1em; text-transform: uppercas
                margin: 0 0 .9rem; color: #4a4f57; border-bottom: 1px solid #e6e6e2;
                padding-bottom: .5rem; }
 h3 { font-size: .95rem; margin: 1.1rem 0 .4rem; }
+p.subhead { font-size: .78rem; letter-spacing: .1em; text-transform: uppercase;
+            color: #4a4f57; margin: 1.6rem 0 .5rem; padding-top: .8rem;
+            border-top: 1px solid #e6e6e2; font-weight: 600; }
 p.means { color: #4a4f57; margin: .2rem 0 1rem; }
 .measure { border-left: 4px solid #c9c9c3; padding: .5rem .8rem; margin: .6rem 0;
            background: #fafaf8; }
@@ -263,6 +358,16 @@ ul.attr li { margin: .5rem 0; }
 ul.attr .count { font-weight: 700; }
 ul.attr .means { color: #4a4f57; font-size: .9rem; display: block; }
 footer ul { color: #4a4f57; font-size: .92rem; }
+.rung { border-left: 4px solid #dcdcd8; padding: .1rem .9rem .4rem; margin: .8rem 0; }
+.rung.here { border-left: 6px solid #14161a; background: #fafaf8; }
+.rung h3 { margin: .6rem 0 .2rem; }
+.rung .state { font-size: .72rem; letter-spacing: .06em; text-transform: uppercase;
+               color: #6b7280; font-weight: 600; }
+.rung.here .state { color: #14161a; }
+ul.ladder { list-style: none; padding: 0; margin: .3rem 0; font-size: .92rem; }
+ul.ladder li { margin: .25rem 0; padding-left: .8rem; border-left: 2px solid #e6e6e2; }
+ul.ladder .buys { border-left-color: #2f6f3e; }
+ul.ladder .cannot { border-left-color: #a31515; color: #6b7280; }
 @media print { body { background: #fff; } section { break-inside: avoid; } }
 """
 
@@ -336,7 +441,11 @@ def to_html(document: ReportDocument) -> str:
          f'<p class="means">{_e(HEADLINE_MEANS)}</p>'
          + per_population(lambda b: _measure_html(b.precision)
                           + _measure_html(b.open_window))
-         + f'<p class="means">{_e(NEVER_POOLED)}</p>'),
+         + f'<p class="means">{_e(NEVER_POOLED)}</p>'
+         + '<p class="subhead">What your data supports today</p>'
+         + f'<p class="means">{_e(RETURN_RATE_MEANS)}</p>'
+         + per_population(lambda b: "".join(_measure_html(b.return_rates[d])
+                                            for d in RATED))),
         (HEADINGS[1], _rows_html(document.volume)),
         (HEADINGS[2], per_population(
             lambda b: "".join(_measure_html(b.decisions[d]) for d in
@@ -350,9 +459,13 @@ def to_html(document: ReportDocument) -> str:
         (HEADINGS[5], _measure_html(document.provenance)),
         (HEADINGS[6], f'<p class="means">{_e(PAYOUT_MEANS)}</p>'
          + per_population(lambda b: _measure_html(b.payout_proxy))),
-        (HEADINGS[7], _rows_html(document.sources) + _rows_html(document.join_quality)),
-        (HEADINGS[8], "<ul>" + "".join("<li>%s</li>" % _e(c)
-                                       for c in document.caveats) + "</ul>"),
+        (HEADINGS[7], f'<p class="means">{_e(DISPUTE_MEANS)}</p>'
+         + per_population(lambda b: "".join(_measure_html(b.dispute_rates[d])
+                                            for d in RATED))),
+        (HEADINGS[8], _rows_html(document.sources) + _rows_html(document.join_quality)),
+        (HEADINGS[9], _ladder_html(document)),
+        (HEADINGS[10], "<ul>" + "".join("<li>%s</li>" % _e(c)
+                                        for c in document.caveats) + "</ul>"),
     ]
     body = "\n".join("<section><h2>%s</h2>%s</section>" % (_e(heading), content)
                      for heading, content in sections)

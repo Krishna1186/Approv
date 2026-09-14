@@ -15,12 +15,14 @@ would most want.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+import re
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from approv.report import metrics as m
 from approv.report import outcomes as o
+from approv.report import tiers as t
 from approv.report.document import CAVEATS, FIXTURE_WARNING, NO_OUTCOMES, SHADOW, build
 from approv.report.render import to_html, to_text
 from approv.types.core import (
@@ -78,7 +80,8 @@ def record(order_id="ORD-1", *, decision=Decision.ALLOW, source="acp.colour",
     return ComparisonRecord(
         correlation_id=correlation_id or ("corr-" + order_id),
         merchant_id="hearth-and-loom", attestation=kw.pop("attestation", "neither"),
-        category_id="bedding", category_version="1", locale="en-GB",
+        category_id=kw.pop("category_id", "bedding"),
+        category_version=kw.pop("category_version", "1"), locale="en-GB",
         request_text="a king duvet in Frost", request_constraints=constraints,
         product_id="duvet-1", product_snapshot={"product_id": "duvet-1"},
         snapshot_hash="d" * 64, completion=completion,
@@ -341,7 +344,9 @@ def test_the_payout_proxy_is_never_presented_as_a_payout():
     assert (proxy.numerator, proxy.denominator) == (1, 1)
     text = to_text(build(records, joined.feed))
     assert "A proxy and not a payout" in flat(text)
-    assert "we will pay" not in text.lower() and "owed" not in text.lower()
+    # Word boundaries, because "would have allowed" contains "owed" and the thing being
+    # banned is the language of a debt, not the letters.
+    assert not re.search(r"we will pay|owed|payable", text.lower())
 
 
 # --- provenance and the invisible denominator ---------------------------------------------
@@ -525,6 +530,8 @@ def test_the_report_does_not_vouch_for_a_chain_it_never_checked():
 
     assert row.value == "2, of which 0 carry a signature"
     assert "does not verify the chain" in row.note
+    # Anywhere on the page, including the data ladder, which describes what a receipt is
+    # worth without claiming this report established it.
     assert "hash-chained" not in to_text(document)
 
 
@@ -576,7 +583,16 @@ def test_precision_refuses_to_compute_rather_than_return_one_hundred_per_cent():
     joined = m.join(records, feed)
 
     measure = m.precision(joined, m.Origin.AGENT_STATED)
-    assert measure.unavailable == o.NO_WINDOW_CLOSE
+    # The reason first, then the tier sentence. Both halves are load-bearing: the first
+    # says why the number would be wrong, the second says what would fix it, and the
+    # second alone would read as a sales prompt stapled to a blank.
+    assert measure.unavailable.startswith(o.NO_WINDOW_CLOSE)
+    # The window is what blocks it today; the GOOD tier is what this row needs in the
+    # end, and both rungs' fields are listed so sending only the first does not produce
+    # a second NOT COMPUTED.
+    assert "needs the GOOD tier" in measure.unavailable
+    assert "ship date per order line" in measure.unavailable
+    assert "own reason code" in measure.unavailable
     assert measure.rate is None
     assert "100% by construction" in to_text(build(records, feed))
 
@@ -592,8 +608,8 @@ def test_approv_never_classifies_the_merchants_own_free_text():
 
     assert feed.outcomes[0].reason_text == "customer said the colour was wrong"
     assert feed.outcomes[0].wrong_item is False, "uncoded, so not counted either way"
-    assert m.recall(joined, m.Origin.AGENT_STATED).unavailable == o.NO_REASON_CODE
-    assert m.attribution(joined, m.Origin.AGENT_STATED).blocked == o.NO_REASON_CODE
+    assert m.recall(joined, m.Origin.AGENT_STATED).unavailable.startswith(o.NO_REASON_CODE)
+    assert m.attribution(joined, m.Origin.AGENT_STATED).blocked.startswith(o.NO_REASON_CODE)
     assert "colour was wrong" not in to_text(build([record("ORD-1")], feed))
 
 
@@ -608,8 +624,13 @@ def test_a_real_feed_still_produces_the_whole_receipt_side_of_the_report():
     assert "2 of 2" in text                       # volume, with its denominator
     assert "would have refused" in text
     assert text.count("NOT COMPUTED") >= 4
-    for missing, why in o.MISSING_FROM_INGESTION:
-        assert flat(why) in flat(text), missing
+    # This feed knows which orders came back and nothing else, so every blocked row is
+    # blocked by the *first* missing thing rather than by all of them. Naming the window
+    # is right: a partner told to send four fields at once sends none, and the dispute
+    # row cannot have a denominator until kept orders exist either way.
+    assert flat(o.NO_WINDOW_CLOSE) in flat(text)
+    assert flat(o.NO_REASON_CODE) in flat(text)
+    assert "To reach GOOD, send: ship date per order line" in flat(text)
 
 
 def test_the_framing_sentence_is_read_off_the_records_not_assumed():
@@ -645,3 +666,532 @@ def test_the_plain_text_report_stays_ascii_for_ascii_records():
                      feed(returned("ORD-1"), source=o.FeedSource.FIXTURE))
     text = to_text(document)
     assert text.isascii(), [c for c in text if not c.isascii()][:10]
+
+
+# --- the data ladder: what a partner gets for what a partner gives ------------------------
+
+class Shipped:
+    """An outcome event carrying the fields ingestion is growing, and nothing else.
+
+    A stand-in rather than a mock: `types.core.OrderOutcome` does not have ship date,
+    window length or reason code yet, both are landing optional, and the fold reads them
+    with `getattr` so it works either side of that. Posing them here is how the higher
+    tiers are testable today - and if ingestion lands them under different names, the
+    drift canary below fails rather than this suite passing over a fold that reads
+    nothing.
+    """
+
+    def __init__(self, correlation_id, kind="shipped", *, reason=None, reason_code=None,
+                 ship_date=None, return_window_days=None, attribute=None,
+                 occurred_at=None):
+        self.correlation_id = correlation_id
+        self.kind = kind
+        self.occurred_at = occurred_at or NOW
+        self.merchant_reason = reason
+        self.reason_code = reason_code
+        self.ship_date = ship_date
+        self.return_window_days = return_window_days
+        self.attribute = attribute
+
+
+LATER = datetime(2026, 10, 20, tzinfo=timezone.utc)
+
+
+def tier_feed(tier, records, *, source=o.FeedSource.FIXTURE):
+    """One week of the same orders, sent at each rung of the ladder.
+
+    Deliberately the *same underlying week* at every tier. What changes between these
+    feeds is only which fields the partner sent, so any difference in the report is a
+    difference in what the data can support and never a difference in what happened.
+    """
+    events = []
+    for index, r in enumerate(records):
+        came_back = index % 3 == 0
+        window = dict(ship_date=NOW, return_window_days=14) if tier >= t.Tier.MINIMUM else {}
+        if came_back:
+            events.append(Shipped(
+                r.correlation_id, "returned", reason="customer says the colour is wrong",
+                reason_code="not_as_described" if tier >= t.Tier.GOOD else None,
+                attribute="colour" if tier >= t.Tier.GOOD else None, **window))
+            if tier >= t.Tier.BEST and index % 6 == 0:
+                events.append(Shipped(r.correlation_id, "disputed", **window))
+        else:
+            events.append(Shipped(r.correlation_id, "shipped", **window))
+    if tier is t.Tier.NONE:
+        return o.empty_feed("nothing supplied")
+    return o.from_order_outcomes(events, source=source, as_of=LATER,
+                                 description="tier fixture")
+
+
+def a_week():
+    return [record("ORD-%d" % i, decision=Decision.REFUSE if i % 2 else Decision.ALLOW)
+            for i in range(12)]
+
+
+@pytest.mark.parametrize("tier", list(t.Tier))
+def test_the_tier_is_derived_from_the_feed_and_never_asserted(tier):
+    """Nobody tells the report which tier a partner is at. It reads what arrived.
+
+    A feed that could declare its own rung could flatter itself into one, and the rows
+    that rung unlocks would then print NOT COMPUTED underneath the claim.
+    """
+    records = a_week()
+    assert build(records, tier_feed(tier, records)).tier is tier
+
+
+def test_a_feed_that_is_a_lattice_rather_than_a_ladder_reads_as_the_lower_rung():
+    """Reason codes with no window close date is above MINIMUM on one axis and below it
+    on the other. The rung is the highest *complete* one, so it reads RETURNS_ONLY - and
+    the capability flags beside it still say the codes arrived, because a partner must
+    never be described as having sent less than they did."""
+    records = a_week()
+    feed = o.from_order_outcomes(
+        [Shipped(r.correlation_id, "returned", reason_code="not_as_described")
+         for r in records], source=o.FeedSource.PARTNER)
+    document = build(records, feed)
+
+    assert document.tier is t.Tier.RETURNS_ONLY
+    flags = {row.label.strip(): row.value for row in document.capabilities}
+    assert flags["carries your desk's own reason code"] == "yes"
+    assert flags["can tell a kept order from an open one"] == "no"
+    # And the row that needs only the coding still computes, rung aside.
+    assert build(records, feed).populations[0].recall_strict.unavailable is None
+
+
+def test_each_rung_unlocks_exactly_the_rows_it_pays_for():
+    """The whole degradation contract in one table. The same week, four times.
+
+    What must be true at every rung: a row that cannot be computed prints the reason and
+    the field that would fix it, and a row that can be computed is not withheld because
+    something *else* is missing. Both failures are silent ones - the first reads as a
+    clean result, the second as a broken product.
+    """
+    records = a_week()
+    computed = {}
+    for tier in t.Tier:
+        block = build(records, tier_feed(tier, records)).populations[0]
+        computed[tier] = {
+            "return rate": block.return_rates[Decision.REFUSE].unavailable is None,
+            "precision": block.precision.unavailable is None,
+            "recall": block.recall_strict.unavailable is None,
+            "attribution": block.attribution.blocked is None,
+            "payout proxy": block.payout_proxy.unavailable is None,
+            "disputes": block.dispute_rates[Decision.REFUSE].unavailable is None,
+        }
+
+    assert computed[t.Tier.NONE] == dict.fromkeys(computed[t.Tier.NONE], False)
+    assert computed[t.Tier.RETURNS_ONLY] == dict.fromkeys(computed[t.Tier.NONE], False)
+    assert computed[t.Tier.MINIMUM]["return rate"] is True
+    assert computed[t.Tier.MINIMUM]["precision"] is False
+    assert computed[t.Tier.GOOD]["precision"] is True
+    assert computed[t.Tier.GOOD]["recall"] is True
+    assert computed[t.Tier.GOOD]["attribution"] is True
+    assert computed[t.Tier.GOOD]["disputes"] is False
+    assert computed[t.Tier.BEST] == dict.fromkeys(computed[t.Tier.BEST], True)
+
+
+def test_a_blocked_row_says_which_tier_would_unlock_it_and_what_to_send():
+    """Two halves, both required. The reason says why the number would be wrong; the tier
+    sentence says what would fix it. The reason alone is a dead end and the tier sentence
+    alone is a sales prompt stapled to a blank."""
+    records = a_week()
+    text = to_text(build(records, tier_feed(t.Tier.MINIMUM, records)))
+
+    assert flat(o.NO_REASON_CODE) in flat(text)
+    assert "This row needs the GOOD tier and this feed is at MINIMUM" in flat(text)
+    assert "your returns desk's own reason code" in flat(text)
+
+
+def test_the_minimum_tier_does_not_look_broken():
+    """The founder's actual requirement: honest about what it cannot say, not broken.
+
+    A partner at the minimum tier has the headline blocked. They must still receive a
+    real number computed from their own data, in the same section, rather than a page of
+    NOT COMPUTED and an invitation to send more.
+    """
+    records = a_week()
+    document = build(records, tier_feed(t.Tier.MINIMUM, records))
+    text = to_text(document)
+    block = document.populations[0]
+
+    assert block.precision.unavailable is not None
+    assert block.return_rates[Decision.REFUSE].computable
+    assert block.return_rates[Decision.ALLOW].computable
+    # In the headline section, above the ladder, where a reader who stops early finds it.
+    assert text.index("WHAT YOUR DATA SUPPORTS TODAY") < text.index("2. WHAT WAS OBSERVED")
+
+
+def test_the_return_rate_is_never_presented_as_precision():
+    """It counts changed minds and damaged parcels, which no verification predicts.
+    Presenting it as precision would be the same failure as printing a 100% precision:
+    a number that is real arithmetic over a denominator that does not mean what a reader
+    would take it to mean."""
+    records = a_week()
+    document = build(records, tier_feed(t.Tier.MINIMUM, records))
+    measure = document.populations[0].return_rates[Decision.REFUSE]
+    text = to_text(document)
+
+    assert "precision" not in measure.name.lower()
+    assert "counting every reason" in measure.name
+    assert "including ones no verification could have predicted" in measure.denominator_note
+    assert "Not precision, and it must not be read as precision" in flat(text)
+    # And the pair is rendered as a pair: one row alone is a fact about their business.
+    assert text.count("return rate of orders Approv would have") >= 2
+
+
+def test_neither_half_of_a_paired_rate_can_be_rendered_without_the_other():
+    """The comparison is the signal. A shape that let one row be printed alone would
+    invite exactly that, so the pair is held as a dict keyed by decision and the renderer
+    walks the same constant the document builds from."""
+    from approv.report.document import RATED
+    from approv.report import render
+
+    records = a_week()
+    block = build(records, tier_feed(t.Tier.BEST, records)).populations[0]
+    assert set(block.return_rates) == set(RATED) == set(block.dispute_rates)
+    assert Decision.CONFIRM not in RATED, "in shadow nobody acted on an escalation"
+    assert "RATED" in render.to_text.__globals__
+
+
+# --- deriving kept, which is the field that unlocks every rate ----------------------------
+
+def test_kept_is_derived_only_once_the_window_has_actually_closed():
+    """Ship date plus window length is the minimum tier's whole purchase, and the
+    arithmetic has one dangerous direction: calling an order kept early counts a return
+    that has not happened yet as a success."""
+    inside = o.from_order_outcomes(
+        [Shipped("corr-1", ship_date=NOW, return_window_days=30)],
+        source=o.FeedSource.PARTNER, as_of=NOW + timedelta(days=3))
+    closed = o.from_order_outcomes(
+        [Shipped("corr-1", ship_date=NOW, return_window_days=30)],
+        source=o.FeedSource.PARTNER, as_of=NOW + timedelta(days=31))
+
+    assert inside.outcomes[0].status is o.Status.OPEN
+    assert inside.outcomes[0].window_closes_at == NOW + timedelta(days=30)
+    assert closed.outcomes[0].status is o.Status.KEPT
+    # Both feeds carry the mechanism, so both can tell kept from open. The first simply
+    # has nothing kept yet, which is a result and not an incapacity.
+    assert inside.records_window_close and closed.records_window_close
+
+
+def test_an_explicit_window_close_date_beats_our_own_arithmetic():
+    """A partner who can send the date has already applied their holiday rules and their
+    goodwill exceptions. Recomputing it from a nominal window length would overwrite
+    their answer with ours."""
+    event = Shipped("corr-1", ship_date=NOW, return_window_days=90)
+    event.return_window_closes_at = NOW + timedelta(days=2)
+    feed = o.from_order_outcomes([event], source=o.FeedSource.PARTNER,
+                                 as_of=NOW + timedelta(days=5))
+    assert feed.outcomes[0].status is o.Status.KEPT
+
+
+def test_an_order_with_no_window_information_is_undecidable_and_counted():
+    """Held open, excluded from every rate, and printed - because a row that is open
+    because we cannot tell is not the same fact as a row that is open because the window
+    genuinely has not closed, and only the count says which kind a period is full of."""
+    feed = o.from_order_outcomes([Shipped("corr-1"), Shipped("corr-2", ship_date=NOW,
+                                                             return_window_days=1)],
+                                 source=o.FeedSource.PARTNER, as_of=LATER)
+    assert feed.undecidable == 1
+    assert feed.records_window_close is False, "one undecidable row and the rate is unsafe"
+    row = next(r for r in build([record("ORD-1")], feed).join_quality
+               if r.label.startswith("Orders whose outcome could not"))
+    assert row.value == "1" and row.missing
+
+
+def test_a_feed_of_nothing_but_returns_cannot_tell_kept_from_open():
+    """The 100%-by-construction trap in its second form. Every row is decided, nothing is
+    undecidable, and there is still no kept order anywhere - so the capability is false
+    and precision refuses, exactly as it does for a feed with no window at all."""
+    feed = o.from_order_outcomes(
+        [Shipped("corr-ORD-1", "returned", reason_code="not_as_described")],
+        source=o.FeedSource.PARTNER, as_of=LATER)
+    assert feed.undecidable == 0
+    assert feed.records_window_close is False
+    joined = m.join([record("ORD-1", decision=Decision.REFUSE)], feed)
+    assert m.precision(joined, m.Origin.AGENT_STATED).unavailable is not None
+
+
+def test_a_report_re_run_later_does_not_promote_orders_the_period_left_open():
+    """`as_of` is the moment the report describes, not the moment it was generated. Last
+    week's report has to keep saying what it said."""
+    events = [Shipped("corr-ORD-1", ship_date=NOW, return_window_days=14)]
+    then = o.from_order_outcomes(events, source=o.FeedSource.PARTNER,
+                                 as_of=NOW + timedelta(days=2))
+    now = o.from_order_outcomes(events, source=o.FeedSource.PARTNER, as_of=LATER)
+    assert then.outcomes[0].status is o.Status.OPEN
+    assert now.outcomes[0].status is o.Status.KEPT
+
+
+# --- disputes are not returns -------------------------------------------------------------
+
+def test_a_dispute_is_not_folded_into_a_return():
+    """A customer who charges back may never have sent anything back. Counting one as the
+    other inflates the return count with chargebacks and then measures the inflated
+    number - and the two costs are the whole reason the top rung exists."""
+    feed = o.from_order_outcomes(
+        [Shipped("corr-ORD-1", ship_date=NOW, return_window_days=7),
+         Shipped("corr-ORD-1", "disputed", ship_date=NOW, return_window_days=7)],
+        source=o.FeedSource.PARTNER, as_of=LATER)
+    outcome_row = feed.outcomes[0]
+
+    assert outcome_row.disputed is True
+    assert outcome_row.status is o.Status.KEPT, "disputed, and nothing came back"
+    assert outcome_row.wrong_item is False, "a chargeback is not a returns-desk coding"
+    assert feed.records_disputes is True
+
+
+def test_a_quiet_week_is_not_read_as_a_missing_dispute_feed():
+    """Inference is a floor and not the truth: a week with no dispute looks exactly like a
+    week where disputes are not being sent. An ingestion path that knows which fields it
+    forwards says so, and then a zero is a zero."""
+    events = [Shipped("corr-ORD-1", ship_date=NOW, return_window_days=7)]
+    inferred = o.from_order_outcomes(events, source=o.FeedSource.PARTNER, as_of=LATER)
+    declared = o.from_order_outcomes(events, source=o.FeedSource.PARTNER, as_of=LATER,
+                                     records_disputes=True)
+
+    assert inferred.records_disputes is False
+    assert declared.records_disputes is True
+    joined = m.join([record("ORD-1")], declared)
+    measure = m.dispute_rate(joined, m.Origin.AGENT_STATED, Decision.ALLOW)
+    assert measure.computable and measure.numerator == 0
+
+
+def test_the_dispute_row_is_never_folded_into_the_return_row_on_the_page():
+    """Different costs, different sections. A merchant reading one number for both would
+    be reading their return rate and calling it their dispute exposure."""
+    records = a_week()
+    text = to_text(build(records, tier_feed(t.Tier.BEST, records)))
+    assert "8. THE EXPENSIVE TAIL: DISPUTES AND CHARGEBACKS" in text
+    assert text.index("WHAT YOUR DATA SUPPORTS TODAY") < text.index("THE EXPENSIVE TAIL")
+
+
+# --- their vocabulary, not ours -----------------------------------------------------------
+
+def test_a_code_we_do_not_publish_is_recorded_and_never_guessed_at():
+    """`RTN-SIZE` does not become `wrong_item` because it contains a word we recognise.
+    Their vocabulary is evidence and ours is arithmetic; mapping between them is the thing
+    the outcome fence exists to prevent."""
+    feed = o.from_order_outcomes(
+        [Shipped("corr-ORD-1", "returned", reason_code="RTN-SIZE",
+                 ship_date=NOW, return_window_days=7)],
+        source=o.FeedSource.PARTNER, as_of=LATER)
+    row = feed.outcomes[0]
+
+    assert row.reason_code is o.ReasonCode.OTHER
+    assert row.reason_code_raw == "RTN-SIZE"
+    assert row.wrong_item is False
+    quality = next(r for r in build([record("ORD-1")], feed).join_quality
+                   if r.label.startswith("Reason codes we do not publish"))
+    assert quality.value == "RTN-SIZE" and quality.missing
+    assert "does not guess what one of your codes means" in quality.note
+
+
+def test_uncoded_returns_are_counted_against_us_and_the_page_says_so():
+    """An uncoded return is not a wrong item, so it sits in precision's denominator and
+    not its numerator - which understates precision rather than overstating it, and is
+    therefore safe. It is not safe to leave unsaid: a partner whose desk codes half its
+    returns is reading a ceiling set by their own data quality."""
+    records = [record("ORD-1", decision=Decision.REFUSE),
+               record("ORD-2", decision=Decision.REFUSE),
+               record("ORD-3", decision=Decision.REFUSE)]
+    feed = o.from_order_outcomes(
+        [Shipped("corr-ORD-1", "returned", reason_code="not_as_described",
+                 ship_date=NOW, return_window_days=7),
+         Shipped("corr-ORD-2", "returned", ship_date=NOW, return_window_days=7),
+         Shipped("corr-ORD-3", ship_date=NOW, return_window_days=7)],
+        source=o.FeedSource.PARTNER, as_of=LATER)
+    document = build(records, feed)
+
+    assert feed.records_window_close, "one kept order, so the mechanism is demonstrated"
+
+    assert feed.uncoded_returns == 1
+    row = next(r for r in document.join_quality
+               if r.label.startswith("Returns with no reason code"))
+    assert "understates precision rather than overstating it" in row.note
+
+
+# --- a schema change splits a week exactly as an engine change does -----------------------
+
+def test_a_schema_change_part_way_through_a_week_is_shown_as_a_mixture():
+    """The schema decides which attributes are checked and at what criticality, so adding
+    one HARD attribute mid-week moves the refusal rate with nothing in the engine
+    changing. The week is then two populations reported as one."""
+    document = build([record("ORD-1", category_version="pilot-1"),
+                      record("ORD-2", category_version="pilot-2")])
+    row = next(r for r in document.sources if r.label == "Category schema versions")
+
+    assert row.missing, "a mid-week schema change is a warning, not a footnote"
+    assert "bedding" in row.value and "pilot-1" in row.value and "pilot-2" in row.value
+    assert "changed part-way through this period" in row.note
+
+
+def test_two_categories_at_two_versions_is_not_a_mixture():
+    """The easy way to get this wrong. A partner selling bedding and lighting runs two
+    schemas at two versions every week of the pilot, and a warning that fires permanently
+    is a warning a reader learns to skip."""
+    document = build([record("ORD-1", category_version="pilot-1"),
+                      record("ORD-2", category_id="lighting", category_version="v9")])
+    row = next(r for r in document.sources if r.label == "Category schema versions")
+
+    assert not row.missing and row.note is None
+    assert "bedding" in row.value and "lighting" in row.value
+
+
+# --- the ladder on the page ---------------------------------------------------------------
+
+def test_the_ladder_prints_what_each_rung_still_cannot_say():
+    """The half a partner would never be told by anyone selling them something, and the
+    reason the next rung exists. Printed at every tier, including the top - a partner at
+    BEST still needs to read what BEST cannot say."""
+    records = a_week()
+    for tier in t.Tier:
+        text = flat(to_text(build(records, tier_feed(tier, records))))
+        for spec in t.LADDER:
+            assert flat(spec.headline) in text
+            for sentence in spec.cannot:
+                assert flat(sentence) in text, (tier, spec.name)
+
+
+def test_the_ladder_marks_the_rung_the_partner_is_actually_on():
+    records = a_week()
+    text = to_text(build(records, tier_feed(t.Tier.GOOD, records)))
+    assert "YOU ARE AT: GOOD" in text
+    assert "> GOOD  (you are here)" in text
+    assert "MINIMUM  (already sent)" in text
+    assert "BEST  (not yet sent)" in text
+
+
+def test_no_rung_of_the_ladder_reads_as_a_price():
+    """It is a data ladder and not a pricing one. Nothing here may imply a commercial
+    term, and BEST is not a covered tier: coverage attaches per channel under DR 0020 and
+    nothing in this module speaks to it."""
+    records = a_week()
+    page = to_text(build(records, tier_feed(t.Tier.BEST, records))).lower()
+    for word in ("upgrade", "premium", "plan", "subscription", "per month", "pricing"):
+        assert word not in page, word
+
+
+# --- the fold has to survive ingestion landing the fields ---------------------------------
+
+def test_the_fold_reads_the_ingestion_fields_by_name_and_says_which_have_landed():
+    """The gap between what the report can use and what ingestion sends, visible on every
+    run rather than remembered."""
+    from approv.types.core import OrderOutcome
+    status = dict((name, present) for name, _, present in o.ingestion_status(OrderOutcome))
+    assert set(status) == {name for name, _ in o.INGESTION_FIELDS}
+    # No assertion about which are present: that is claude1's schedule, not a contract.
+    # The canary below is what makes a rename visible.
+    assert all(isinstance(present, bool) for present in status.values())
+
+
+def test_the_outcome_wire_type_has_not_grown_a_field_we_are_not_reading():
+    """The drift canary, and the guard on the worst silent failure this module has.
+
+    `from_order_outcomes` reads the optional ingestion fields with `getattr`, so if they
+    land under different names nothing raises: every feed reads one rung lower than it is
+    and the report degrades politely while the data was there all along. Nothing would
+    fail. This fails instead - the moment `OrderOutcome` grows or loses anything, someone
+    has to decide whether the fold should read it and which rung it unlocks.
+
+    It has already earned its place once: `reason_code`, `ship_date`,
+    `return_window_days` and `return_window_closes_at` landed while this module was being
+    written, under exactly the names the fold looks for, and this is what said so.
+
+    Fixing it is a one-line edit to this set. Deleting it is the thing not to do.
+    """
+    from approv.types.core import OrderOutcome
+    known = {"correlation_id", "kind", "occurred_at", "mode", "merchant_id",
+             "merchant_reason", "sku", "quantity",
+             # Landed for the report. Each one moves a partner up a rung.
+             "reason_code", "ship_date", "return_window_days",
+             "return_window_closes_at"}
+    fields = set(OrderOutcome.model_fields)
+    assert not fields - known, (
+        "OrderOutcome grew %s. Check whether from_order_outcomes should read it (see "
+        "INGESTION_FIELDS), which tier it unlocks, and then add it to this set."
+        % sorted(fields - known))
+    # And the other direction, which matters now that the fold depends on them: a rename
+    # or a removal reads as a partner who sent less, with nothing raised.
+    for name in ("reason_code", "ship_date", "return_window_days",
+                 "return_window_closes_at"):
+        assert name in fields, (
+            "%s is gone from OrderOutcome. from_order_outcomes reads it by name with "
+            "getattr, so every feed now silently reads one rung lower than it is." % name)
+
+
+# --- the survivorship trap: the 100% that arrives through a different door ----------------
+
+def test_a_period_whose_windows_have_not_closed_refuses_rather_than_reads_as_a_disaster():
+    """The second form of the 100%-by-construction number, and the one that got through.
+
+    A return resolves on the day it happens. A kept order resolves only when its window
+    closes. So a week reported six days after it shipped contains every return that has
+    happened and no keep that has finished happening - and a rate over "orders with a
+    known outcome" comes out at 100% with the capability flags all green, because the feed
+    genuinely can tell kept from open and simply has not been given time to.
+
+    Found by reading the demo's own tier table, where every return rate printed 100%.
+    """
+    records = [record("ORD-%d" % i, decision=Decision.REFUSE) for i in range(6)]
+    events = []
+    for index, r in enumerate(records):
+        events.append(Shipped(r.correlation_id, ship_date=NOW, return_window_days=21))
+        if index < 2:
+            events.append(Shipped(r.correlation_id, "returned", reason_code="wrong_item",
+                                  ship_date=NOW, return_window_days=21))
+    # Six days in: two orders have come back, four are still inside their window.
+    young = o.from_order_outcomes(events, source=o.FeedSource.PARTNER,
+                                  as_of=NOW + timedelta(days=6))
+    grown = o.from_order_outcomes(events, source=o.FeedSource.PARTNER,
+                                  as_of=NOW + timedelta(days=30))
+
+    assert young.records_window_close, "the mechanism is there; only the time is not"
+    early = m.precision(m.join(records, young), m.Origin.AGENT_STATED)
+    assert early.denominator == 0, (
+        "a returned order inside its own window was counted against keeps that have not "
+        "finished happening: %d of %d" % (early.numerator, early.denominator))
+    assert early.rate is None
+
+    late = m.precision(m.join(records, grown), m.Origin.AGENT_STATED)
+    assert (late.numerator, late.denominator) == (2, 6)
+
+
+def test_an_unclosed_return_is_counted_in_the_open_window_row_not_dropped():
+    """It reads oddly for a second - the order came back, what is undecided? - and that is
+    the row that explains why the rates above it have a smaller denominator than the
+    period does."""
+    records = [record("ORD-1", decision=Decision.REFUSE)]
+    feed = o.from_order_outcomes(
+        [Shipped("corr-ORD-1", ship_date=NOW, return_window_days=21),
+         Shipped("corr-ORD-1", "returned", reason_code="wrong_item", ship_date=NOW,
+                 return_window_days=21)],
+        source=o.FeedSource.PARTNER, as_of=NOW + timedelta(days=6))
+    measure = m.open_window(m.join(records, feed), m.Origin.AGENT_STATED)
+
+    assert (measure.numerator, measure.denominator) == (1, 1)
+    assert "returns included" in measure.denominator_note
+
+
+def test_the_caveat_says_the_outcome_half_of_a_week_lags_its_decision_half():
+    """A partner comparing this week's refusal count with this week's precision is
+    comparing two different weeks, and nothing else on the page would tell them."""
+    text = flat(to_text(build([record()], feed(outcome()))))
+    assert "three weeks behind its decision half" in text
+
+
+def test_the_instruction_lists_every_rung_between_here_and_there():
+    """A partner two rungs down who is told to send dispute events will send them and
+    still get NOT COMPUTED, because the row also needs the kept orders and the coding
+    underneath. A second accurate-looking instruction that does not work is worse than
+    none."""
+    records = a_week()
+    document = build(records, tier_feed(t.Tier.RETURNS_ONLY, records))
+    blocked = document.populations[0].dispute_rates[Decision.REFUSE].unavailable
+
+    assert "needs the BEST tier and this feed is at RETURNS ONLY" in blocked
+    for rung in (t.Tier.MINIMUM, t.Tier.GOOD, t.Tier.BEST):
+        for item in t.TIERS[rung].supplies:
+            assert item in blocked, (rung, item)
+    # And nothing from a rung they are already on.
+    assert t.TIERS[t.Tier.RETURNS_ONLY].supplies[0] not in blocked

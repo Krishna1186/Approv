@@ -1,24 +1,33 @@
 #!/usr/bin/env python3
-"""A week of shadow traffic, and the report a design partner would receive.
+"""A week of shadow traffic, reported five times: once at each data tier.
 
     python scripts/demo_partner_report.py --out output/partner-report
 
-Runs a synthetic week through the real path — surface, evaluator, receipts, ledger — and
-renders the weekly report over the resulting chain. Two reports are produced:
+Runs one synthetic week through the real path — surface, evaluator, receipts, ledger —
+and then renders the weekly report over that one week five times, each time as though the
+partner had sent a different amount of outcome data:
 
-    week-1.*   no outcome data at all, which is a pilot's real first week
-    week-2.*   a FIXTURE outcome feed carrying everything the report needs, so the
-               outcome-derived rows can be seen working
-    week-3.*   the same week through `types.core.OrderOutcome`, the ingestion path that
-               actually exists. Most outcome rows print NOT COMPUTED with the reason, and
-               the gap between this and week two is the specification for what ingestion
-               still has to carry
+    tier-0-none.*          receipts only. A pilot's real first week.
+    tier-1-returns-only.*  which orders came back, and nothing else
+    tier-2-minimum.*       + ship date and return-window length, so a kept order exists
+    tier-3-good.*          + the desk's own reason code
+    tier-4-best.*          + dispute and chargeback events
 
-**Every number in the second report is invented.** The returns data does not exist: the
-ingestion path is claude1's and is not built, so the outcomes here come from the seeded
-generator below, which is described in full when this script runs. The report marks every
-row it derives from them, and the fixture is deliberately not tuned to flatter — the
-generator returns items for reasons Approv cannot see as well as reasons it can.
+Every one of these is built from real `types.core.OrderOutcome` events. The optional
+fields the higher rungs need are on the wire type now, so the tiers are no longer a
+statement about what Approv can receive - they are a statement about what a given partner
+actually sends, which is the thing that will differ between design partners.
+
+**The week underneath is identical in all five.** The same orders, the same decisions, the
+same returns. What changes is only which fields the partner sent, so every difference
+between two of these pages is a difference in what the data could support and never a
+difference in what happened. Hold tier 1 and tier 3 side by side and that is the answer
+to "what do I get for what I give".
+
+**Every outcome number is invented.** No partner has sent returns data yet, so outcomes
+come from the seeded generator below, which is described in full when this script runs. The report marks every
+row it derives from them, and the generator is deliberately not tuned to flatter — it
+returns items for reasons Approv cannot see as well as reasons it can.
 
 What is real: the receipts. They come out of the same `verify_order` -> `ReceiptStore`
 path as production, they are signed and chained, and `scripts/verify_receipt.py` checks
@@ -28,23 +37,28 @@ them with none of this code.
 from __future__ import annotations
 
 import argparse
-import json
 import random
 import sys
-from datetime import datetime, timedelta, timezone
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from approv.receipts.chain import generate_key
 from approv.receipts.store import ReceiptStore
-from approv.report import FeedSource, from_rows, render_html, render_text
-from approv.report.outcomes import MISSING_FROM_INGESTION, REQUIRED_OF_INGESTION
+from approv.report import FeedSource, render_html, render_text
+from approv.report import tiers as t
+from approv.report.outcomes import (
+    BLOCKED_WITHOUT, REQUIRED_OF_A_FEED, empty_feed, from_order_outcomes,
+    ingestion_status,
+)
 from approv.intake import FreeText, Reading, Search, Structured
 from approv.surface.verification import VerificationRequest, verify_order
 from approv.types.core import (
     AttributeSpec, CategorySchema, Certainty, Channel, ComparisonRecord, Constraint,
-    Criticality, Decision, Dimension, FieldProfile, Liability, Money, OrderLine, Term,
+    Criticality, Decision, Dimension, FieldProfile, Liability, Money, OrderLine,
+    OrderOutcome, OutcomeKind, Term,
 )
 
 SCHEMA = CategorySchema(
@@ -68,6 +82,7 @@ SCHEMA = CategorySchema(
 
 SIZES = ["King", "Queen", "Double"]
 COLOURS = ["Frost", "Stone", "Ash", "Clay"]
+WINDOW_DAYS = 21
 
 # How the fixture invents outcomes. Printed when this runs, because a number whose
 # generative process is hidden is worse than no number.
@@ -76,11 +91,34 @@ GENERATOR = (
     "not-as-described.",
     "An order that did match comes back 4% of the time: wrong size on the bed, changed "
     "mind, damaged in transit. Approv sees none of those coming.",
-    "A quarter of the week's orders are still inside their return window and are `open`, "
-    "which excludes them from every rate.",
+    "The return window is %d days, and the report is generated once the last of them "
+    "has closed. Generate it a week after the period instead and every rate is empty: a "
+    "return resolves the day it happens, a keep resolves only at window close, so a "
+    "young period holds every return and no keep." % WINDOW_DAYS,
     "Half of the returns carry the attribute the customer complained about; the rest are "
     "uncoded, which is what most desks actually record.",
+    "One return in twelve becomes a dispute or a chargeback, and a dispute is never "
+    "counted as a return: the customer who charges back may have kept the goods.",
 )
+
+
+@dataclass
+class Fact:
+    """What actually happened to one order, before any tier decides how much of it to send.
+
+    The whole point of the tier demo: this is the truth, and each tier is a *projection*
+    of it. Generating a different week per tier would make the five reports incomparable
+    and would quietly turn "what your data buys" into "what this run happened to roll".
+    """
+
+    correlation_id: str
+    shipped_at: datetime
+    returned: bool
+    returned_at: datetime | None
+    reason_code: str | None
+    attribute: str | None
+    disputed: bool
+    merchant_reason: str | None
 
 
 def product(product_id, size, colour, material="Brushed cotton percale."):
@@ -144,7 +182,7 @@ def one_order(index, rng, store, key):
     return store.append(result.record, key), mismatched or silent
 
 
-def outcome_for(record: ComparisonRecord, wrong: bool, rng) -> dict:
+def fact_for(record: ComparisonRecord, wrong: bool, rng) -> Fact:
     """Invent what happened next. Correlated with reality, not with our decision.
 
     Deliberately keyed on whether the *order* actually mismatched rather than on what
@@ -152,24 +190,84 @@ def outcome_for(record: ComparisonRecord, wrong: bool, rng) -> dict:
     recall come out at whatever the generator was told to produce, and the report would
     be measuring its own inputs.
     """
-    if rng.random() < 0.25:
-        return {"order_id": record.order.order_id, "line_id": record.order.line_id,
-                "correlation_id": record.correlation_id, "status": "open",
-                "window_closes_at": (record.timestamp + timedelta(days=21)).isoformat()}
+    shipped_at = record.timestamp + timedelta(days=1)
     returned = rng.random() < (0.55 if wrong else 0.04)
     if not returned:
-        return {"order_id": record.order.order_id, "line_id": record.order.line_id,
-                "correlation_id": record.correlation_id, "status": "kept",
-                "resolved_at": (record.timestamp + timedelta(days=21)).isoformat()}
+        return Fact(record.correlation_id, shipped_at, False, None, None, None, False,
+                    None)
     code = "not_as_described" if wrong else rng.choice(
         ["changed_mind", "damaged", "not_as_described"])
-    row = {"order_id": record.order.order_id, "line_id": record.order.line_id,
-           "correlation_id": record.correlation_id, "status": "returned",
-           "reason_code": code,
-           "resolved_at": (record.timestamp + timedelta(days=9)).isoformat()}
-    if code == "not_as_described" and rng.random() < 0.5:
-        row["attribute"] = "colour"
-    return row
+    coded = rng.random() < 0.5
+    return Fact(
+        correlation_id=record.correlation_id, shipped_at=shipped_at, returned=True,
+        returned_at=shipped_at + timedelta(days=rng.randint(2, 16)),
+        # Half the desk's returns carry no code at all, which is what most desks record.
+        reason_code=code if coded else None,
+        attribute="colour" if coded and code == "not_as_described" else None,
+        disputed=rng.random() < 1 / 12,
+        merchant_reason="customer says the colour is wrong" if code == "not_as_described"
+        else "customer changed their mind")
+
+
+def events_for(tier: t.Tier, facts: list[Fact]) -> list[OrderOutcome]:
+    """One tier's projection of the truth, as real `OrderOutcome` events.
+
+    Fields above the rung are simply not sent, which is what a partner at that rung looks
+    like. The wire type carries all of them, so nothing here is a stand-in: the
+    difference between two of these pages is only ever a difference in what was sent.
+
+    One field the higher rungs would like is genuinely not on the wire type yet - which
+    attribute the customer complained about - so even the top rung here attributes
+    returns from the record as a whole rather than from the desk's own coding. The report
+    prints how many it attributed each way, so that gap is visible on the page rather
+    than only in this docstring.
+    """
+    events = []
+    for fact in facts:
+        ship = ({"ship_date": fact.shipped_at, "return_window_days": WINDOW_DAYS}
+                if tier >= t.Tier.MINIMUM else {})
+        events.append(OrderOutcome(correlation_id=fact.correlation_id,
+                                   kind=OutcomeKind.SHIPPED,
+                                   occurred_at=fact.shipped_at, **ship))
+        if fact.returned:
+            events.append(OrderOutcome(
+                correlation_id=fact.correlation_id, kind=OutcomeKind.RETURNED,
+                occurred_at=fact.returned_at, merchant_reason=fact.merchant_reason,
+                reason_code=fact.reason_code if tier >= t.Tier.GOOD else None, **ship))
+        if fact.disputed and tier >= t.Tier.BEST:
+            events.append(OrderOutcome(
+                correlation_id=fact.correlation_id, kind=OutcomeKind.DISPUTED,
+                occurred_at=(fact.returned_at or fact.shipped_at) + timedelta(days=3),
+                **ship))
+    return events
+
+
+FILENAMES = {
+    t.Tier.NONE: "tier-0-none",
+    t.Tier.RETURNS_ONLY: "tier-1-returns-only",
+    t.Tier.MINIMUM: "tier-2-minimum",
+    t.Tier.GOOD: "tier-3-good",
+    t.Tier.BEST: "tier-4-best",
+}
+
+# What to read off each page, for the summary table at the end of the run.
+WATCHED = (
+    ("return rate, refused", lambda b: b.return_rates[Decision.REFUSE]),
+    ("return rate, authorised", lambda b: b.return_rates[Decision.ALLOW]),
+    ("precision", lambda b: b.precision),
+    ("recall (strict)", lambda b: b.recall_strict),
+    ("payout proxy", lambda b: b.payout_proxy),
+    ("dispute rate, refused", lambda b: b.dispute_rates[Decision.REFUSE]),
+)
+
+
+def cell(measure) -> str:
+    if measure.unavailable is not None:
+        return "--"
+    if not measure.denominator:
+        return "n/a"
+    return "%.0f%% (%d/%d)" % (100 * measure.rate, measure.numerator,
+                               measure.denominator)
 
 
 def main() -> int:
@@ -190,79 +288,95 @@ def main() -> int:
     store = ReceiptStore(ledger)
     key = generate_key()
 
-    records, wrongness = [], {}
+    records, facts = [], []
     for index in range(arguments.orders):
         record, wrong = one_order(index, rng, store, key)
         records.append(record)
-        wrongness[record.correlation_id] = wrong
+        facts.append(fact_for(record, wrong, rng))
 
-    period = "7-13 September 2026"
+    period = "the week of %s" % min(r.timestamp for r in records).date().isoformat()
     partner = "Hearth & Loom"
+    # **Five days after the last return window closes, not five days after the week.**
+    # A weekly report can only rate orders whose windows have closed, because a return
+    # resolves the day it happens and a keep resolves only at window close - so a page
+    # generated a week after the period contains every return and no keep, and every rate
+    # on it is 100% by construction. The outcome half of a weekly report is three weeks
+    # behind its decision half, and this is that lag made explicit rather than hidden by
+    # a fixture that quietly closed every window.
+    as_of = max(r.timestamp for r in records) + timedelta(days=WINDOW_DAYS + 6)
 
-    # Week one: the receipts exist, the outcome feed does not. This is the real first
-    # report of a pilot and the one most likely to be sent.
-    first = render_text(records, None, partner=partner, period=period,
-                        ledger=str(ledger))
-    (out / "week-1.txt").write_text(first, encoding="utf-8")
-    (out / "week-1.html").write_text(
-        render_html(records, None, partner=partner, period=period, ledger=str(ledger)),
-        encoding="utf-8")
+    documents = {}
+    for tier in t.Tier:
+        if tier is t.Tier.NONE:
+            feed = empty_feed("no outcome feed was supplied for this period")
+        else:
+            feed = from_order_outcomes(
+                events_for(tier, facts), source=FeedSource.FIXTURE, as_of=as_of,
+                description="seeded generator in scripts/demo_partner_report.py, seed "
+                            "%d, sent at the %s tier. Not partner data."
+                            % (arguments.seed, t.TIERS[tier].name))
+        name = FILENAMES[tier]
+        text = render_text(records, feed, partner=partner, period=period,
+                           ledger=str(ledger), generated_at=as_of)
+        (out / (name + ".txt")).write_text(text, encoding="utf-8")
+        (out / (name + ".html")).write_text(
+            render_html(records, feed, partner=partner, period=period,
+                        ledger=str(ledger), generated_at=as_of), encoding="utf-8")
+        documents[tier] = build_of(records, feed, partner, period, ledger, as_of)
+        if tier is t.Tier.GOOD:
+            print(text)
 
-    feed = from_rows((outcome_for(r, wrongness[r.correlation_id], rng) for r in records),
-                     source=FeedSource.FIXTURE,
-                     description="seeded generator in scripts/demo_partner_report.py, "
-                                 "seed %d. Not partner data." % arguments.seed)
-    (out / "outcomes-fixture.json").write_text(feed.model_dump_json(indent=2),
-                                               encoding="utf-8")
-    second = render_text(records, feed, partner=partner, period=period, ledger=str(ledger))
-    (out / "week-2.txt").write_text(second, encoding="utf-8")
-    (out / "week-2.html").write_text(
-        render_html(records, feed, partner=partner, period=period, ledger=str(ledger)),
-        encoding="utf-8")
-
-    # Week three: the same week, through the ingestion path that actually exists. This is
-    # the honest version of what a partner would receive today, and the gap between it and
-    # week two is the specification for what ingestion still has to carry.
-    from approv.types.core import OrderOutcome, OutcomeKind
-    from approv.report.outcomes import from_order_outcomes
-    events = []
-    for r in records:
-        events.append(OrderOutcome(correlation_id=r.correlation_id,
-                                   kind=OutcomeKind.SHIPPED, occurred_at=r.timestamp))
-        if wrongness[r.correlation_id] and rng.random() < 0.55:
-            events.append(OrderOutcome(
-                correlation_id=r.correlation_id, kind=OutcomeKind.RETURNED,
-                occurred_at=r.timestamp + timedelta(days=9),
-                merchant_reason="customer says the colour is wrong"))
-    real = from_order_outcomes(events, source=FeedSource.PARTNER,
-                               description="OrderOutcome events, ingestion run")
-    (out / "week-3.txt").write_text(
-        render_text(records, real, partner=partner, period=period, ledger=str(ledger)),
-        encoding="utf-8")
-    (out / "week-3.html").write_text(
-        render_html(records, real, partner=partner, period=period, ledger=str(ledger)),
-        encoding="utf-8")
-
-    print(second)
     print()
     print("=" * 88)
     print("HOW THE FIXTURE OUTCOMES WERE INVENTED")
     print("=" * 88)
     for line in GENERATOR:
         print("  - " + line)
+
     print()
-    print("WHAT THE INGESTION PATH HAS TO DELIVER FOR ANY OF THIS TO BE REAL")
+    print("=" * 88)
+    print("THE SAME WEEK AT EVERY TIER: WHAT THE PARTNER GETS FOR WHAT THEY SEND")
+    print("=" * 88)
+    print("Agent-stated orders only, so the columns are comparable. `--` is a row that")
+    print("printed its reason instead of a number.")
+    print()
+    print("Generated %s, which is %d days after the last return window in the period"
+          % (as_of.date().isoformat(), WINDOW_DAYS + 6))
+    print("closes. Run it a week after the period instead and every rate below is empty:")
+    print("a return resolves the day it happens and a keep resolves only at window")
+    print("close, so a young period holds every return and no keep.")
+    print()
+    header = "%-26s" % "" + "".join("%-17s" % t.TIERS[tier].name[:16] for tier in t.Tier)
+    print(header)
+    print("-" * len(header))
+    for label, pick in WATCHED:
+        row = "%-26s" % label
+        for tier in t.Tier:
+            row += "%-17s" % cell(pick(documents[tier].populations[0]))
+        print(row)
+
+    print()
+    print("WHAT A FEED HAS TO DELIVER FOR ANY OF THIS TO BE REAL")
     print("-" * 88)
-    for line in REQUIRED_OF_INGESTION:
+    for line in REQUIRED_OF_A_FEED:
         print("  - " + line)
     print()
-    print("week-3.txt is the same week through the real OrderOutcome shape. Rows it")
-    print("cannot support print the reason instead of a number:")
-    for missing, _ in MISSING_FROM_INGESTION:
+    print("Fields the fold looks for, and whether types.core.OrderOutcome carries them:")
+    for name, why, present in ingestion_status(OrderOutcome):
+        print("  [%s] %-26s %s" % ("x" if present else " ", name, why))
+    print()
+    print("Rows that print a reason instead of a number when a feed lacks one:")
+    for missing, _ in BLOCKED_WITHOUT:
         print("  - missing: " + missing)
     print()
     print("written: %s" % ", ".join(sorted(p.name for p in out.iterdir())))
     return 0
+
+
+def build_of(records, feed, partner, period, ledger, as_of):
+    from approv.report.document import build
+    return build(records, feed, partner=partner, period=period, ledger=str(ledger),
+                 generated_at=as_of)
 
 
 if __name__ == "__main__":

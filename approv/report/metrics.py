@@ -25,8 +25,10 @@ from enum import Enum
 
 from approv.harness.coverage import wilson
 from approv.report.outcomes import (
-    NO_REASON_CODE, NO_WINDOW_CLOSE, FeedSource, Outcome, OutcomeFeed, Status,
+    NO_DISPUTES, NO_REASON_CODE, NO_WINDOW_CLOSE, FeedSource, Outcome, OutcomeFeed,
+    Status,
 )
+from approv.report.tiers import Tier, needs, tier_of
 from approv.types.core import (
     ComparisonRecord, Completion, Criticality, Decision, Support,
 )
@@ -363,22 +365,42 @@ def coverage_eligible(records: Sequence[ComparisonRecord], population: str) -> M
 
 
 def _blocked(joined: Joined, name: str, population: str, *,
-             needs_window: bool = True, needs_code: bool = True) -> Measure | None:
+             needs_window: bool = True, needs_code: bool = True,
+             needs_disputes: bool = False) -> Measure | None:
     """The reason this metric cannot be computed from this feed, if there is one.
 
     One guard rather than a check inside each metric: a capability the feed lacks blocks
     the same way everywhere, and a metric that forgot to ask would quietly compute a
     number over a denominator that cannot mean what it says.
+
+    The reason has two halves and needs both. The capability sentence says why the number
+    would be wrong; `needs()` says which data tier would fix it and what to send. Either
+    alone reads badly - the first as a dead end, the second as a sales prompt stapled to
+    a blank.
     """
+    current = tier_of(joined.feed)
+    # The rung this particular row sits on, so a blocked dispute row does not tell a
+    # partner with no outcome feed at all that the minimum tier would fix it.
+    required = (Tier.BEST if needs_disputes else Tier.GOOD if needs_code
+                else Tier.MINIMUM)
     if not joined.feed.outcomes:
-        return unavailable(name, "no outcome data has been ingested for this period",
-                           population=population, fixture=joined.fixture)
+        return unavailable(
+            name, "no outcome data has been ingested for this period. "
+                  + needs(current, required),
+            population=population, fixture=joined.fixture)
+    # The capability sentence names the *first* missing thing, because that is why the
+    # number would be wrong today. The tier sentence names this row's own rung and every
+    # rung between, because that is what it takes to get this row - and a partner told
+    # only about the first one sends it, gets NOT COMPUTED again, and stops asking.
     if needs_window and not joined.feed.records_window_close:
-        return unavailable(name, NO_WINDOW_CLOSE, population=population,
-                           fixture=joined.fixture)
+        return unavailable(name, NO_WINDOW_CLOSE + " " + needs(current, required),
+                           population=population, fixture=joined.fixture)
     if needs_code and not joined.feed.records_reason_code:
-        return unavailable(name, NO_REASON_CODE, population=population,
-                           fixture=joined.fixture)
+        return unavailable(name, NO_REASON_CODE + " " + needs(current, required),
+                           population=population, fixture=joined.fixture)
+    if needs_disputes and not joined.feed.records_disputes:
+        return unavailable(name, NO_DISPUTES + " " + needs(current, required),
+                           population=population, fixture=joined.fixture)
     return None
 
 
@@ -464,15 +486,92 @@ def payout_proxy(joined: Joined, origin: Origin) -> Measure:
 
 
 def open_window(joined: Joined, origin: Origin) -> Measure:
-    """How much of the period is still undecided. The denominator's honest caveat."""
+    """How much of the period is still undecided. The denominator's honest caveat.
+
+    Counts orders that have already come back as well, when their own window has not
+    closed yet. That reads oddly for a second - the order came back, what is undecided? -
+    and it is the whole point: a return that is inside its window is excluded from every
+    rate above, because including it while the keeps it should be compared against are
+    still open is what makes a young period read as a catastrophe.
+    """
     population = POPULATION_LABEL[origin]
     pairs = [(r, o) for r, o in joined.pairs if origin_of(r) is origin]
     return Measure(
         name="orders whose return window has not closed",
-        numerator=sum(1 for _, o in pairs if o.status is Status.OPEN),
+        numerator=sum(1 for _, o in pairs if not o.resolved),
         denominator=len(pairs), population=population, source=OUTCOME,
         fixture=joined.fixture,
-        denominator_note="%s matched to an outcome record" % population)
+        denominator_note=("%s matched to an outcome record. Orders counted here are "
+                          "excluded from every rate above, returns included: a rate over "
+                          "a half-closed period counts the returns that have happened "
+                          "against the keeps that have not finished happening."
+                          % population))
+
+
+DECISION_WORD = {
+    Decision.REFUSE: "would have refused",
+    Decision.CONFIRM: "would have asked for confirmation on",
+    Decision.ALLOW: "would have authorised",
+}
+
+
+def return_rate(joined: Joined, origin: Origin, decision: Decision) -> Measure:
+    """How often orders in one decision class came back, for any reason at all.
+
+    **This is not precision and must never be printed as though it were.** It counts every
+    return in the denominator's class - a changed mind, a damaged parcel, a duvet that
+    looked different in the room - and Approv never claimed to predict any of those. On
+    its own the number says almost nothing.
+
+    What it is for: the minimum data tier. A partner who can say when an order shipped and
+    how long their window is, but cannot say why anything came back, can still be shown
+    the return rate of the orders Approv would have refused *beside* the return rate of
+    the ones it would have authorised. The comparison is the signal; either row alone is
+    a description of their ordinary return rate. It is the first real thing this report
+    can say, and it arrives one tier before the headline does.
+    """
+    population = POPULATION_LABEL[origin]
+    name = "return rate of orders Approv %s, counting every reason" % DECISION_WORD[decision]
+    blocked = _blocked(joined, name, population, needs_code=False)
+    if blocked is not None:
+        return blocked
+    pairs = [(r, o) for r, o in _population_pairs(joined, origin)
+             if r.decision is decision]
+    return Measure(
+        name=name, numerator=sum(1 for _, o in pairs if o.status is Status.RETURNED),
+        denominator=len(pairs), population=population, source=OUTCOME,
+        fixture=joined.fixture,
+        denominator_note=("%s Approv %s whose return window has closed. Every return "
+                          "counts here, including ones no verification could have "
+                          "predicted." % (population, DECISION_WORD[decision])))
+
+
+def dispute_rate(joined: Joined, origin: Origin, decision: Decision) -> Measure:
+    """How often orders in one decision class became a dispute or a chargeback.
+
+    The expensive tail, and the only row on this report that speaks to the thing CLAUDE.md
+    §1 calls existential: above a network's dispute-ratio threshold a merchant loses card
+    acceptance, which is not a cost line. A return is money and logistics; a chargeback is
+    the ratio.
+
+    Reported the same way as the return rate and for the same reason - the refused class
+    beside the authorised class, because the absolute number is a fact about their
+    business and only the difference is a fact about the check.
+    """
+    population = POPULATION_LABEL[origin]
+    name = "dispute or chargeback rate of orders Approv %s" % DECISION_WORD[decision]
+    blocked = _blocked(joined, name, population, needs_code=False, needs_disputes=True)
+    if blocked is not None:
+        return blocked
+    pairs = [(r, o) for r, o in _population_pairs(joined, origin)
+             if r.decision is decision]
+    return Measure(
+        name=name, numerator=sum(1 for _, o in pairs if o.disputed),
+        denominator=len(pairs), population=population, source=OUTCOME,
+        fixture=joined.fixture,
+        denominator_note=("%s Approv %s whose return window has closed and for which "
+                          "dispute events were supplied"
+                          % (population, DECISION_WORD[decision])))
 
 
 # --------------------------------------------------------------------------------------
@@ -576,8 +675,18 @@ def attribution(joined: Joined, origin: Origin) -> Attributed:
     be the tempting fallback and it would be wrong: a changed mind attributed to "the agent
     chose against the request" is a false accusation aimed at the partner's own customer.
     """
-    blocked = None if joined.feed.records_reason_code or not joined.feed.outcomes else (
-        NO_REASON_CODE)
+    current = tier_of(joined.feed)
+    # A feed with nothing in it blocks too. Without this the table printed "No wrong-item
+    # returns matched a receipt in this population" over a week where no outcome data
+    # existed at all - which is the exact failure this report is built against: an empty
+    # result reading as a clean one. Found by walking the tiers, not by any case here.
+    if not joined.feed.outcomes:
+        blocked = ("no outcome data has been ingested for this period. "
+                   + needs(current, Tier.GOOD))
+    elif not joined.feed.records_reason_code:
+        blocked = NO_REASON_CODE + " " + needs(current, Tier.GOOD)
+    else:
+        blocked = None
     if blocked is not None:
         return Attributed(counts={member: 0 for member in Attribution}, total=0, coded=0,
                           fixture=joined.fixture, blocked=blocked)
