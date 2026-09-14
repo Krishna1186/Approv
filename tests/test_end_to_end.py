@@ -664,13 +664,14 @@ def test_a_filter_and_a_query_that_agree_are_corroboration_not_a_conflict():
 # The open seams, by test name. Named rather than counted so that clearing one is a
 # single legible edit by whoever fixed it, instead of a hardcoded number that blocks the
 # fix it was meant to protect. Removing a name here is as loud as changing a count was.
-OPEN_SEAMS = {
-    # Empty: every seam this file found has been fixed by its owner. Seams 1, 2, 4 and 6
-    # were cleared earlier; 3 (retry identity, codex1) and 5 (agreeing duplicate claims,
-    # claude1) were cleared in the same round, which is why this set met itself in a merge
-    # conflict. An empty set is the strongest state it can be in and the easiest to
-    # regress: adding a name back means a module pair disagreed again.
-}
+#
+# Empty: every seam this file found has been fixed by its owner. Seams 1, 2, 4 and 6 were
+# cleared earlier; 3 (retry identity) and 5 (agreeing duplicate claims) were cleared in the
+# same round, which is why this set met itself in a merge conflict. An empty set is the
+# strongest state it can be in and the easiest to regress -- adding a name back means a
+# module pair has started disagreeing again.
+OPEN_SEAMS: set[str] = set()
+
 
 
 def test_the_seams_are_the_only_known_gaps():
