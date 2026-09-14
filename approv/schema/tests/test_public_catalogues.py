@@ -45,13 +45,11 @@ def test_probes_select_exact_variant(records):
     assert result["human_review_status"] == "pending"
 
 
-@pytest.mark.xfail(strict=True, reason="Public-feed audit: featured_image pixels become exact product evidence on 1ff539a; source-policy decision required before changing the shared walk")
 def test_image_metadata_is_never_proposed_as_a_product_attribute(records):
     proposal = propose_schema(records, category_id="synthetic")
     assert not [p for p in proposal.proposed_schema.field_profiles if "/featured_image/" in p.field_name]
 
 
-@pytest.mark.xfail(strict=True, reason="Public-feed audit: selected waist/length labels are reported unusable but surface emits exact nominal evidence on 1ff539a; shared semantics need an owner ruling")
 def test_published_selected_label_counts_agree_with_reader():
     records = [{"id": 1, "options": [{"name": "Waist/Length", "values": ["30/32L", "34/32L"]}],
                 "variants": [{"id": 11, "sku": "a", "option1": "30/32L"},

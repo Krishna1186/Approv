@@ -53,12 +53,19 @@ def text_value(value: object) -> str:
 
 
 def read_value(value: object, name: str, *, currency: str | None = None,
-               option: bool = False) -> tuple[Dimension | None, object | None, str | None]:
+               option: bool = False,
+               enumerated: bool = False) -> tuple[Dimension | None, object | None, str | None]:
     """Return a dimension, typed value and diagnostic; never infer a currency.
 
     Integers in option selectors are labels (shoe size 9 is not a count). A quantity
     object must carry both magnitude and unit; a money object both amount and currency.
     Unit spellings here are only those supported by the existing quantity comparator.
+
+    `enumerated` means the merchant published this value as a member of a named option
+    table, which is narrower than `option` and is the whole of DR 0028: the merchant
+    declared the complete domain of the axis, so there is no expression to evaluate and
+    the value is a label. A labelled pair is not enumerated -- nobody stated a domain
+    there, and `2L` in one really is two litres.
     """
     if not occupied(value):
         return None, None, None
@@ -120,7 +127,8 @@ def read_value(value: object, name: str, *, currency: str | None = None,
             return None, None, "unitless_decimal"
         if isinstance(value, (int, float, Decimal)) or raw.casefold() in {"nan", "inf", "infinity"}:
             return None, None, "invalid_number"
-        if re.match(r"^[+-]?\d", raw) and re.search(r"\d\s*(?:fl\s*oz|[kcm]?g|[mc]?l)\b", raw, re.I):
+        if (re.match(r"^[+-]?\d", raw) and re.search(r"\d\s*(?:fl\s*oz|[kcm]?g|[mc]?l)\b", raw, re.I)
+                and not enumerated):
             return None, None, "ambiguous_quantity_expression"
         if isinstance(value, str):
             return Dimension.NOMINAL, Term(surface=raw), None

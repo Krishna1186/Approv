@@ -16,6 +16,19 @@ _META = {"evidence", "schema", "category_schema", "field_profiles", "liability",
          "certainty", "is_variant_axis", "floor", "decision", "signature", "hash",
          "images", "image", "media", "reviews", "ratings", "recommendations",
          "tags", "created_at", "updated_at", "published_at", "position", "handle"}
+# DR 0027. The exact names above miss the one real feeds actually publish: `featured_image`
+# is a nested object of `width`, `height`, `alt` and `src`, and walking it proposed a
+# product attribute called `width` whose value was a photograph's pixel count -- exact
+# certainty, merchant-guaranteed, and satisfiable by a request that meant centimetres.
+# Matched on any token so `featured_image`, `hero_image` and `product_photos` all land
+# here, because an object describing a *rendering* of the product is not a source of
+# product attributes however the merchant named it.
+_RENDERING = {"image", "images", "photo", "photos", "thumbnail", "thumbnails",
+              "gallery", "media", "video", "videos", "swatch", "swatches"}
+
+
+def is_rendering(key: str) -> bool:
+    return bool(_RENDERING.intersection(semantic_key(key).split("_")))
 _PROSE = {"description", "body_html", "body", "prose", "copy", "description_html",
           "long_description", "short_description", "notes", "narrative"}
 _OPERATIONAL = {"price", "cost", "amount", "msrp", "available", "availability",
@@ -73,7 +86,7 @@ def option_definitions(obj: dict, path: tuple[str, ...] = ()) -> dict[int, Optio
     result = {}
     found = False
     for key, value in obj.items():
-        if semantic_key(key) in _META:
+        if semantic_key(key) in _META or is_rendering(key):
             continue
         if isinstance(value, list) and value and all(isinstance(v, dict) and "name" in v and "values" in v for v in value):
             found = True
@@ -96,7 +109,7 @@ def variant_collections(obj: dict, path: tuple[str, ...] = ()) -> list[tuple[tup
     for key, value in obj.items():
         if not isinstance(key, str) or not key.strip() or any(ord(c) < 32 for c in key):
             raise ValueError("catalogue field names must be nonempty strings without control characters")
-        if semantic_key(key) in _META:
+        if semantic_key(key) in _META or is_rendering(key):
             continue
         current = path + (key,)
         if value == [] and semantic_key(key) in {"variants", "skus", "editions"}:
@@ -159,12 +172,13 @@ def flatten(obj: dict, *, path: tuple[str, ...] = (), skip: frozenset[tuple[str,
     if local_currencies:
         currency = next(iter(local_currencies)) if len(local_currencies) == 1 else "CONFLICT"
 
-    def add(name, raw, field, *, prose=False, option=False):
+    def add(name, raw, field, *, prose=False, option=False, enumerated=False):
         policy = policies.get(field)
         certainty = Certainty.PARSED if prose else Certainty.EXACT
         liability = policy.liability if policy else Liability.MERCHANT_GUARANTEED
         advice = policy.is_advice if policy else False
-        dim, value, issue = read_value(raw, name, currency=currency, option=option)
+        dim, value, issue = read_value(raw, name, currency=currency, option=option,
+                                       enumerated=enumerated)
         if policy and policy.certainty is not Certainty.EXACT:
             certainty = policy.certainty if certainty is Certainty.EXACT else Certainty.INFERRED if policy.certainty is Certainty.INFERRED else certainty
         operational = bool(set(semantic_key(name).split("_")) & _OPERATIONAL)
@@ -180,12 +194,13 @@ def flatten(obj: dict, *, path: tuple[str, ...] = (), skip: frozenset[tuple[str,
         current = path + (key,)
         source = path_text(current)
         name = semantic_key(key)
-        if current in skip or name in _META or is_identifier(key) or name in _NAMESPACE | _URL:
+        if (current in skip or name in _META or is_rendering(key) or is_identifier(key)
+                or name in _NAMESPACE | _URL):
             continue
         if name in _PROSE and isinstance(value, str):
             for label, reading in _prose_pairs(value):
                 # Text cannot manufacture control fields or grant itself source trust.
-                if semantic_key(label) not in _META and not is_identifier(label):
+                if semantic_key(label) not in _META and not is_rendering(label) and not is_identifier(label):
                     add(label, reading, source, prose=True)
             continue
         match = re.fullmatch(r"option_?(\d+)", name)
@@ -194,7 +209,9 @@ def flatten(obj: dict, *, path: tuple[str, ...] = (), skip: frozenset[tuple[str,
             if definition:
                 if selector_path(current, definition.name) in policies:
                     raise ValueError("source policy uses a legacy numbered-option locator; review and add its &table= binding")
-                add(definition.name, value, selector_path(current, definition.name, table=definition.table), option=True)
+                # DR 0028: the table that named this slot also enumerated its values.
+                add(definition.name, value, selector_path(current, definition.name, table=definition.table),
+                    option=True, enumerated=True)
             # Unnamed numbered selectors have no recoverable attribute name.
             continue
         if isinstance(value, dict):
