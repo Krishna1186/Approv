@@ -12,12 +12,15 @@ import sys
 import pytest
 
 from approv.receipts.chain import (
-    SIGNATURE_VERSION, SandboxReceipt, _UNSEALED, canonical_json, generate_key, key_id_for,
-    public_key_hex, record_hash, record_json, seal, verify, verify_chain,
+    SIGNATURE_VERSION, SandboxOrderEvidence, SandboxReceipt, _UNSEALED, canonical_json,
+    generate_key, key_id_for, load_receipt, public_key_hex, record_hash, record_json, seal,
+    verify, verify_chain,
 )
 from approv.receipts.keys import KeyStore
 from approv.receipts.store import ReceiptStore, ReplayError
-from approv.types.core import Attestation, ComparisonRecord, Decision, Mode, Money, OrderLine
+from approv.types.core import (
+    Attestation, ComparisonRecord, Decision, Mode, Money, OrderEvidenceRecord, OrderLine,
+)
 
 
 def draft(correlation="request-1"):
@@ -31,6 +34,22 @@ def draft(correlation="request-1"):
                         variant_id="9", quantity=1, unit_price=Money(amount="24.50", currency="USD")),
         findings=(), decision=Decision.CONFIRM, model_version="fixture", evaluator_version="fixture",
         prompt_version="fixture", timestamp=datetime(2026, 9, 12, tzinfo=timezone.utc),
+    )
+
+
+def evidence_draft(correlation="cart-only-1"):
+    """The same order, arriving with no stated request. PRD §5."""
+    snapshot = {"sku": "shoe-9", "size": "9", "price": "24.50", "currency": "USD"}
+    return OrderEvidenceRecord(
+        correlation_id=correlation, merchant_id="merchant-1",
+        category_id="fixture", category_version="1", locale="en-US",
+        reasons=("the adapter received a cart and no request",),
+        product_id="shoe", product_snapshot=snapshot,
+        snapshot_hash=hashlib.sha256(canonical_json(snapshot).encode()).hexdigest(),
+        order=OrderLine(order_id=correlation, line_id="line-1", product_id="shoe", sku="shoe-9",
+                        variant_id="9", quantity=1, unit_price=Money(amount="24.50", currency="USD")),
+        model_version="fixture", evaluator_version="fixture", prompt_version="fixture",
+        timestamp=datetime(2026, 9, 12, tzinfo=timezone.utc),
     )
 
 
@@ -146,6 +165,43 @@ def test_sandbox_is_orthogonal_to_mode_and_never_shares_a_chain(tmp_path, mode):
     unsigned_test = test.model_copy(update={field: None for field in (*_UNSEALED, "key_id")})
     with pytest.raises(ValueError, match="sandbox"):
         production.append(unsigned_test, key)
+
+
+def test_the_cart_only_receipt_chains_like_any_other_and_still_cannot_impersonate_one(tmp_path):
+    """The ledger learns the second product; the second product does not learn to be the first.
+
+    Widening the store to accept `OrderEvidenceRecord` is the fix for seam 7, and the risk
+    it carries is that a weaker artifact starts reading as a verification somewhere
+    downstream - which is the exact confusion the separate type was created to end. So the
+    two properties are asserted together: it seals, chains and verifies like any receipt,
+    and every gate that keeps the products apart still holds afterwards.
+    """
+    key = generate_key()
+    production = ReceiptStore(tmp_path / "production.sqlite")
+    sandbox = ReceiptStore(tmp_path / "sandbox.sqlite", namespace="sandbox")
+
+    real = production.append(evidence_draft(), key)
+    test = sandbox.append(evidence_draft(), key)
+    assert real.kind == test.kind == "order_evidence"
+    assert isinstance(test, SandboxOrderEvidence) and not isinstance(test, ComparisonRecord)
+    assert test.store_namespace == "sandbox" and test.store_id
+    assert real.hash and real.signature and test.hash != real.hash
+
+    # It chains against a verification rather than beside it: one ledger, in arrival order.
+    second = production.append(draft("mixed-chain"), key)
+    assert second.prev_hash == real.hash
+    verify_chain([record_json(r) for r in (real, second)], public_key_hex(key))
+    assert production.get(real.correlation_id) == real
+
+    # Read back through the same door every consumer uses, it is still the lesser product.
+    reloaded = load_receipt(record_json(real))
+    assert isinstance(reloaded, OrderEvidenceRecord) and reloaded.eligible is False
+    assert not hasattr(reloaded, "decision") and not hasattr(reloaded, "coverage")
+
+    # And the sandbox label survives on it exactly as it does on a verification.
+    unsigned = test.model_copy(update={field: None for field in (*_UNSEALED, "key_id")})
+    with pytest.raises(ValueError, match="sandbox"):
+        production.append(unsigned, key)
 
 
 @pytest.mark.parametrize("tamper", ["relabel", "remove_label", "change_store"])

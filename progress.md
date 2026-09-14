@@ -694,11 +694,17 @@ Do not wire it. Its tests keep passing, which is the whole cost of keeping it.
   onboarding. Deliberate — it is what makes producer and consumer agree by construction —
   but it is a coupling that did not exist before, and an onboarding change can now move a
   production read.
-- **The store cannot seal an `OrderEvidenceRecord`.** `receipts/chain.py` tests
-  `isinstance(record, ComparisonRecord)` in both `require_unsealed` and `record_json`, so
-  cart-only traffic produces a record nothing can append. Two lines, codex1's fence, and
-  it blocks the offline backtest which routes cart-only rows straight into
-  `store.append_many`.
+- ~~The store cannot seal an `OrderEvidenceRecord`.~~ **Closed 14 September (seam 7).**
+  The ledger now takes either receipt product: `_SEALABLE` widened, `load_receipt`
+  discriminates on `kind` and defaults to `verification` so pre-`kind` receipts still read
+  as what they were, and `SandboxOrderEvidence` mirrors `SandboxReceipt` so the sandbox
+  label is inside the digest on both. On the 3,000-row demo the 221 cart-only orders moved
+  from *reported outside the ledger* to inside it, and the standalone verifier exits 0 over
+  the mixed chain. The risk in widening was that the weaker artifact starts reading as a
+  verification downstream, so the regression asserts both halves together: it seals and
+  chains like any receipt, and it still cannot enter production carrying a sandbox label,
+  still has no `decision` or `coverage`, and still reads back as `OrderEvidenceRecord`
+  through `load_receipt`.
 - A deployment with no extractor now confirms every search order that carried a query,
   because it cannot read one (DR 0026). Correct, and expensive: the repair is on our side
   and it is to read the query.

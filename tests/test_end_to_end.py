@@ -661,13 +661,6 @@ def test_a_filter_and_a_query_that_agree_are_corroboration_not_a_conflict():
         % [(f.support.value, [r.value for r in f.reasons]) for f in size])
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "SEAM 7: `verify_order` returns an `OrderEvidenceRecord` for cart-only traffic and "
-    "`ReceiptStore.append_many` accepts only a `ComparisonRecord` (`require_unsealed` "
-    "raises TypeError), so the one receipt product built for orders with no stated "
-    "request cannot be sealed, chained or verified at all. The type and the surface path "
-    "landed; the ledger has not been told about them. Found by running the backtest over "
-    "an export whose requests file leaves rows undeclared."))
 def test_an_order_with_no_stated_request_can_be_sealed_like_any_other_receipt(tmp_path):
     """The cart-only receipt is a receipt or it is nothing.
 
@@ -697,12 +690,13 @@ def test_an_order_with_no_stated_request_can_be_sealed_like_any_other_receipt(tm
 #
 # Empty: every seam this file found has been fixed by its owner. Seams 1, 2, 4 and 6 were
 # cleared earlier; 3 (retry identity) and 5 (agreeing duplicate claims) were cleared in the
-# same round, which is why this set met itself in a merge conflict. An empty set is the
-# strongest state it can be in and the easiest to regress -- adding a name back means a
-# module pair has started disagreeing again.
-OPEN_SEAMS = {
-    "test_an_order_with_no_stated_request_can_be_sealed_like_any_other_receipt",  # seam 7, claude1 (type) and codex1 (store)
-}
+# same round, which is why this set met itself in a merge conflict. Seam 7 -- the ledger
+# refusing the cart-only receipt -- was cleared last, and it is the one that shows what the
+# roll-call is for: it was found by a module that had just been written (the backtest),
+# against two modules that were both correct on their own. An empty set is the strongest
+# state it can be in and the easiest to regress -- adding a name back means a module pair
+# has started disagreeing again.
+OPEN_SEAMS: set[str] = set()
 
 
 
@@ -712,9 +706,9 @@ def test_the_seams_are_the_only_known_gaps():
     If a seam is fixed, its `xfail(strict=True)` fails and the marker comes off, and the
     name comes out of OPEN_SEAMS. If one is *removed* rather than fixed, this set stops
     matching and says so. The names are the claim.
-    All six seams have now been cleared by their owners and their tests stayed on as
-    regressions -- which is what the strict marker is for: a fix cannot land silently,
-    and neither can a seam being deleted instead of fixed.
+    All seven seams have now been cleared and their tests stayed on as regressions --
+    which is what the strict marker is for: a fix cannot land silently, and neither can a
+    seam being deleted instead of fixed.
     """
     marked = {name: obj for name, obj in vars(sys.modules[__name__]).items()
               if callable(obj) and any(mark.name == "xfail"

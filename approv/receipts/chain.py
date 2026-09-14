@@ -18,7 +18,7 @@ from collections.abc import Mapping
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Union
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization
@@ -27,7 +27,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 )
 from pydantic import AfterValidator, BaseModel
 
-from approv.types.core import ComparisonRecord
+from approv.types.core import ComparisonRecord, OrderEvidenceRecord
 
 VERSION = "chain-v1"
 SIGNATURE_VERSION = "ed25519-sha256-v1"
@@ -50,10 +50,35 @@ class SandboxReceipt(ComparisonRecord):
     store_id: str
 
 
-def require_unsealed(record: ComparisonRecord) -> ComparisonRecord:
+class SandboxOrderEvidence(OrderEvidenceRecord):
+    """The same store-owned extension for the cart-only product. See `SandboxReceipt`.
+
+    A separate class rather than a shared mixin because the two wire schemas must stay
+    independently narrow: parsing either as anything but itself has to fail on the extra
+    fields, and that property is what `_check_record_namespace` leans on.
+    """
+
+    store_namespace: Literal["sandbox"]
+    store_id: str
+
+
+# Both receipt products seal, chain and verify by exactly the same rules, because the
+# digest is taken over a record's JSON and the only thing the chain asks of a record is
+# that it carry the sealing field set. The alternative — keeping the ledger
+# ComparisonRecord-only — would have forced cart-only orders back into a verification
+# with an empty request, which is the shape `OrderEvidenceRecord` exists to stop. So the
+# ledger learns the second product; the second product does not learn to impersonate the
+# first. An order with no stated request is the population DR 0020 most wants measured,
+# and a receipt outside the chain is not evidence.
+_SEALABLE = (ComparisonRecord, OrderEvidenceRecord)
+_SANDBOX_MODEL = {"verification": SandboxReceipt, "order_evidence": SandboxOrderEvidence}
+_RECEIPT_MODEL = {"verification": ComparisonRecord, "order_evidence": OrderEvidenceRecord}
+
+
+def require_unsealed(record):
     """Reject signed, partially signed, or caller-linked inputs before any write."""
-    if not isinstance(record, ComparisonRecord):
-        raise TypeError("append requires an unsealed ComparisonRecord")
+    if not isinstance(record, _SEALABLE):
+        raise TypeError("append requires an unsealed ComparisonRecord or OrderEvidenceRecord")
     if any(getattr(record, field) is not None for field in (*_UNSEALED, "key_id")):
         raise ValueError("store requires an unsealed record; use get() to read a retained receipt")
     if record.signature_version != SIGNATURE_VERSION:
@@ -62,13 +87,20 @@ def require_unsealed(record: ComparisonRecord) -> ComparisonRecord:
     return type(record).model_validate_json(record.model_dump_json())
 
 
-UnsealedRecord = Annotated[ComparisonRecord, AfterValidator(require_unsealed)]
+UnsealedRecord = Annotated[
+    Union[ComparisonRecord, OrderEvidenceRecord], AfterValidator(require_unsealed),
+]
 
 
-def load_receipt(payload: dict) -> ComparisonRecord:
-    """Read the signed field set without adding defaults to historical receipts."""
-    model = SandboxReceipt if "store_namespace" in payload or "store_id" in payload else ComparisonRecord
-    return model.model_validate(payload)
+def load_receipt(payload: dict):
+    """Read the signed field set without adding defaults to historical receipts.
+
+    `kind` decides the product and defaults to a verification, so receipts written before
+    the field existed still read as what they were.
+    """
+    sandboxed = "store_namespace" in payload or "store_id" in payload
+    table = _SANDBOX_MODEL if sandboxed else _RECEIPT_MODEL
+    return table[payload.get("kind", "verification")].model_validate(payload)
 
 
 def canonical(value) -> str:
@@ -101,9 +133,9 @@ def canonical(value) -> str:
                       ensure_ascii=False, allow_nan=False)
 
 
-def record_json(record: ComparisonRecord | Mapping) -> dict:
+def record_json(record) -> dict:
     """Preserve the fields actually signed, including records from older schemas."""
-    if isinstance(record, ComparisonRecord):
+    if isinstance(record, _SEALABLE):
         return json.loads(record.model_dump_json(exclude_unset=bool(record.signature)))
     return dict(record)
 
