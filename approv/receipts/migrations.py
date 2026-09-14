@@ -4,9 +4,9 @@ from __future__ import annotations
 import sqlite3
 import uuid
 
-CURRENT_VERSION = 2
+CURRENT_VERSION = 3
 IMMUTABLE_TABLES = ("receipts", "checkpoints", "public_keys", "metadata",
-                    "deployments", "submissions", "schema_migrations")
+                    "deployments", "submissions", "schema_migrations", "ledger_namespace")
 
 V2 = """
 CREATE TABLE schema_migrations (
@@ -27,6 +27,32 @@ CREATE TRIGGER submissions_bind BEFORE INSERT ON submissions BEGIN
         OR NEW.correlation_id IS NOT (SELECT correlation_id FROM receipts WHERE sequence=NEW.sequence)
         THEN RAISE(ABORT, 'submission must bind one immutable receipt') END;
 END;
+"""
+
+
+V3 = """
+CREATE TABLE ledger_namespace (
+    singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+    namespace TEXT NOT NULL CHECK(namespace IN ('production', 'sandbox'))
+);
+CREATE TRIGGER ledger_namespace_no_replace BEFORE INSERT ON ledger_namespace
+WHEN EXISTS(SELECT 1 FROM ledger_namespace) BEGIN
+    SELECT RAISE(ABORT, 'append-only ledger namespace');
+END;
+CREATE TRIGGER receipts_namespace BEFORE INSERT ON receipts BEGIN
+    SELECT CASE WHEN (SELECT namespace FROM ledger_namespace) = 'sandbox'
+        AND (json_extract(NEW.body, '$.store_namespace') IS NOT 'sandbox'
+             OR json_extract(NEW.body, '$.store_id') IS NOT (SELECT store_id FROM metadata))
+        OR (SELECT namespace FROM ledger_namespace) = 'production'
+        AND (json_type(NEW.body, '$.store_namespace') IS NOT NULL
+             OR json_type(NEW.body, '$.store_id') IS NOT NULL)
+        THEN RAISE(ABORT, 'receipt belongs to a different namespace') END;
+END;
+CREATE TRIGGER checkpoints_namespace BEFORE INSERT ON checkpoints BEGIN
+    SELECT CASE WHEN json_extract(NEW.body, '$.store_namespace') IS NOT (SELECT namespace FROM ledger_namespace)
+        THEN RAISE(ABORT, 'checkpoint belongs to a different namespace') END;
+END;
+INSERT INTO schema_migrations(version) VALUES (3);
 """
 
 
@@ -55,7 +81,7 @@ def _immutable(db, tables):
                 SELECT RAISE(ABORT, 'append-only ledger'); END""")
 
 
-def migrate(db, initial_schema):
+def migrate(db, initial_schema, *, namespace="production"):
     """Hold the writer lock through version check, DDL and version advance.
 
     executescript is deliberately avoided: it commits an open transaction before DDL.
@@ -78,9 +104,19 @@ def migrate(db, initial_schema):
         if version == 1:
             for statement in statements(V2):
                 db.execute(statement)
-            _immutable(db, IMMUTABLE_TABLES[4:])
+            _immutable(db, IMMUTABLE_TABLES[4:7])
             db.execute("PRAGMA user_version=2")
+            version = 2
+        if version == 2:
+            if namespace == "sandbox" and db.execute("SELECT 1 FROM receipts LIMIT 1").fetchone():
+                raise ValueError("historical production receipts cannot become sandbox receipts")
+            for statement in statements(V3):
+                db.execute(statement)
+            _immutable(db, ("ledger_namespace",))
+            db.execute("INSERT INTO ledger_namespace VALUES (1, ?)", (namespace,))
+            db.execute("PRAGMA user_version=3")
         check_schema(db)
+        check_namespace(db, namespace)
         db.commit()
     except BaseException:
         db.rollback()
@@ -96,6 +132,13 @@ def check_schema(db):
     triggers = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
     required = {f"{table}_no_{op}" for table in IMMUTABLE_TABLES for op in ("update", "delete")}
     required |= {"receipts_append", "checkpoints_append", "keys_no_replace", "metadata_no_replace",
-                 "deployments_no_replace", "submissions_no_replace", "schema_migrations_no_replace", "submissions_bind"}
+                 "deployments_no_replace", "submissions_no_replace", "schema_migrations_no_replace", "submissions_bind",
+                 "ledger_namespace_no_replace", "receipts_namespace", "checkpoints_namespace"}
     if not required <= triggers:
         raise ValueError("receipt store append-only guards are missing")
+
+
+def check_namespace(db, expected):
+    row = db.execute("SELECT namespace FROM ledger_namespace WHERE singleton=1").fetchone()
+    if row is None or row[0] != expected:
+        raise ValueError("receipt store namespace does not match the configured namespace")

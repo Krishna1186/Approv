@@ -31,6 +31,7 @@ def main(argv=None):
     for name in ("serve", "check-config"):
         command = commands.add_parser(name)
         command.add_argument("--config", type=Path)
+        command.add_argument("--namespace", choices=("production", "sandbox"), default="production")
         if name == "serve":
             command.add_argument("--host", default="127.0.0.1")
             command.add_argument("--port", type=int, default=8000)
@@ -38,12 +39,14 @@ def main(argv=None):
             command.add_argument("--readiness", action="store_true")
     command = commands.add_parser("migrate")
     command.add_argument("--store", required=True, type=Path)
+    command.add_argument("--namespace", choices=("production", "sandbox"), default="production")
     command = commands.add_parser("rotate-local-key")
     command.add_argument("--directory", required=True, type=Path)
     command.add_argument("--password-file", required=True, type=Path)
     command.add_argument("--publish", required=True, type=Path)
     for name in ("backup", "audit", "restore"):
         command = commands.add_parser(name)
+        command.add_argument("--namespace", choices=("production", "sandbox"), default="production")
         command.add_argument("--keys", required=True, type=Path)
         command.add_argument("--checkpoint", type=Path, required=name == "restore")
         if name == "restore":
@@ -62,7 +65,7 @@ def main(argv=None):
     try:
         if args.command in ("serve", "check-config"):
             from approv.ops.app import Application, Runtime
-            runtime = Runtime(load_deployment(args.config))
+            runtime = Runtime(load_deployment(args.config), namespace=args.namespace)
             if args.command == "serve":
                 import uvicorn
                 uvicorn.run(Application(runtime), host=args.host, port=args.port, workers=1,
@@ -74,9 +77,9 @@ def main(argv=None):
             else:
                 print(json.dumps({"status": "configuration_valid", "deployment_hash": runtime.deployment.digest}))
         elif args.command == "migrate":
-            store = ReceiptStore(args.store)
+            store = ReceiptStore(args.store, namespace=args.namespace)
             store.export()
-            print(json.dumps({"status": "migrated", "store": str(store.path)}))
+            print(json.dumps({"status": "migrated", "store": str(store.path), "store_namespace": store.namespace}))
         elif args.command == "rotate-local-key":
             password = SecretFile(file=args.password_file.resolve()).read(Path.cwd())
             keys = KeyStore(args.directory, password=password)
@@ -87,10 +90,10 @@ def main(argv=None):
             keys = public_keys(args.keys)
             checkpoint = read_json(args.checkpoint.read_bytes()) if args.checkpoint else None
             if args.command == "restore":
-                store = restore(args.source, args.destination, keys, checkpoint)
+                store = restore(args.source, args.destination, keys, checkpoint, namespace=args.namespace)
                 print(json.dumps({"status": "restored", "store": str(store.path)}))
             else:
-                store = ReceiptStore(args.store, create=False, migrate=False)
+                store = ReceiptStore(args.store, namespace=args.namespace, create=False, migrate=False)
                 bundle = audit(store, keys, checkpoint)
                 if args.command == "backup":
                     result = backup(store, args.destination, keys)

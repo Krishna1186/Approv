@@ -1,8 +1,130 @@
 # Merchant pilot operations
 
-This release supplies a runnable service, configuration loader, signing backends,
-SQLite administration and measurements. It provisions nothing. The founder chooses
-the host, region, provider contract, ingress, secret delivery, retention and budget.
+The first pilot is an offline backtest of a partner's historical export. Receipt
+retention can run locally; Docker, a live listener and cloud provisioning are not
+prerequisites. This release supplies batch retention, a runnable service, configuration,
+signing backends, SQLite administration and measurements. It provisions nothing.
+
+## Offline backtest retention
+
+Use a **new sandbox database** for historical re-evaluation. Its timestamp records
+when Approv sealed the comparison now; it is never backdated to the historical sale.
+Keep the historical source/export dates in the source dataset. A backtest receipt
+proves what the backtest compared, not that Approv verified the original purchase.
+
+```sh
+python -m approv.ops migrate --store /backtest/partner-1.sqlite3 --namespace sandbox
+```
+
+The offline verification runner supplies unsealed decisions. Use
+`ReceiptStore.append_many(records, signer)` for a batch of those decisions, or
+`commit_verifications([(response, request_hash), ...], deployment_manifest, signer)`
+to retain the full verification responses and their request/deployment bindings.
+The latter is the batch equivalent of the operations API's commit path. These are
+trusted internal retention APIs, not endpoints accepting merchant-authored verdicts.
+Schemas, readers, extraction and floor policies still come from reviewed deployment
+configuration in the verification runner.
+
+Both batch APIs materialize and validate input before taking the SQLite writer lock.
+They audit the existing chain **once per batch**, then stamp, sign and append each
+new record and checkpoint in one transaction. Any conflict or signing/storage failure
+rolls back every new row in that batch. Retrying a committed batch returns the original
+receipts, in input order, without new signatures or timestamps. Stable correlation IDs
+must survive process restarts. A different decision under an existing ID is a conflict.
+
+Start with chunks of 1,000 prepared comparisons. Larger chunks amortize history audits
+and fsyncs but hold the writer lock longer and consume more memory. Separate chunks
+commit independently. A single-record append and lookup still audit the retained
+history; do not put them in a many-thousand-row retention loop. Full audits at successive
+chunk boundaries also grow with accumulated history; this is not a constant-cost or
+unlimited-scale store. Measure on the partner's actual receipt sizes before setting
+batch sizes. KMS still makes two signing calls per new record.
+
+Local storage measurement, 2026-09-14 UTC: three runs of 5,000 synthetic `fixture`
+receipts per setting, roughly 1,074 bytes per unsigned draft, model/prompt `fixture`
+(no model called), local Ed25519, Windows, Python 3.13.4, cryptography 46.0.7,
+SQLite WAL with `synchronous=FULL`. Timing includes validation, existing-history audits,
+both signatures and commits; it excludes draft construction and the final export audit.
+
+| Records per transaction | Total seconds per 5,000 records, observed range | Median records/second |
+|---|---|---|
+| 1,000 | 6.51–6.69 | 765 |
+| 5,000 | 3.13–3.21 | 1,564 |
+
+The ranges are observed across three runs, not confidence intervals. This measures
+small synthetic receipt storage only, with no extraction, network or partner data.
+The regression test separately asserts one history audit per batch of 1,000 new records;
+it has no timing threshold tied to this machine.
+
+For example, retain the verification runner's JSONL output, with each line containing
+`response` (an unsealed verification response) and `request_hash` (SHA-256 of canonical
+JSON of the validated VerificationRequest). This code only retains already-computed
+comparisons; it does not derive decisions from a raw partner export:
+
+```python
+import json
+from itertools import islice
+from pathlib import Path
+from approv.config import load_deployment
+from approv.receipts.chain import canonical_json
+from approv.receipts.signers import SignerLoader
+from approv.receipts.store import ReceiptStore
+
+deployment = load_deployment("/backtest/deployment.json")
+signer = SignerLoader(deployment).load()  # explicit backend; no automatic fallback
+store = ReceiptStore("/backtest/partner-1.sqlite3", namespace="sandbox",
+                     create=False, migrate=False)
+with Path("/backtest/verified-responses.jsonl").open(encoding="utf-8") as source:
+    rows = (json.loads(line) for line in source if line.strip())
+    while chunk := list(islice(rows, 1000)):
+        store.commit_verifications(
+            [(row["response"], row["request_hash"]) for row in chunk],
+            deployment.manifest, signer)
+with Path("/backtest/receipts-export.json").open("x", encoding="utf-8") as target:
+    target.write(canonical_json(store.export()))
+```
+
+Sandbox keys may use explicitly selected encrypted local storage for offline work.
+Use a distinct sandbox key/publication and operator-controlled credential files;
+never substitute an ephemeral key for a missing configured key. **KMS is the accepted
+production choice**, with provisioning deferred. Local storage-only throughput does
+not predict extraction throughput, token spend or KMS latency.
+
+## Store contract and namespace isolation
+
+`append(record: UnsealedRecord, signer)` accepts a ComparisonRecord whose `hash`,
+`signature`, `prev_hash` and `key_id` are all `None`. Any pre-sealed or partly sealed
+input, including empty-string seals and a receipt already in the store, fails loudly.
+The store owns the UTC timestamp, predecessor, key ID and sealing under its writer
+lock. `get(correlation_id)` returns the verified original receipt or `None`, without
+requiring a signing key. `lookup_verification(correlation_id, request_hash)` returns
+the exact retained API response before re-extraction. A draft's changing timestamp
+does not create a conflicting retry; changes to its order, evidence, mode or verdict do.
+
+Every database has one immutable namespace: `production` (the default) or `sandbox`.
+Use different database paths. Reopening a database with the wrong namespace fails;
+SQL guards prevent namespace changes and cross-namespace inserts. Existing populated
+production databases cannot be migrated into sandbox databases. Correlation IDs,
+genesis, head, public-key registry and retained manifests are independent per database.
+
+Sandbox is independent of `Mode.SHADOW` / `Mode.ENFORCE`: either mode can be backtested.
+Each sandbox receipt has `"store_namespace":"sandbox"` and `"store_id":"..."`
+**inside its signed digest**, so an isolated JSON receipt identifies itself without
+Approv code. Both namespace and identity are also signed in its checkpoint. Removing
+or relabelling the fields breaks verification. Production receipt JSON retains its
+existing shape; its checkpoint explicitly names `production`.
+
+The store returns sandbox objects as `SandboxReceipt`, a store-owned extension of
+ComparisonRecord in `receipts/chain.py`; `load_receipt(raw_json)` reads either shape.
+Preserve the complete JSON for standalone verification. Existing consumers that insist
+on the narrower ComparisonRecord JSON schema reject sandbox fields; do not strip them
+to make an artifact renderer accept the receipt. Namespace display in those renderers
+is a separate integration. The raw receipt/export and standalone verifier already work.
+
+Operations commands use `--namespace sandbox` for sandbox migrate, serve, check-config,
+audit, backup and restore. A sandbox service also needs its configuration's `store`
+path to name that sandbox database. The namespace is an operator argument, never a
+request field; requests cannot switch chains. The ASGI factory defaults to production.
 
 ## Operating boundary
 
@@ -24,8 +146,8 @@ bounds verification work; excess calls return 503. JSON bodies have a configured
 size limit and a 10-second receive-idle timeout. Configure an ingress body deadline,
 rate limit and TLS; the development listener defaults to loopback.
 
-Receipt operations currently audit the retained chain on lookup and append. That
-cost grows with history, and KMS signing happens inside the writer transaction.
+Single-receipt operations audit the retained chain on lookup and append. Batch APIs
+share one audit per transaction, and KMS signing happens inside the writer transaction.
 Measure p95 at the pilot's expected retained receipt count before increasing traffic.
 This release does not assert a sub-500ms budget or a throughput guarantee.
 
@@ -84,10 +206,10 @@ a provider alias cannot prove which model weights the provider ran.
 
 ## Production signing decision
 
-**Recommend KMS for production.** Approv's signing-key integrity is the product.
+**KMS is accepted for production; provisioning is deferred.** Approv's signing-key integrity is the product.
 An additional network cost is preferable to allowing an exported key to support
 undetectable offline signatures indefinitely after a host compromise. This is a
-recommendation; the backend has no default and the founder explicitly selects it.
+decision; the backend still has no default and configuration must explicitly select it.
 
 | Choice | Latency and availability | Host compromise |
 |---|---|---|
@@ -235,28 +357,37 @@ record because storage or signing failed remains a 503 operational event.
 ## Forward migrations, backup and restore
 
 Store v1 retains its signed JSON byte-for-byte. V2 adds the deployment/submission
-bindings, migration history and a separate writable readiness row. DDL and version
+bindings, migration history and a separate writable readiness row. V3 adds an immutable
+database namespace and SQL guards for receipt/checkpoint namespace binding. DDL and version
 advancement run in one `BEGIN IMMEDIATE` transaction; a failed migration rolls back.
 Unknown newer versions are rejected. There are no down migrations and no automatic
 receipt rewrites. The receipt, checkpoint, key, identity, deployment, submission and
-migration-history tables reject SQL updates, deletes and replacement inserts.
+migration-history and namespace tables reject SQL updates, deletes and replacement inserts.
 
-Before upgrading an existing v1 store: stop/drain writers, retain its latest published
+Before upgrading an existing v1 or v2 store: stop/drain writers, retain its latest published
 keys and independently held checkpoint, and take a SQLite online-API snapshot of
 the old database to a **new** file. For example, under the service identity:
 
 ```sh
-python -c "import sqlite3; open('/backup/before-v2.sqlite3','xb').close(); s=sqlite3.connect('file:/var/lib/approv/receipts.sqlite3?mode=ro',uri=True); d=sqlite3.connect('/backup/before-v2.sqlite3'); s.backup(d); d.close(); s.close()"
+python -c "import sqlite3; open('/backup/before-v3.sqlite3','xb').close(); s=sqlite3.connect('file:/var/lib/approv/receipts.sqlite3?mode=ro',uri=True); d=sqlite3.connect('/backup/before-v3.sqlite3'); s.backup(d); d.close(); s.close()"
 python -m approv.ops migrate --store /var/lib/approv/receipts.sqlite3
 python -m approv.ops audit --store /var/lib/approv/receipts.sqlite3 --keys /retained/public-keys.json --checkpoint /retained/checkpoint.json
 ```
 
-The normal backup CLI requires v2. It uses SQLite's online backup API, which captures
+The normal backup CLI requires v3. It uses SQLite's online backup API, which captures
 committed WAL data consistently while a writer runs. Do not copy only the live main
 `.sqlite3` file. [SQLite backup documentation](https://sqlite.org/backup.html).
 
 ```sh
 python -m approv.ops backup --store /var/lib/approv/receipts.sqlite3 --keys /retained/public-keys.json --destination /backup/pilot-20260913T120000Z
+```
+
+For sandbox databases add `--namespace sandbox` to backup, audit and restore. Restore
+refuses a namespace mismatch before creating the destination. For example:
+
+```sh
+python -m approv.ops backup --namespace sandbox --store /backtest/partner-1.sqlite3 --keys /retained/sandbox-public-keys.json --destination /backup/partner-1-backtest
+python -m approv.ops restore --namespace sandbox --source /backup/partner-1-backtest --destination /backtest/restored.sqlite3 --keys /independent/sandbox-public-keys.json --checkpoint /independent/sandbox-checkpoint.json
 ```
 
 Each new backup directory contains `receipts.sqlite3`, `receipts.json`,
@@ -298,9 +429,9 @@ Restore drill, then the same procedure during an incident:
    orders. Preserve the old file; restoration never deletes or updates its receipts.
 
 Application rollback means selecting a release that understands the current store
-version. Do not run the pre-v2 writer against a v2 database or roll back `user_version`.
-If recovery from the pre-migration v1 snapshot is necessary, copy it to a new target,
-run the forward migration there, and audit against the independent v1 checkpoint
+version. Do not run an older writer against a v3 database or roll back `user_version`.
+If recovery from a pre-migration snapshot is necessary, copy it to a new target,
+run the forward migration there, and audit against its independent historical checkpoint
 before starting a compatible application.
 
 The standalone verifier still needs only Python, `cryptography`, the script, exported
@@ -315,12 +446,12 @@ host's control as they are issued if disputes require stronger timing evidence.
 
 ```sh
 python -m pip install pytest httpx fastapi
-python -m pytest tests approv/schema/tests approv/ops/tests -q
+python -m pytest -q
 python -m pip check
 ```
 
-The ops tests live under their owned module so no shared test files need editing.
-The explicit command includes them without changing `pyproject.toml`. Tests exercise
+The default pytest configuration discovers both `tests/` and `approv/`, including the
+ops tests. Tests exercise
 real local HTTP extraction, boot the service as a subprocess, verify KMS-compatible
 signatures offline, and restore receipts spanning rotation. Live AWS latency, cloud
 permissions, disk durability and the merchant's extractor/schema combination must

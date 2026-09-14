@@ -18,13 +18,14 @@ from collections.abc import Mapping
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
+from typing import Annotated, Literal
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey, Ed25519PublicKey,
 )
-from pydantic import BaseModel
+from pydantic import AfterValidator, BaseModel
 
 from approv.types.core import ComparisonRecord
 
@@ -35,6 +36,39 @@ SIGNATURE_VERSION = "ed25519-sha256-v1"
 # from the digest because two of them are derived from it and the third signs it, so
 # including any of them would make the hash depend on itself.
 _UNSEALED = ("prev_hash", "hash", "signature")
+
+
+class SandboxReceipt(ComparisonRecord):
+    """Store-owned extension: sandbox is independent of shadow/enforce mode.
+
+    These fields are inside the digest. Keep the whole JSON when verifying; parsing
+    it as the narrower ComparisonRecord deliberately fails on the extra fields.
+    Production receipts retain their existing wire schema.
+    """
+
+    store_namespace: Literal["sandbox"]
+    store_id: str
+
+
+def require_unsealed(record: ComparisonRecord) -> ComparisonRecord:
+    """Reject signed, partially signed, or caller-linked inputs before any write."""
+    if not isinstance(record, ComparisonRecord):
+        raise TypeError("append requires an unsealed ComparisonRecord")
+    if any(getattr(record, field) is not None for field in (*_UNSEALED, "key_id")):
+        raise ValueError("store requires an unsealed record; use get() to read a retained receipt")
+    if record.signature_version != SIGNATURE_VERSION:
+        raise ValueError("unsupported signature_version")
+    # Validate and detach caller-owned dictionaries before entering the transaction.
+    return type(record).model_validate_json(record.model_dump_json())
+
+
+UnsealedRecord = Annotated[ComparisonRecord, AfterValidator(require_unsealed)]
+
+
+def load_receipt(payload: dict) -> ComparisonRecord:
+    """Read the signed field set without adding defaults to historical receipts."""
+    model = SandboxReceipt if "store_namespace" in payload or "store_id" in payload else ComparisonRecord
+    return model.model_validate(payload)
 
 
 def canonical(value) -> str:
@@ -145,7 +179,7 @@ def seal(record: ComparisonRecord, private_key: Ed25519PrivateKey,
     A new object rather than a mutation, because `ComparisonRecord` is frozen and because
     a half-sealed record should never exist: either it carries all three fields or none.
     """
-    if record.hash or record.signature:
+    if record.hash is not None or record.signature is not None:
         raise ValueError("record is already sealed; retain its original signature and link")
     if record.signature_version != SIGNATURE_VERSION:
         raise ValueError("unsupported signature_version")
@@ -154,7 +188,7 @@ def seal(record: ComparisonRecord, private_key: Ed25519PrivateKey,
         raise ValueError("key_id does not identify the signing key")
     # Materialise all defaults before signing. On subsequent reads the exact signed
     # field set survives, even if a future schema acquires new defaulted fields.
-    record = ComparisonRecord.model_validate_json(record.model_dump_json())
+    record = type(record).model_validate_json(record.model_dump_json())
     record = record.model_copy(update={"key_id": key_id})
     digest = record_hash(record, prev_hash)
     signature = private_key.sign(digest.encode("utf-8")).hex()

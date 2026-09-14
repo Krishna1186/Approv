@@ -7,6 +7,8 @@ outside the database's trust boundary to detect restoration of an older valid fi
 from __future__ import annotations
 
 from contextlib import contextmanager
+from collections.abc import Iterable
+from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
@@ -16,11 +18,12 @@ import uuid
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from approv.receipts.chain import (
-    SIGNATURE_VERSION, canonical_json, key_id_for, public_key_hex, record_hash,
-    record_json, seal, verify, verify_chain,
+    SIGNATURE_VERSION, UnsealedRecord, canonical_json, key_id_for,
+    load_receipt, public_key_hex, record_hash, record_json, require_unsealed, seal,
+    verify, verify_chain,
 )
 from approv.types.core import ComparisonRecord
-from approv.receipts.migrations import check_schema, migrate as migrate_store
+from approv.receipts.migrations import check_namespace, check_schema, migrate as migrate_store
 
 
 class ReplayError(ValueError):
@@ -28,7 +31,7 @@ class ReplayError(ValueError):
 
 
 class ChainConflict(ValueError):
-    """A pre-signed receipt does not extend the current head."""
+    """Legacy exception name; append now rejects every pre-sealed input with ValueError."""
 
 
 _SCHEMA = """
@@ -70,24 +73,41 @@ END;
 
 
 def _content_hash(payload: dict) -> str:
-    # Rotation must not turn a retry of the same unsigned decision into a new decision.
+    # Historical index format. Do not change it: existing signed rows are immutable.
     content = {k: v for k, v in payload.items() if k not in ("prev_hash", "hash", "signature", "key_id")}
     return hashlib.sha256(canonical_json(content).encode("utf-8")).hexdigest()
 
 
+def _retry_content(payload: dict) -> str:
+    # Timestamp and namespace/identity are assigned by this store, not by the caller.
+    # Everything describing the request, order, evidence, policy and verdict still counts.
+    owned = {"timestamp", "prev_hash", "hash", "signature", "key_id", "store_namespace", "store_id"}
+    return canonical_json({k: v for k, v in payload.items() if k not in owned})
+
+
 class ReceiptStore:
-    def __init__(self, path: str | Path, *, create: bool = True, migrate: bool = True):
+    def __init__(self, path: str | Path, *, namespace: str = "production",
+                 create: bool = True, migrate: bool = True):
+        if namespace not in ("production", "sandbox"):
+            raise ValueError("namespace must be production or sandbox")
         self.path = Path(path).resolve()
+        self._namespace = namespace
         if not create and not self.path.is_file():
             raise ValueError("receipt store is missing; initialize it explicitly")
         if create:
             self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connection(_create=create) as db:
             if migrate:
-                migrate_store(db, _SCHEMA)
+                migrate_store(db, _SCHEMA, namespace=namespace)
                 db.execute("PRAGMA journal_mode=WAL")
             else:
                 check_schema(db)
+                check_namespace(db, namespace)
+
+    @property
+    def namespace(self) -> str:
+        """One immutable namespace per database; never selected from a request body."""
+        return self._namespace
 
     @contextmanager
     def _connection(self, *, timeout: float = 30, _create: bool = False):
@@ -117,15 +137,16 @@ class ReceiptStore:
         return key_id
 
     def register_public_key(self, public_hex: str) -> str:
-        """Trust a previously published key before importing a historical receipt."""
+        """Retain a published key. Historical databases are restored, never re-appended."""
         with self._connection() as db:
             db.execute("BEGIN IMMEDIATE")
             key_id = self._register(db, public_hex)
             db.commit()
             return key_id
 
-    @staticmethod
-    def _read(db) -> tuple[list[dict], dict | None]:
+    def _read(self, db) -> tuple[list[dict], dict | None]:
+        check_namespace(db, self.namespace)
+        store_id = db.execute("SELECT store_id FROM metadata").fetchone()[0]
         records = []
         for sequence, row in enumerate(db.execute("SELECT * FROM receipts ORDER BY sequence"), 1):
             payload = json.loads(row["body"])
@@ -134,13 +155,13 @@ class ReceiptStore:
                     row["correlation_id"] != payload.get("correlation_id") or
                     row["content_hash"] != _content_hash(payload)):
                 raise ValueError("receipt index does not match signed record")
+            self._check_record_namespace(payload, store_id)
             records.append(payload)
         keys = dict(db.execute("SELECT key_id, public_hex FROM public_keys"))
         verify_chain(records, keys)
         rows = db.execute("SELECT sequence, body FROM checkpoints ORDER BY sequence").fetchall()
         if len(rows) != len(records):
             raise ValueError("receipt/checkpoint count mismatch")
-        store_id = db.execute("SELECT store_id FROM metadata").fetchone()[0]
         for sequence, row in enumerate(rows, 1):
             checkpoint = json.loads(row["body"])
             if (row["sequence"] != sequence or checkpoint.get("count") != sequence or
@@ -148,6 +169,8 @@ class ReceiptStore:
                     checkpoint.get("store_id") != store_id or
                     checkpoint.get("format") != "approv-receipt-checkpoint-v1"):
                 raise ValueError("checkpoint does not match stored chain")
+            if checkpoint.get("store_namespace", "production") != self.namespace:
+                raise ValueError("checkpoint namespace does not match stored chain")
             verify(checkpoint, keys)
         for row in db.execute("SELECT * FROM deployments"):
             if hashlib.sha256(row["body"].encode()).hexdigest() != row["hash"]:
@@ -168,80 +191,97 @@ class ReceiptStore:
                 raise ValueError("submission does not match signed checkpoint")
         return records, json.loads(rows[-1]["body"]) if rows else None
 
-    def append(self, record: ComparisonRecord, signing_key: Ed25519PrivateKey, *,
-               _submission: dict | None = None) -> ComparisonRecord:
-        """Atomically sign/append, or return the identical existing receipt on retry.
+    def _check_record_namespace(self, payload: dict, store_id: str):
+        if self.namespace == "sandbox":
+            if payload.get("store_namespace") != "sandbox" or payload.get("store_id") != store_id:
+                raise ValueError("sandbox receipt is missing its signed namespace or store identity")
+        elif "store_namespace" in payload or "store_id" in payload:
+            raise ValueError("sandbox receipt cannot enter the production chain")
 
-        A pre-signed receipt is verified and retained verbatim, never re-signed. Its
-        key must be registered. The supplied key signs the retained checkpoint, and
-        also signs the receipt if it was unsigned. A changed correlation ID's payload
-        or a stale pre-signed link fails rather than forking or rewriting history.
+    def append(self, record: UnsealedRecord, signing_key: Ed25519PrivateKey) -> ComparisonRecord:
+        """Accept only an unsealed decision. Own its timestamp, chain link and signature.
+
+        An identical decision retried with a different draft timestamp returns the
+        original receipt. Changed decision content under that ID raises ReplayError.
+        A signed receipt, including an exact retry, must be read with get(), not appended.
         """
+        return self.append_many((record,), signing_key)[0]
+
+    def append_many(self, records: Iterable[UnsealedRecord],
+                    signing_key: Ed25519PrivateKey) -> list[ComparisonRecord]:
+        """One writer transaction and one history audit for an entire offline batch.
+
+        Materialize decisions before taking the lock: no extraction or other caller
+        work runs inside it. All new rows commit together or none do. Retrying a
+        committed batch returns its original receipts in input order, including duplicates.
+        """
+        prepared = [require_unsealed(record) for record in records]
+        with self._connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            self._read(db)
+            result = [load_receipt(self._append(db, record, signing_key)) for record in prepared]
+            db.commit()
+            return result
+
+    def _append(self, db, record, signing_key, submission=None) -> dict:
         payload = record_json(record)
         if not isinstance(record.correlation_id, str) or not record.correlation_id.strip():
             raise ValueError("record needs a nonempty correlation_id")
-        if bool(record.hash) != bool(record.signature):
-            raise ValueError("record is partly sealed")
+        store_id = db.execute("SELECT store_id FROM metadata").fetchone()[0]
+        if "store_namespace" in payload or "store_id" in payload:
+            self._check_record_namespace(payload, store_id)
+        if submission is not None:
+            existing = self._lookup(db, record.correlation_id, submission["request_hash"])
+            if existing is not None:
+                return existing["record"]
+        existing = db.execute("SELECT body FROM receipts WHERE correlation_id=?",
+                              (record.correlation_id,)).fetchone()
+        if existing:
+            if submission is not None:
+                raise ReplayError("correlation id already belongs to a different receipt path")
+            original = json.loads(existing["body"])
+            if _retry_content(payload) != _retry_content(original):
+                raise ReplayError("correlation id reused with a different receipt")
+            return original
+        head = db.execute("SELECT sequence, hash FROM receipts ORDER BY sequence DESC LIMIT 1").fetchone()
+        sequence, previous = (head["sequence"] + 1, head["hash"]) if head else (1, None)
+        key_id = self._register(db, public_key_hex(signing_key))
+        payload["timestamp"] = datetime.now(timezone.utc)
+        if self.namespace == "sandbox":
+            payload.update(store_namespace="sandbox", store_id=store_id)
+        stamped = load_receipt(payload)
+        sealed = seal(stamped, signing_key, previous)
+        body = record_json(sealed)
+        db.execute("INSERT INTO receipts VALUES (?, ?, ?, ?, ?, ?)",
+                   (sequence, sealed.correlation_id, sealed.hash, sealed.prev_hash,
+                    _content_hash(body), canonical_json(body)))
+        checkpoint = {"format": "approv-receipt-checkpoint-v1", "store_id": store_id,
+                      "store_namespace": self.namespace, "count": sequence,
+                      "head_hash": sealed.hash, "key_id": key_id,
+                      "signature_version": SIGNATURE_VERSION}
+        if submission is not None:
+            deployment = canonical_json(submission["deployment"])
+            deployment_hash = hashlib.sha256(deployment.encode()).hexdigest()
+            if not db.execute("SELECT 1 FROM deployments WHERE hash=?", (deployment_hash,)).fetchone():
+                db.execute("INSERT INTO deployments VALUES (?, ?)", (deployment_hash, deployment))
+            response = canonical_json({**submission["response"], "record": body})
+            db.execute("INSERT INTO submissions VALUES (?, ?, ?, ?, ?)",
+                       (sealed.correlation_id, sequence, submission["request_hash"], deployment_hash, response))
+            checkpoint["context"] = {"request_hash": submission["request_hash"],
+                                     "deployment_hash": deployment_hash,
+                                     "response_hash": hashlib.sha256(response.encode()).hexdigest()}
+        digest = record_hash(checkpoint, None)
+        checkpoint.update(hash=digest, signature=signing_key.sign(digest.encode("utf-8")).hex())
+        db.execute("INSERT INTO checkpoints VALUES (?, ?)", (sequence, canonical_json(checkpoint)))
+        return body
+
+    def get(self, correlation_id: str) -> ComparisonRecord | None:
+        """Return a verified retained receipt, with no signing key or new timestamp."""
         with self._connection() as db:
-            db.execute("BEGIN IMMEDIATE")
-            records, _ = self._read(db)
-            if _submission is not None:
-                existing = self._lookup(db, record.correlation_id, _submission["request_hash"])
-                if existing is not None:
-                    db.commit()
-                    return ComparisonRecord.model_validate(existing["record"])
-            public = public_key_hex(signing_key)
-            key_id = self._register(db, public)
-            if record.signature:
-                verify(record, dict(db.execute("SELECT key_id, public_hex FROM public_keys")))
-            elif record.key_id not in (None, key_id):
-                raise ValueError("key_id does not identify the signing key")
-            existing = db.execute("SELECT body, content_hash FROM receipts WHERE correlation_id=?",
-                                  (record.correlation_id,)).fetchone()
-            if existing:
-                if _submission is not None:
-                    raise ReplayError("correlation id already belongs to a different receipt path")
-                if ((record.signature and canonical_json(payload) != existing["body"]) or
-                        (not record.signature and _content_hash(payload) != existing["content_hash"])):
-                    raise ReplayError("correlation id reused with a different receipt")
-                restored = ComparisonRecord.model_validate_json(existing["body"])
-                db.commit()
-                return restored
-            previous = records[-1]["hash"] if records else None
-            if record.signature:
-                if record.prev_hash != previous:
-                    raise ChainConflict("pre-signed receipt does not extend the current head")
-                sealed = record
-            else:
-                if record.prev_hash not in (None, previous):
-                    raise ChainConflict("unsigned receipt carries a stale predecessor")
-                sealed = seal(record, signing_key, previous)
-            body = record_json(sealed)
-            sequence = len(records) + 1
-            db.execute("INSERT INTO receipts VALUES (?, ?, ?, ?, ?, ?)",
-                       (sequence, sealed.correlation_id, sealed.hash, sealed.prev_hash,
-                        _content_hash(body), canonical_json(body)))
-            store_id = db.execute("SELECT store_id FROM metadata").fetchone()[0]
-            checkpoint = {"format": "approv-receipt-checkpoint-v1", "store_id": store_id,
-                          "count": sequence, "head_hash": sealed.hash, "key_id": key_id,
-                          "signature_version": SIGNATURE_VERSION}
-            if _submission is not None:
-                deployment = canonical_json(_submission["deployment"])
-                deployment_hash = hashlib.sha256(deployment.encode()).hexdigest()
-                if not db.execute("SELECT 1 FROM deployments WHERE hash=?", (deployment_hash,)).fetchone():
-                    db.execute("INSERT INTO deployments VALUES (?, ?)", (deployment_hash, deployment))
-                response = canonical_json({**_submission["response"], "record": body})
-                db.execute("INSERT INTO submissions VALUES (?, ?, ?, ?, ?)",
-                           (sealed.correlation_id, sequence, _submission["request_hash"], deployment_hash, response))
-                checkpoint["context"] = {"request_hash": _submission["request_hash"],
-                                         "deployment_hash": deployment_hash,
-                                         "response_hash": hashlib.sha256(response.encode()).hexdigest()}
-            digest = record_hash(checkpoint, None)
-            checkpoint.update(hash=digest, signature=signing_key.sign(digest.encode("utf-8")).hex())
-            db.execute("INSERT INTO checkpoints VALUES (?, ?)", (sequence, canonical_json(checkpoint)))
-            db.commit()
-            # Copy out of caller-owned nested dictionaries as well as the DB transaction.
-            return ComparisonRecord.model_validate(body)
+            db.execute("BEGIN")
+            self._read(db)
+            row = db.execute("SELECT body FROM receipts WHERE correlation_id=?", (correlation_id,)).fetchone()
+            return load_receipt(json.loads(row["body"])) if row else None
 
     @staticmethod
     def _lookup(db, correlation_id: str, request_hash: str) -> dict | None:
@@ -261,15 +301,33 @@ class ReceiptStore:
     def commit_verification(self, response: dict, request_hash: str,
                             deployment: dict, signing_key) -> dict:
         """Bind the API retry identity and deployment to the receipt in one commit."""
-        record = ComparisonRecord.model_validate(response["record"])
-        self.append(record, signing_key, _submission={"response": response,
-                    "request_hash": request_hash, "deployment": deployment})
-        return self.lookup_verification(record.correlation_id, request_hash)
+        return self.commit_verifications(((response, request_hash),), deployment, signing_key)[0]
+
+    def commit_verifications(self, submissions: Iterable[tuple[dict, str]],
+                             deployment: dict, signing_key) -> list[dict]:
+        """Batch equivalent of commit_verification; retains full request/deployment bindings."""
+        prepared = []
+        manifest = json.loads(canonical_json(deployment))
+        for response, request_hash in submissions:
+            response = json.loads(canonical_json(response))
+            record = require_unsealed(load_receipt(response["record"]))
+            prepared.append((record, {"response": response, "request_hash": request_hash,
+                                      "deployment": manifest}))
+        with self._connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            self._read(db)
+            result = []
+            for record, submission in prepared:
+                self._append(db, record, signing_key, submission)
+                result.append(self._lookup(db, record.correlation_id, submission["request_hash"]))
+            db.commit()
+            return result
 
     def probe_writable(self) -> None:
         """A real committed write, in a separate operational table, never a fake receipt."""
         with self._connection(timeout=1) as db:
             check_schema(db)
+            check_namespace(db, self.namespace)
             db.execute("BEGIN IMMEDIATE")
             db.execute("UPDATE ops_write_probe SET value=? WHERE singleton=1", (str(uuid.uuid4()),))
             if db.execute("SELECT changes()").fetchone()[0] != 1:
@@ -281,7 +339,8 @@ class ReceiptStore:
         with self._connection() as db:
             db.execute("BEGIN")
             records, checkpoint = self._read(db)
-            return {"format": "approv-receipt-export-v1", "records": records, "checkpoint": checkpoint,
+            return {"format": "approv-receipt-export-v1", "store_namespace": self.namespace,
+                    "records": records, "checkpoint": checkpoint,
                     "deployments": {r["hash"]: json.loads(r["body"]) for r in db.execute("SELECT * FROM deployments")},
                     "submissions": [dict(r) for r in db.execute("SELECT * FROM submissions ORDER BY sequence")]}
 

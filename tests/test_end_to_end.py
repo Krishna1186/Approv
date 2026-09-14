@@ -576,13 +576,6 @@ def test_the_surface_hands_the_ledger_an_unsealed_record(tmp_path):
     assert len(store.export()["records"]) == 3
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "SEAM 3: ReceiptStore.append returns the existing receipt when the same unsigned "
-    "record is appended twice, but build_record stamps timestamp=now() and neither "
-    "VerificationRequest nor verify_order accepts a timestamp. A merchant retrying a "
-    "timed-out verification produces different content under the same correlation id and "
-    "gets ReplayError instead of the receipt they already have -- which the store has no "
-    "read path to return."))
 def test_a_retried_verification_returns_the_receipt_it_already_wrote(tmp_path):
     """Idempotent retry is built, and unreachable from the only public entry point.
 
@@ -672,7 +665,11 @@ def test_a_filter_and_a_query_that_agree_are_corroboration_not_a_conflict():
 # single legible edit by whoever fixed it, instead of a hardcoded number that blocks the
 # fix it was meant to protect. Removing a name here is as loud as changing a count was.
 OPEN_SEAMS = {
-    "test_a_retried_verification_returns_the_receipt_it_already_wrote",   # seam 3, codex1
+    # Empty: every seam this file found has been fixed by its owner. Seams 1, 2, 4 and 6
+    # were cleared earlier; 3 (retry identity, codex1) and 5 (agreeing duplicate claims,
+    # claude1) were cleared in the same round, which is why this set met itself in a merge
+    # conflict. An empty set is the strongest state it can be in and the easiest to
+    # regress: adding a name back means a module pair disagreed again.
 }
 
 
@@ -682,9 +679,9 @@ def test_the_seams_are_the_only_known_gaps():
     If a seam is fixed, its `xfail(strict=True)` fails and the marker comes off, and the
     name comes out of OPEN_SEAMS. If one is *removed* rather than fixed, this set stops
     matching and says so. The names are the claim.
-    Seams 1, 2 and 4 were cleared by their owners and their tests stayed as
-    regressions -- which is what the strict marker is for: a fix cannot land
-    silently, and neither can a seam being deleted instead of fixed.
+    All six seams have now been cleared by their owners and their tests stayed on as
+    regressions -- which is what the strict marker is for: a fix cannot land silently,
+    and neither can a seam being deleted instead of fixed.
     """
     marked = {name: obj for name, obj in vars(sys.modules[__name__]).items()
               if callable(obj) and any(mark.name == "xfail"
