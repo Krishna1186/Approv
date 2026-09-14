@@ -50,6 +50,16 @@ def test_image_metadata_is_never_proposed_as_a_product_attribute(records):
     assert not [p for p in proposal.proposed_schema.field_profiles if "/featured_image/" in p.field_name]
 
 
+@pytest.mark.xfail(strict=True, reason="Public-feed audit: selected waist/length labels are reported unusable but surface emits exact nominal evidence on 1ff539a; shared semantics need an owner ruling")
+def test_published_selected_label_counts_agree_with_reader():
+    records = [{"id": 1, "options": [{"name": "Waist/Length", "values": ["30/32L", "34/32L"]}],
+                "variants": [{"id": 11, "sku": "a", "option1": "30/32L"},
+                             {"id": 12, "sku": "b", "option1": "34/32L"}]}]
+    proposal = propose_schema(records, category_id="synthetic")
+    result = audit.check_probes(records, proposal)
+    assert result["rates"]["variants_with_publication_reader_disagreement"]["numerator"] == 0
+
+
 def test_independent_probe_catches_confident_wrong_variant(monkeypatch, records):
     reader = audit.evidence_from_snapshot
     def wrong_reader(snapshot, schema):
@@ -95,6 +105,14 @@ def test_raw_order_identifiers_do_not_accept_title_as_sku(records):
     assert counts["variant_rows"] == 2
     assert counts["no_order_addressable_identifier"] == 1
     assert counts["blank_sku"] == 1
+
+
+def test_missing_sku_does_not_manufacture_a_binding_failure(records):
+    records[0]["variants"][0]["sku"] = ""
+    result = audit.check_probes(records, propose_schema(records, category_id="synthetic"))
+    assert result["rates"]["binding_unassessed_missing_sku"]["numerator"] == 1
+    assert result["rates"]["reader_or_binding_errors"]["numerator"] == 0
+    assert result["rates"]["correct_selected_slots"]["numerator"] == 2
 
 
 def test_sample_is_stable_bounded_and_does_not_depend_on_schema(records):

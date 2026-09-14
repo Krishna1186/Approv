@@ -40,6 +40,12 @@ PREREQUISITES = [
 def check_probes(records, proposal, limit=200):
     counts = Counter()
     examples = []
+    example_counts = Counter()
+    def note(example):
+        problem = example["problem"]
+        if example_counts[problem] < 5:
+            examples.append(example)
+            example_counts[problem] += 1
     packet = []
     zero_sources = {(row.attribute, source.field_name) for row in proposal.report.attributes
                     for source in row.sources if source.published.numerator == 0}
@@ -50,28 +56,33 @@ def check_probes(records, proposal, limit=200):
         counts["expected_selected_slots"] += len(expected)
         # A diagnostic order, never signed or sent to verification. XXX is ISO's
         # no-currency code; this fabricated zero price is not merchant evidence.
-        order = OrderLine(order_id="offline-structural-probe", product_id=str(product.get("id", "absent")),
-                          sku=str(variant.get("sku") or "probe-missing-sku"),
-                          variant_id=str(variant["id"]) if variant.get("id") is not None else None,
-                          quantity=1, unit_price=Money(amount=0, currency="XXX"))
         trace = {"product_index": pi, "variant_index": vi, "product_id": product.get("id"), "variant_id": variant.get("id"), "expected": expected}
         try:
-            projection = selected_listing(product, order)
+            sku = str(variant.get("sku") or "").strip()
+            if sku:
+                order = OrderLine(order_id="offline-structural-probe", product_id=str(product.get("id", "absent")),
+                                  sku=str(variant["sku"]), variant_id=str(variant["id"]) if variant.get("id") is not None else None,
+                                  quantity=1, unit_price=Money(amount=0, currency="XXX"))
+                projection = selected_listing(product, order)
+            else:
+                # The feed cannot supply OrderLine's mandatory SKU. Still test the
+                # reader on an independently selected row; do not invent an SKU
+                # and misclassify its inevitable mismatch as a consumer defect.
+                counts["binding_unassessed_missing_sku"] += 1
+                projection = {**product, "variants": [variant]}
             actual = evidence_from_snapshot(projection, proposal.proposed_schema)
         except (ValueError, TypeError) as error:
             counts["reader_or_binding_errors"] += 1
             counts["unread_selected_slots"] += len(expected)
             trace.update(problem="reader_or_binding_error", detail=str(error))
-            if len(examples) < 20:
-                examples.append(trace)
+            note(trace)
             continue
         counts["nonzero_evidence_variants"] += bool(actual)
         disagreements = [e for e in actual if (e.attribute, e.field_name) in zero_sources]
         if disagreements:
             counts["variants_with_publication_reader_disagreement"] += 1
-            if len(examples) < 20:
-                examples.append({**trace, "problem": "reader_emits_source_reported_as_never_usable",
-                                 "actual": [e.model_dump(mode="json") for e in disagreements]})
+            note({**trace, "problem": "reader_emits_source_reported_as_never_usable",
+                  "actual": [e.model_dump(mode="json") for e in disagreements]})
         wrong = missing = False
         for expected_slot in expected:
             found = [e for e in actual if e.field_name == expected_slot["field_name"]]
@@ -96,16 +107,15 @@ def check_probes(records, proposal, limit=200):
                 else:
                     counts["correct_selected_slots"] += 1
                     problem = None
-            if problem and len(examples) < 20:
-                examples.append({**trace, "problem": problem, "slot": expected_slot,
-                                 "actual": [e.model_dump(mode="json") for e in found]})
+            if problem:
+                note({**trace, "problem": problem, "slot": expected_slot,
+                      "actual": [e.model_dump(mode="json") for e in found]})
         counts["variants_with_wrong_selected_evidence"] += wrong
         counts["variants_with_missing_selected_evidence"] += missing
         media = [e for e in actual if "/featured_image/" in e.field_name]
         if media:
             counts["variants_with_image_metadata_evidence"] += 1
-            if len(examples) < 20:
-                examples.append({**trace, "problem": "image_metadata_as_product_evidence", "actual": [e.model_dump(mode="json") for e in media]})
+            note({**trace, "problem": "image_metadata_as_product_evidence", "actual": [e.model_dump(mode="json") for e in media]})
         # A human-review packet, not a claim that a human has reviewed it.
         if len(packet) < 10:
             packet.append({**trace, "raw_options": product.get("options"), "selected_variant": variant,
@@ -114,7 +124,7 @@ def check_probes(records, proposal, limit=200):
     result = {key: share(counts[key], slots if key.endswith("selected_slots") else n) for key in (
         "correct_selected_slots", "missing_selected_slots", "wrong_selected_slots", "unread_selected_slots", "oracle_unassessed_selected_slots",
         "nonzero_evidence_variants", "reader_or_binding_errors", "variants_with_wrong_selected_evidence",
-        "variants_with_missing_selected_evidence", "variants_with_image_metadata_evidence", "variants_with_publication_reader_disagreement")}
+        "variants_with_missing_selected_evidence", "variants_with_image_metadata_evidence", "variants_with_publication_reader_disagreement", "binding_unassessed_missing_sku")}
     return {"counts": dict(counts), "rates": result, "examples": examples, "human_review_packet": packet, "human_review_status": "pending"}
 
 
@@ -145,6 +155,7 @@ def decorate(report, audit):
     if audit["media_profiles"]:
         parts += ['<p class="notice"><strong>Source mapping correction required.</strong> Approv proposed image metadata as product attributes. '
                   'This is an Approv derivation issue, not a request for you to publish image dimensions as product facts. The proposal must not be adopted unchanged.</p>']
+    parts.append('<p>Order binding unassessed because the public row lacks a nonempty SKU: '+e(rate(probes["rates"]["binding_unassessed_missing_sku"], "probed variants"))+'. Those rows use an independently selected snapshot for the evidence-reading check; an actual merchant order crosswalk remains required.</p>')
     parts.append('<p>Probe selection: lowest SHA-256 ranks of raw product/variant row identifiers. Human spot-check status: pending. Full diagnostics and capture provenance accompany this report.</p>')
     parts.append('<p>Order mapping: '+e(rate(audit["identifiers"]["no_order_addressable_identifier"]))+' have neither a published variant ID nor SKU. '+e(rate(audit["identifiers"]["blank_sku"]))+' have no nonempty SKU. A merchant may have an order-side SKU absent from this public export; confirm it rather than manufacturing one.</p>')
     parts.append('<p>Opaque identifier selections: '+e(rate(audit["identifiers"]["uuid_valued_selector_requires_review"]))+' publish UUID-shaped option values. Confirm whether these are operational listing IDs before treating them as customer choices.</p>')
