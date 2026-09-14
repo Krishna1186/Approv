@@ -17,8 +17,9 @@ from datetime import datetime, timezone
 from approv.criticality import coverage_of, narrowed_attributes, unread_requirements
 from approv.evaluator import VERSION as EVALUATOR_VERSION, decide
 from approv.types.core import (
-    AgentTurn, Attestation, CategorySchema, Claim, ComparisonRecord, Completion,
-    Constraint, Criticality, Finding, Mode, OrderLine, ReasonCode, UnreadPolicy,
+    AgentPresence, AgentTurn, Attestation, CategorySchema, Claim, ComparisonRecord,
+    Completion, Constraint, Criticality, Finding, Mode, OrderEvidenceRecord, OrderLine,
+    ReasonCode, Surface, UnreadPolicy,
 )
 
 VERSION = "receipt-v1"
@@ -207,6 +208,67 @@ def build_record(
         unread=unread,
         decision=decision,
         decision_reasons=reasons,
+        model_version=model_version,
+        evaluator_version=EVALUATOR_VERSION,
+        prompt_version=prompt_version,
+        timestamp=timestamp or datetime.now(timezone.utc),
+        prev_hash=prev_hash,
+    )
+
+
+def build_order_evidence(
+    *,
+    correlation_id: str,
+    schema: CategorySchema,
+    order: OrderLine,
+    product_snapshot: dict,
+    snapshot_hash: str,
+    model_version: str,
+    prompt_version: str,
+    reasons: tuple[str, ...] = (),
+    surface: Surface = Surface.MERCHANT,
+    agent: AgentPresence = AgentPresence.UNKNOWN,
+    locale: str = "en-IN",
+    agent_id: str | None = None,
+    merchant_id: str | None = None,
+    attestation: Attestation = Attestation.NEITHER,
+    mode: Mode = Mode.SHADOW,
+    completion: Completion = Completion.COMPLETED,
+    completion_detail: str | None = None,
+    timestamp: datetime | None = None,
+    prev_hash: str | None = None,
+) -> OrderEvidenceRecord:
+    """Assemble the receipt an order with no stated request can honestly produce.
+
+    Deliberately not a thin wrapper over `build_record` with the request arguments left
+    out. The product is chosen *before* the comparison, not described after one — there is
+    no `findings` parameter to forget to pass, no `decision` to default, and no path by
+    which cart-only traffic can be assembled into a verification-shaped object because a
+    caller omitted something.
+
+    It takes no `constraints` and no `findings` for the same reason. Cart contents cannot
+    supply the request half: what was bought says nothing about what was asked for, and
+    every field this record does carry is a fact about the order rather than an inference
+    from it.
+    """
+    return OrderEvidenceRecord(
+        correlation_id=correlation_id,
+        agent_id=agent_id,
+        merchant_id=merchant_id,
+        attestation=attestation,
+        category_id=schema.category_id,
+        category_version=schema.version,
+        locale=locale,
+        surface=surface,
+        agent=agent,
+        reasons=reasons,
+        order=order,
+        product_id=order.product_id,
+        product_snapshot=product_snapshot,
+        snapshot_hash=snapshot_hash,
+        mode=mode,
+        completion=completion,
+        completion_detail=completion_detail,
         model_version=model_version,
         evaluator_version=EVALUATOR_VERSION,
         prompt_version=prompt_version,

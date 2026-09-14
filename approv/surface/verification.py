@@ -39,12 +39,12 @@ from approv.intake import (
     Undeclared, intake,
 )
 from approv.receipts.chain import canonical_json
-from approv.receipts.record import build_record
+from approv.receipts.record import build_order_evidence, build_record
 from approv.schema.catalogue import Cell, discover, is_identifier, variant_collections
 from approv.schema.values import semantic_key
 from approv.types.core import (
-    Attestation, CategorySchema, ComparisonRecord, Completion, Count, Dimension, Evidence,
-    Finding, Mode, Money, OrderLine, OrderOutcome, Quantity, Term, UnreadPolicy, Value,
+    Attestation, CategorySchema, Completion, Count, Dimension, Evidence, Finding, Mode,
+    Money, OrderLine, OrderOutcome, Quantity, Receipt, Term, UnreadPolicy, Value,
 )
 
 VERSION = "surface-v1"
@@ -130,11 +130,14 @@ class VerificationResult(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    record: ComparisonRecord
+    # Either receipt product. A caller that only ever wants a comparison checks `kind`;
+    # one that renders or bills reads it off the record, where it is signed.
+    record: Receipt
     receipt_id: str
     # Views onto the record, not a second copy of the fact (DR 0023). They were the fact
     # once, which is how the artifact came to print "Covered" for an order intake had
-    # ruled out — it renders the record and could not see them.
+    # ruled out — it renders the record and could not see them. On an order evidence
+    # record the field they view is `eligible`, which is false by construction.
     covered: bool
     intake_notes: tuple[str, ...] = ()
 
@@ -373,6 +376,16 @@ def verify_order(
     if schema is None:
         raise UnknownCategory(request.category_id)
     _bind_snapshot_to_order(request)
+
+    # The receipt product is chosen here, before any comparison, and never described
+    # afterwards. An order that carried no stated request cannot be compared to one: cart
+    # contents say what was bought and nothing about what was asked for. Running the
+    # pipeline anyway would produce a verification-headed record with an empty request,
+    # a decision nobody's intent drove, and the bad news several fields down in a
+    # coverage flag — which is what it used to do (PRD §5).
+    if isinstance(request.artifact, Undeclared):
+        return _order_evidence(request, schema, mode)
+
     reading = selected_listing(request.product_snapshot, request.order)
 
     started = time.monotonic()
@@ -445,6 +458,42 @@ def verify_order(
     return VerificationResult(record=record, receipt_id=request.correlation_id,
                               covered=record.covered,
                               intake_notes=record.coverage_notes)
+
+
+def _order_evidence(request: VerificationRequest, schema: CategorySchema,
+                    mode: Mode) -> VerificationResult:
+    """The cart-only path. A different product, and labelled as one on its own face.
+
+    Intake still runs, and it runs for its own reasons: it is the per-merchant row that
+    measures how much of a merchant's agent traffic arrives with nothing attached, which
+    is the first of DR 0020's two unmeasured numbers. Nothing it returns is compared
+    against anything — an `Undeclared` artifact yields no constraints by construction —
+    and its account of why there was no request travels onto the record verbatim.
+
+    `covered` is false and there is nothing to withdraw it from, which is the shape of an
+    honest weaker product rather than a degraded stronger one.
+    """
+    taken = intake(request.artifact, schema, surface=request.surface,
+                   merchant_id=request.merchant_id, agent=request.agent)
+    record = build_order_evidence(
+        correlation_id=request.correlation_id,
+        schema=schema,
+        order=request.order,
+        product_snapshot=dict(request.product_snapshot),
+        snapshot_hash=snapshot_digest(request.product_snapshot),
+        model_version=VERSION,
+        prompt_version=VERSION,
+        reasons=taken.notes,
+        surface=request.surface,
+        agent=taken.agent,
+        locale=request.locale,
+        agent_id=request.agent_id,
+        merchant_id=request.merchant_id,
+        attestation=request.attestation,
+        mode=mode,
+    )
+    return VerificationResult(record=record, receipt_id=request.correlation_id,
+                              covered=False, intake_notes=taken.notes)
 
 
 # A malformed answer and no answer at all are different events on the reader boundary —

@@ -3,6 +3,7 @@ import importlib.util
 from datetime import datetime, timezone
 
 import pytest
+from pydantic import ValidationError
 
 from approv.evaluator import decide
 from approv.intake import AgentPresence, FreeText, Reading, Search, Structured, Undeclared
@@ -12,9 +13,9 @@ from approv.surface.verification import (
     evidence_from_snapshot, ingest_outcome, selected_listing, snapshot_digest, verify_order,
 )
 from approv.types.core import (
-    AttributeSpec, CategorySchema, Certainty, Channel, Constraint, Criticality, Decision,
-    Completion, Dimension, FieldProfile, Liability, Mode, Money, OrderLine, OrderOutcome,
-    OutcomeKind, Support, Term, UnreadPolicy,
+    AttributeSpec, CategorySchema, Certainty, Channel, ComparisonRecord, Constraint,
+    Criticality, Decision, Completion, Dimension, FieldProfile, Liability, Mode, Money,
+    OrderEvidenceRecord, OrderLine, OrderOutcome, OutcomeKind, Support, Term, UnreadPolicy,
 )
 
 SCHEMA = CategorySchema(
@@ -406,7 +407,7 @@ def test_the_channel_verdict_is_on_the_record_not_beside_it():
     """DR 0023. The dispute artifact renders the record and nothing else, so a verdict
     kept beside it was dropped the moment the record was stored or rendered — and the
     document printed "Covered" for an order intake had ruled out."""
-    result = verify_order(request(artifact=Undeclared()), schemas=SCHEMAS)
+    result = verify_order(request(artifact=Search(filters={"size": "M"})), schemas=SCHEMAS)
 
     assert result.record.covered is False
     assert any("out of coverage" in note for note in result.record.coverage_notes)
@@ -439,7 +440,8 @@ def test_the_channel_verdict_is_inside_the_signature():
     """A coverage claim that can be edited after a dispute opens is not a claim, and the
     party with the motive to edit it is us."""
     key = generate_key()
-    sealed = seal(verify_order(request(artifact=Undeclared()), schemas=SCHEMAS).record, key)
+    sealed = seal(verify_order(request(artifact=Search(filters={"size": "M"})),
+                               schemas=SCHEMAS).record, key)
     verify(sealed, public_key_hex(key))
 
     with pytest.raises(ValueError, match="does not match its hash"):
@@ -794,6 +796,117 @@ def test_a_form_submission_is_not_an_agent_by_itself():
 
     assert not result.record.covered
     assert any("agent-placed" in note for note in result.record.coverage_notes)
+
+
+# --- cart-only traffic is a different product ----------------------------------------------
+
+def cart_only(why="the order arrived with no stated request"):
+    return verify_order(request(artifact=Undeclared(why=why)), schemas=SCHEMAS)
+
+
+def test_an_order_with_no_stated_request_is_not_a_verification():
+    """Cart contents say what was bought and nothing about what was asked for, and a
+    comparison needs both. The product is chosen before the comparison rather than
+    described after one (PRD §5)."""
+    record = cart_only().record
+
+    assert isinstance(record, OrderEvidenceRecord)
+    assert record.kind == "order_evidence"
+    assert verify_order(request(), schemas=SCHEMAS).record.kind == "verification"
+
+
+def test_order_evidence_carries_no_verdict_and_no_findings():
+    """Nothing was authorised, refused or escalated on the strength of a request we never
+    received, and there is nothing to have found. A per-finding guarantee here would be a
+    promise about an intent nobody stated."""
+    record = cart_only().record
+
+    for absent in ("decision", "findings", "coverage", "request_constraints",
+                   "decision_reasons", "covered"):
+        assert absent not in type(record).model_fields, absent
+
+
+def test_order_evidence_says_it_is_ineligible_rather_than_omitting_coverage():
+    """A field, not an absence. A reader should not have to know that a missing coverage
+    block means what it means."""
+    record = cart_only().record
+
+    assert record.eligible is False
+    with pytest.raises(ValidationError):
+        OrderEvidenceRecord.model_validate(record.model_dump() | {"eligible": True})
+
+
+def test_the_reason_there_was_no_request_travels_onto_the_record():
+    """A record that says only "no request" invites the reader to supply their own reason
+    for it."""
+    record = cart_only("off-site discovery; the referrer was stripped").record
+
+    assert any("referrer was stripped" in reason for reason in record.reasons)
+
+
+def test_order_evidence_still_carries_the_order_and_the_catalogue():
+    """The weaker product is still an evidence product: which line of which order, at what
+    price, against the catalogue as it stood, at a recorded time."""
+    record = cart_only().record
+
+    assert record.order.sku == "SKU-TANDEM-M-FROST"
+    assert record.snapshot_hash == snapshot_digest(SNAPSHOT)
+    assert record.product_id == record.order.product_id
+
+
+def test_order_evidence_is_bound_to_its_own_order_line():
+    """The same binding a comparison has. A record whose order names one product and whose
+    evidence is about another is worse than no record, because it looks like evidence."""
+    from approv.receipts.record import build_order_evidence
+
+    # The builder takes the product from the order, so it cannot assemble a mismatch;
+    # the validator is what stops one being constructed or loaded from anywhere else.
+    built = build_order_evidence(
+        correlation_id="c", schema=SCHEMA, order=order(product_id="prod-9"),
+        product_snapshot=SNAPSHOT, snapshot_hash="h", model_version="m",
+        prompt_version="p")
+    assert built.product_id == "prod-9"
+
+    with pytest.raises(ValidationError, match="evidence is about"):
+        OrderEvidenceRecord.model_validate(
+            built.model_dump() | {"product_id": "prod-1"})
+
+
+def test_the_two_receipt_products_are_told_apart_on_the_wire():
+    """Billing selects on the signed kind, and a reader must be able to tell what they are
+    holding from the JSON alone with none of our code."""
+    from pydantic import TypeAdapter
+
+    from approv.types.core import Receipt
+    both = TypeAdapter(Receipt)
+    evidence = cart_only().record
+    comparison = verify_order(request(), schemas=SCHEMAS).record
+
+    assert isinstance(both.validate_python(evidence.model_dump()), OrderEvidenceRecord)
+    assert isinstance(both.validate_python(comparison.model_dump()), ComparisonRecord)
+
+
+def test_the_receipt_kind_is_inside_the_comparison_digest():
+    """A verification that could be relabelled order evidence after the fact, or the
+    reverse, is a billing and a liability question decided by whoever edits the file."""
+    key = generate_key()
+    sealed = seal(verify_order(request(), schemas=SCHEMAS).record, key)
+    verify(sealed, public_key_hex(key))
+
+    with pytest.raises(ValueError, match="does not match its hash"):
+        verify(sealed.model_copy(update={"kind": "order_evidence"}), public_key_hex(key))
+
+
+def test_an_unreadable_request_is_not_an_absent_one():
+    """A failed or incomplete extraction is not cart-only traffic. The request was
+    supplied; we failed to read it, and that is a verification that did not complete
+    (DR 0026), not a different product."""
+    result = verify_order(
+        request(artifact=Search(query="a king duvet", filters={"size": "M"}),
+                agent=AgentPresence.DECLARED), schemas=SCHEMAS)
+
+    assert result.record.kind == "verification"
+    assert result.record.completion is Completion.REQUEST_UNPROCESSED
 
 
 # --- the entry point ----------------------------------------------------------------------

@@ -48,45 +48,16 @@ from typing import Callable, Literal, Mapping, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
+# `Surface`, `Shape` and `AgentPresence` live in the shared vocabulary rather than here,
+# because the record needs them too: an order evidence record's whole justification is the
+# shape it arrived in and what that establishes, and a record cannot import intake. They
+# are re-exported so that `approv.intake` remains the one import an adapter needs.
 from approv.types.core import (
-    UNSUPPORTED_REQUIREMENT_PREFIX, CategorySchema, Channel, Constraint, Term, Value,
+    UNSUPPORTED_REQUIREMENT_PREFIX, AgentPresence, CategorySchema, Channel, Constraint,
+    Shape, Surface, Term, Value,
 )
 
 VERSION = "intake-v1"
-
-
-class Surface(str, Enum):
-    """Who is calling. Both reach the same engine; they differ in what they can offer.
-
-    MERCHANT is DR 0020's surface and the one that exists without anybody's permission:
-    the merchant owns the page, the order and the fulfilment record. AGENT is the strictly
-    easier input case — the agent operator has the human's actual words rather than its own
-    paraphrase — and it is kept because it is the product for the world where agent
-    operators are made liable, not because it is a precondition for having a business.
-    """
-
-    MERCHANT = "merchant"
-    AGENT = "agent"
-
-
-class Shape(str, Enum):
-    STRUCTURED = "structured"
-    SEARCH = "search"
-    FREE_TEXT = "free_text"
-    UNDECLARED = "undeclared"
-
-
-class AgentPresence(str, Enum):
-    """Whether this order was placed by an agent, and on what basis we say so.
-
-    Kept separate from the shape because the basis is what a merchant is arguing from. A
-    protocol call is an agent by construction. A checkout heuristic is a guess, and a
-    record that calls a guess a fact is worse than one that admits it guessed.
-    """
-
-    DECLARED = "declared"
-    INFERRED = "inferred"
-    UNKNOWN = "unknown"
 
 
 # --------------------------------------------------------------------------------------

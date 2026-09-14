@@ -122,6 +122,42 @@ class Mode(str, Enum):
     ENFORCE = "enforce"
 
 
+class Surface(str, Enum):
+    """Who is calling. Both reach the same engine; they differ in what they can offer.
+
+    MERCHANT is DR 0020's surface and the one that exists without anybody's permission:
+    the merchant owns the page, the order and the fulfilment record. AGENT is the strictly
+    easier input case — the agent operator has the human's actual words rather than its own
+    paraphrase — and it is kept because it is the product for the world where agent
+    operators are made liable, not because it is a precondition for having a business.
+    """
+
+    MERCHANT = "merchant"
+    AGENT = "agent"
+
+
+class Shape(str, Enum):
+    """The shape the stated request arrived in, if it arrived at all."""
+
+    STRUCTURED = "structured"
+    SEARCH = "search"
+    FREE_TEXT = "free_text"
+    UNDECLARED = "undeclared"
+
+
+class AgentPresence(str, Enum):
+    """Whether this order was placed by an agent, and on what basis we say so.
+
+    Kept separate from the shape because the basis is what a merchant is arguing from. A
+    protocol call is an agent by construction. A checkout heuristic is a guess, and a
+    record that calls a guess a fact is worse than one that admits it guessed.
+    """
+
+    DECLARED = "declared"
+    INFERRED = "inferred"
+    UNKNOWN = "unknown"
+
+
 class OutcomeKind(str, Enum):
     """What actually happened to an order, long after the decision.
 
@@ -619,6 +655,12 @@ class ComparisonRecord(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
+    # Which receipt product this is, on its face and inside the digest. Billing selects on
+    # it and a reader must be able to tell what they are holding from the signed JSON
+    # alone, with none of our code — so it is a field rather than something inferred from
+    # which keys happen to be present. See `OrderEvidenceRecord` for the other one.
+    kind: Literal["verification"] = "verification"
+
     correlation_id: str
     agent_id: str | None = None
     merchant_id: str | None = None
@@ -701,6 +743,7 @@ class ComparisonRecord(BaseModel):
     hash: str | None = None
     signature: str | None = None
 
+
     @model_validator(mode="after")
     def _the_comparison_is_about_this_order_line(self):
         """The binding, enforced by the type rather than by convention.
@@ -770,3 +813,97 @@ def dropped_requirement(note: str) -> bool:
     10 September pack. A floor that fires on those fires on almost everything.
     """
     return isinstance(note, str) and note.startswith(DROPPED_REQUIREMENT_PREFIXES)
+
+
+class OrderEvidenceRecord(BaseModel):
+    """What an order with no stated request can honestly produce. PRD §5.
+
+    **Cart contents cannot supply the request half.** An adapter that receives only a final
+    cart knows what was bought and nothing about what was asked for, and a comparison
+    needs both. The temptation is to issue the usual record with an empty request and let
+    the coverage fields carry the bad news, and that is what used to happen: a signed
+    object headed like a verification, holding a `decision`, findings about a request
+    nobody made, and `covered: false` some distance below.
+
+    A returns desk reads the heading. A billing system reads the kind. Neither should have
+    to reason about which combination of empty tuples means *we never saw the request* —
+    so this is a different object, and it is chosen **before** the comparison rather than
+    described afterwards.
+
+    What it deliberately does not have is the point of it. No `decision`: nothing was
+    authorised, refused or escalated on the strength of a request we never received. No
+    `findings` and no `coverage`: there is nothing to have found, and a per-finding
+    guarantee here would be a promise about an intent nobody stated. `eligible` is
+    hard-wired false and exists as a field anyway, because a reader should not have to
+    know that the absence of a coverage block means what it means.
+
+    What it does carry is everything a dispute actually turns on when intent is absent:
+    which line of which order, at what price, in what availability state, against the
+    catalogue as it stood, at a recorded time, signed and chained like any other receipt.
+    That is a real evidence product — weaker than a verification, and worth stating
+    plainly rather than dressing up.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["order_evidence"] = "order_evidence"
+
+    correlation_id: str
+    agent_id: str | None = None
+    merchant_id: str | None = None
+    attestation: Attestation = Attestation.NEITHER
+
+    category_id: str
+    category_version: str
+    locale: str = "en-IN"
+
+    # How the order reached us and what that establishes, recorded because it is the
+    # reason this is the product it is. `shape` is UNDECLARED here by construction;
+    # `agent` is usually UNKNOWN, and is kept rather than assumed because a merchant whose
+    # checkout detects agents may know, and that is a different evidentiary position.
+    surface: Surface = Surface.MERCHANT
+    shape: Shape = Shape.UNDECLARED
+    agent: AgentPresence = AgentPresence.UNKNOWN
+    # Why no stated request was available, in the words of whoever knew — `Undeclared.why`
+    # travels here verbatim. A record that says only "no request" invites the reader to
+    # supply their own reason for it.
+    reasons: tuple[str, ...] = ()
+
+    order: OrderLine
+    product_id: str
+    product_snapshot: dict[str, object]
+    snapshot_hash: str
+
+    mode: Mode = Mode.SHADOW
+    completion: Completion = Completion.COMPLETED
+    completion_detail: str | None = None
+    # Never true, and a field rather than an omission. §6's coverage contract is
+    # unanswered in general; this case is answered and the answer is no.
+    eligible: Literal[False] = False
+
+    model_version: str
+    evaluator_version: str
+    prompt_version: str
+    key_id: str | None = None
+    signature_version: str = "ed25519-sha256-v1"
+    timestamp: datetime
+
+    prev_hash: str | None = None
+    hash: str | None = None
+    signature: str | None = None
+
+    @model_validator(mode="after")
+    def _the_evidence_is_about_this_order_line(self):
+        if self.order.product_id != self.product_id:
+            raise ValueError(
+                "order line is product %r but the evidence is about %r"
+                % (self.order.product_id, self.product_id))
+        return self
+
+
+# Either receipt product, told apart by `kind` on the wire. A consumer that must handle
+# both — a store, a renderer, a billing run — discriminates on the field rather than on
+# which attributes happen to exist.
+Receipt = Annotated[
+    Union[ComparisonRecord, OrderEvidenceRecord], Field(discriminator="kind"),
+]
