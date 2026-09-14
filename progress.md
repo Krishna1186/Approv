@@ -541,6 +541,74 @@ afterwards, and that an outcome cannot cross modes through this surface.
 test catches the day someone adds `customer_email`, which is how personal data actually
 arrives: as a convenience field, not as an attack.
 
+## Seams 5 and 6, and the outcome fields (14 September)
+
+**Seam 6 — the ordered variant.** The catalogue reader was handed a product record and
+read *every variant in it*. On an apparel catalogue that is not a partial answer: a duvet
+in six colours publishes six colours, and a reader that pools them finds Frost in a record
+whose ordered line is Ash — then states it with the same confidence as a correct reading,
+names a field path that really exists, and signs it into the same record. Nothing
+downstream can tell the two apart. `verify_order` now projects the snapshot to the ordered
+SKU before the reader sees it, so a merchant's own `Reader` cannot read the wrong variant
+either. The record keeps the snapshot as sent; the projection is reproducible from the
+order line it already carries. DR 0024.
+
+A multi-SKU snapshot that does not hold the ordered line raises, the same way posting
+product A's snapshot with product B's order line already raises. Two identifiers that
+disagree are a contradiction rather than a match — a stale `variant_id` beside a good
+`sku` would otherwise read var-9 and sign it against a SKU never sold.
+
+**The resolver is now the producer's own walk.** The surface stopped walking locators
+itself and calls `approv.schema.catalogue.flatten`, the code that emitted them. A second
+walk would have to reproduce the option table, the currency inheritance, the pair
+detection, the labelled-clause extraction and the child-over-parent rule *exactly*, and
+the day one drifted we would read a merchant's catalogue differently from the schema
+derived out of it — seam 1 again, silently. Producer and consumer agree by construction;
+the contract test is a regression on the agreement rather than the only thing holding it
+together. It also answers the flat Shopify export: the option-name table resolves, so
+`/variants/*/option1#name=Size` reads.
+
+One thing the reader knows that the walk does not is what the attribute **settled as**
+across the catalogue. Size `3XL` reads as an unrecognised unit in isolation and `13.5` as
+a unitless decimal; both are labels once the schema says NOMINAL. Everywhere else the
+dimensions must agree.
+
+All 19 of codex2's contract checks pass, and the seven strict-xfail markers came off.
+
+**Seam 5 — corroboration.** `algebra.runner` raised DUPLICATE_CLAIM for any two claims on
+one attribute *without comparing their values*. A shopper who ticks the King filter and
+types "king duvet" gave us the strongest evidence in the record that they meant King and
+got the weakest outcome available: both findings UNSTATED, the attribute unresolved, the
+order escalated — 20 of 24 on-site-search orders, and on-site search is DR 0020's second
+fidelity tier.
+
+*Which one they meant* is only a question when the two answers differ. The values are now
+compared with the attribute's own operator — the same treatment two fields of evidence
+have always had — run **both directions**, because half a comparison is containment rather
+than agreement and a $150 ceiling "satisfied" by a $120 claim one way round would silently
+drop the tighter limit the shopper set. Both statements stay in `request_constraints`;
+only the comparison collapses, to the strongest channel's. DR 0025.
+
+Measured on the v3 pack: **all 1,244 rows byte-identical**, decisions and coverage both.
+That corpus is single free-text requests and has zero cases stating an attribute twice, so
+it cannot show this either way — the published numbers are unchanged, not confirmed. The
+measurement that matters is claude2's on-site-search week, which is not ours to re-run.
+
+**Outcome ingestion grew four optional fields.** Without a ship date and a window length,
+*kept* is not observable: a return is known the day it happens, a keep only by a window
+expiring, so a feed of shipped and returned events has a denominator containing every
+return and no keeps — precision 100% by construction, which `report.outcomes` correctly
+refuses to print. `ship_date` + `return_window_days` make it derivable, and
+`return_window_closes_at` lets a partner send the date outright.
+
+`reason_code` is the returns desk's own coding, verbatim, beside their free text rather
+than read out of it. A string and deliberately not an enum of ours: classifying
+`merchant_reason` into an Approv taxonomy would mean grading our own work against
+categories we chose — we decide what counts as a wrong item, then report how often we got
+wrong items right. Their code is evidence because they chose it, before knowing what we
+would do with it. All four optional, because partners arrive at different tiers and a
+required field turns "cannot answer that yet" into "cannot be onboarded".
+
 ## Parked
 
 **`approv/challenge.py` — built, tested, unwired, and staying that way for now.** One
@@ -563,19 +631,18 @@ Do not wire it. Its tests keep passing, which is the whole cost of keeping it.
   shopper's wording is not in evidence anywhere.
 - `mark` and `verify` unscored.
 - Whether published merchant data is true. Nothing here tests that and nothing can.
-- **Seam 5, mine, unfixed and decision-path.** On-site search states an attribute twice —
-  once as a filter, once in the query text — and `algebra.runner` raises DUPLICATE_CLAIM
-  for any two claims on one attribute *without comparing their values*. Two statements that
-  agree are corroboration, and they currently produce the weakest outcome available:
-  unresolved, order escalated. Measured by claude2 on a synthetic week: 20 of 24
-  on-site-search orders confirmed for this reason alone. It makes DR 0020's second fidelity
-  tier unusable. Needs a ruling and a DR before the fix.
-- The default catalogue reader does not resolve `/variants/*/option1#name=Colour` — the
-  flat-export shape whose option names live in a separate table. It reads nothing, loudly,
-  rather than risking the wrong attribute. A merchant on that shape needs a `Reader`.
-- A multi-variant snapshot is read across every variant, so a product whose variants differ
-  produces conflicting evidence and confirms. Safe, but the order line names a `variant_id`
-  the reader cannot see. Unresolved.
+- A merchant whose multi-SKU export carries no identifier the order line can name now gets
+  a hard mismatch on every order rather than a wrong reading. That is the right direction
+  and it is loud, but it is an onboarding requirement nothing states up front: the order
+  line must carry a `sku` or `variant_id` that appears in the snapshot.
+- The surface now imports `approv.schema.catalogue`, so the request path depends on
+  onboarding. Deliberate — it is what makes producer and consumer agree by construction —
+  but it is a coupling that did not exist before, and an onboarding change can now move a
+  production read.
+- `report.outcomes` probes two further fields with `getattr` that ingestion does not carry:
+  `attribute` (which attribute the customer complained about) and `merchant_fault` (the
+  desk's own assessment). Neither was in the brief; both would raise the report a rung for
+  partners who code them. Awaiting a ruling rather than added.
 - Coverage is bounded by schema expressiveness: 43% of held-out requests still carry an
   unread note after the marker fix, and most of those name something this category has no
   attribute for. Selling a guarantee on under half of traffic is a product limit, not a
