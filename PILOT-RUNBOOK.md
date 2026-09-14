@@ -26,21 +26,38 @@ Schemas, readers, extraction and floor policies still come from reviewed deploym
 configuration in the verification runner.
 
 Both batch APIs materialize and validate input before taking the SQLite writer lock.
-They audit the existing chain **once per batch**, then stamp, sign and append each
-new record and checkpoint in one transaction. Any conflict or signing/storage failure
+The standalone calls audit the existing chain once per call. For a sustained import,
+use `with store.batch_writer() as writer:` and call the same batch APIs on `writer`.
+It audits at its first transaction, then again whenever another connection has committed.
+Each batch stamps, signs, verifies both signatures, and appends each new record and
+checkpoint in one transaction. Any conflict or signing/storage failure
 rolls back every new row in that batch. Retrying a committed batch returns the original
 receipts, in input order, without new signatures or timestamps. Stable correlation IDs
 must survive process restarts. A different decision under an existing ID is a conflict.
 
-Start with chunks of 1,000 prepared comparisons. Larger chunks amortize history audits
-and fsyncs but hold the writer lock longer and consume more memory. Separate chunks
-commit independently. A single-record append and lookup still audit the retained
-history; do not put them in a many-thousand-row retention loop. Full audits at successive
-chunk boundaries also grow with accumulated history; this is not a constant-cost or
-unlimited-scale store. Measure on the partner's actual receipt sizes before setting
-batch sizes. KMS still makes two signing calls per new record.
+Start with chunks of 1,000 prepared comparisons and one reusable writer for the import.
+Larger chunks amortize fsyncs but hold the writer lock longer and consume more memory.
+Separate chunks commit independently; closing the writer does not undo completed chunks.
+The writer is confined to its calling thread. Verification/extraction can prepare the
+next chunk outside its transaction. Another SQLite writer is safe but causes a full
+re-audit. Use one import writer per database for the measured throughput shape.
 
-Local storage measurement, 2026-09-14 UTC: three runs of 5,000 synthetic `fixture`
+Audit reuse is based on SQLite's connection-local `PRAGMA data_version`, read **after**
+`BEGIN IMMEDIATE`. It is unchanged by that connection's commits and changes after foreign
+commits. The writer remembers the version observed under its lock, never a value read
+after unlocking that might include an unverified racing commit. Failed transactions
+invalidate the cache. Raw SQL and database connections are not exposed by this API.
+This follows SQLite's [data-version contract](https://www.sqlite.org/pragma.html#pragma_data_version)
+and [writer-transaction semantics](https://www.sqlite.org/lang_transaction.html).
+
+Single-record append/lookup, standalone batch calls, startup, progress reads outside the
+writer, and exports still audit retained history. Do not put single-record lookups in a
+many-thousand-row retry loop. Use the writer's bulk lookup instead. Restarting starts a
+fresh audit; backup/export always checks every receipt. This optimization does not protect
+against software bypassing SQLite to alter its files in place. Stop writers before
+restore/replacement, and retain independent checkpoints. KMS still signs twice per new row.
+
+Earlier, pre-reusable-writer storage measurement, 2026-09-14 UTC: three runs of 5,000 synthetic `fixture`
 receipts per setting, roughly 1,074 bytes per unsigned draft, model/prompt `fixture`
 (no model called), local Ed25519, Windows, Python 3.13.4, cryptography 46.0.7,
 SQLite WAL with `synchronous=FULL`. Timing includes validation, existing-history audits,
@@ -55,6 +72,47 @@ The ranges are observed across three runs, not confidence intervals. This measur
 small synthetic receipt storage only, with no extraction, network or partner data.
 The regression test separately asserts one history audit per batch of 1,000 new records;
 it has no timing threshold tied to this machine.
+
+### Sustained full-response retention, 2026-09-14
+
+The reproducible benchmark now uses actual `verify_order` output for synthetic structured
+apparel requests, including findings, order/snapshot evidence and retained request/deployment
+bindings. This is a larger workload than the earlier bare-record fixture; the two tables
+are not a before/after comparison. No partner data, extractor, network or KMS is involved.
+Model/prompt labels are the surface's `surface-v1` placeholders (no model was called),
+evaluator `evaluator-v1`, fixture `storage-fixture-v1`; the first response is 4,255 bytes.
+
+**Denominator: 60,000 stored responses across three independent 20,000-row imports,
+20 batches of 1,000 per import, one reusable writer per import.**
+
+| Measurement | Result |
+|---|---|
+| Total retention time per 20,000 rows, observed min/max | 53.13–53.71 seconds |
+| Median sustained throughput | 376 receipts/second |
+| p50 / p95 batch time, across 60 committed batches | 2.56 / 3.15 seconds per 1,000 rows |
+| First five batches per trial, observed total range | 12.70–14.34 seconds per 5,000 rows |
+| Last five batches per trial, observed total range | 12.77–14.45 seconds per 5,000 rows |
+| Final full audit/export, separately measured | 12.13–14.28 seconds per 20,000 rows |
+
+Observed ranges are not statistical confidence intervals. Timings include validation,
+initial audit, two verified local Ed25519 signatures per new row, inserts and durable
+commits. They exclude fixture construction, empty database creation and the separately
+reported final audit. The run used Windows 11, Python 3.13.4, SQLite 3.49.1,
+cryptography 46.0.7, WAL and `synchronous=FULL` on local disk. Desktop load was uncontrolled.
+No latency or accuracy claim about a partner's end-to-end backtest follows from this.
+
+[Raw measurements](approv/ops/benchmarks/2026-09-14-sustained-store.json) include every batch,
+source-file digests, environment, denominators, database sizes and final audit costs.
+Reproduce in a **new** directory (databases and public keys are retained; private keys are not):
+
+```sh
+python -m approv.ops.benchmark_store --directory /scratch/approv-store-reused --rows 20000 --batch-size 1000 --runs 3 --strategy reused
+```
+
+`--strategy stateless` measures separate `ReceiptStore.commit_verifications` calls with
+a new audit per batch. It is available as a matched local comparison; no stateless result
+for this larger workload is claimed here. The correctness tests assert audit reuse and
+invalidation directly, without a machine-dependent speed threshold.
 
 For example, retain the verification runner's JSONL output, with each line containing
 `response` (an unsealed verification response) and `request_hash` (SHA-256 of canonical
@@ -74,12 +132,13 @@ deployment = load_deployment("/backtest/deployment.json")
 signer = SignerLoader(deployment).load()  # explicit backend; no automatic fallback
 store = ReceiptStore("/backtest/partner-1.sqlite3", namespace="sandbox",
                      create=False, migrate=False)
-with Path("/backtest/verified-responses.jsonl").open(encoding="utf-8") as source:
+with store.batch_writer() as writer, Path("/backtest/verified-responses.jsonl").open(encoding="utf-8") as source:
     rows = (json.loads(line) for line in source if line.strip())
     while chunk := list(islice(rows, 1000)):
-        store.commit_verifications(
+        writer.commit_verifications(
             [(row["response"], row["request_hash"]) for row in chunk],
             deployment.manifest, signer)
+        print(canonical_json(writer.progress()))
 with Path("/backtest/receipts-export.json").open("x", encoding="utf-8") as target:
     target.write(canonical_json(store.export()))
 ```
@@ -89,6 +148,55 @@ Use a distinct sandbox key/publication and operator-controlled credential files;
 never substitute an ephemeral key for a missing configured key. **KMS is the accepted
 production choice**, with provisioning deferred. Local storage-only throughput does
 not predict extraction throughput, token spend or KMS latency.
+
+## Failure and restart contract for the backtest runner
+
+Give an import a stable identity derived from the source export and the reviewed
+verification configuration, and derive correlation IDs from that identity plus each
+source row/line identity. Keep the same identities after a process restart. A deliberate
+re-evaluation with a different schema/policy is a new import; do not reuse IDs expecting
+the store to replace earlier decisions. The runner owns source parsing and this mapping.
+
+Before re-extracting a chunk, call
+`writer.lookup_verifications([(correlation_id, request_hash), ...])`. Results are in input
+order: the exact retained response or `None` per row. A changed request under a retained
+ID raises ReplayError. Commit the missing rows, or replay the whole unchanged chunk:
+both are safe. The bulk read requires no signing key or provider, and repeating committed
+rows never re-signs them. Do not derive resume position from the number of receipts when
+the ledger contains other imports or repeated source IDs.
+
+`store.progress()` returns a verified snapshot of `receipt_count`, `submission_count`,
+`last_correlation_id`, namespace, store ID and the signed checkpoint. The equivalent
+`writer.progress()` reuses the writer's audited connection. These counts describe committed
+ledger entries, not input rows attempted or skipped by the runner. In a dedicated import
+ledger, the last correlation ID identifies the last retained source row. For a mixed
+ledger, use the bulk identity lookup to find precisely which rows remain missing.
+
+Operator inspection, using independently published keys:
+
+```sh
+python -m approv.ops audit --namespace sandbox --store /backtest/partner-1.sqlite3 --keys /retained/sandbox-public-keys.json
+```
+
+The command prints count, last correlation ID and signed checkpoint. Retain that checkpoint
+outside the signing host. A log line or local cursor is not the source of truth after a
+lost acknowledgement; query the recovered database.
+
+| Interruption | Committed state | Restart action |
+|---|---|---|
+| Input preparation fails before a batch | Earlier batches remain; no new rows | Fix input, retry that batch |
+| Validation/conflict/signing/SQLite failure inside a batch | Whole current batch rolls back, including manifests and checkpoints | Inspect verified progress, fix the cause, retry unchanged IDs |
+| Process terminates halfway through a batch | SQLite recovers the last committed prefix | Reopen, bulk-lookup IDs, replay missing or unchanged chunks |
+| Commit succeeds but process dies before acknowledging it | Whole batch already exists | Retry returns its original responses and signatures |
+
+Executable proof: `test_batch_recovery.py` terminates a child with `os._exit()` while
+row 4,500 is between receipt insertion and checkpoint insertion. Four earlier 1,000-row
+batches survive; none of batch five does. A second scenario terminates immediately after
+committing row 4,000 and before acknowledgement. In both cases a new process/key resumes
+the 6,000-row import from row zero: exactly 6,000 unique IDs remain, the first 4,000 receipt
+JSON objects are identical, only the missing 2,000 rows receive signatures, and a stranger
+verifies the recovered chain across rotation. These are process-crash tests, not power-loss
+or storage-hardware durability claims.
 
 ## Store contract and namespace isolation
 
@@ -146,8 +254,8 @@ bounds verification work; excess calls return 503. JSON bodies have a configured
 size limit and a 10-second receive-idle timeout. Configure an ingress body deadline,
 rate limit and TLS; the development listener defaults to loopback.
 
-Single-receipt operations audit the retained chain on lookup and append. Batch APIs
-share one audit per transaction, and KMS signing happens inside the writer transaction.
+Single-receipt operations audit the retained chain on lookup and append. A reusable batch
+writer retains its audit across its own commits, and KMS signing happens inside the transaction.
 Measure p95 at the pilot's expected retained receipt count before increasing traffic.
 This release does not assert a sub-500ms budget or a throughput guarantee.
 
@@ -359,10 +467,23 @@ record because storage or signing failed remains a 503 operational event.
 Store v1 retains its signed JSON byte-for-byte. V2 adds the deployment/submission
 bindings, migration history and a separate writable readiness row. V3 adds an immutable
 database namespace and SQL guards for receipt/checkpoint namespace binding. DDL and version
-advancement run in one `BEGIN IMMEDIATE` transaction; a failed migration rolls back.
+advancement run in one `BEGIN IMMEDIATE` transaction. Before committing an upgrade, the
+store audits every historical receipt signature, index, checkpoint and retained submission/
+deployment binding. A failed audit or DDL operation rolls the schema and version back.
 Unknown newer versions are rejected. There are no down migrations and no automatic
 receipt rewrites. The receipt, checkpoint, key, identity, deployment, submission and
 migration-history and namespace tables reject SQL updates, deletes and replacement inserts.
+
+The migration is implemented in `approv/receipts/migrations.py` and executed by
+`python -m approv.ops migrate`. It needs no extractor credentials or private signing key.
+The command reports the verified receipt/submission counts and last correlation ID.
+`test_historical_migration.py` recreates a frozen v2 database generated by the actual
+`9484f81` writer: 24 signed order comparisons, allow/confirm/refuse outcomes, three rotated
+keys, and their request/deployment bindings. It migrates via that CLI, compares every
+historical table row (including exact JSON strings), and invokes the standalone verifier
+in isolated subprocesses on the complete chain and on each of the 24 individual receipts.
+The fixture contains only synthetic data and public keys. A separate test corrupts an
+old signature and proves the attempted upgrade leaves `user_version=2` and no v3 DDL.
 
 Before upgrading an existing v1 or v2 store: stop/drain writers, retain its latest published
 keys and independently held checkpoint, and take a SQLite online-API snapshot of

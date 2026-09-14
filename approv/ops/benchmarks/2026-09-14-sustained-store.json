@@ -1,0 +1,432 @@
+{
+  "format": "approv-store-benchmark-v1",
+  "measured_at_utc": "2026-09-14T10:43:26.748865+00:00",
+  "dataset": "storage-fixture-v1: synthetic structured apparel comparisons",
+  "strategy": "reused",
+  "rows_per_trial": 20000,
+  "trials": [
+    {
+      "trial": 1,
+      "rows": 20000,
+      "batches": [
+        {
+          "first_row": 1,
+          "last_row": 1000,
+          "rows": 1000,
+          "seconds": 2.7189375000307336
+        },
+        {
+          "first_row": 1001,
+          "last_row": 2000,
+          "rows": 1000,
+          "seconds": 2.962041800026782
+        },
+        {
+          "first_row": 2001,
+          "last_row": 3000,
+          "rows": 1000,
+          "seconds": 2.546423199994024
+        },
+        {
+          "first_row": 3001,
+          "last_row": 4000,
+          "rows": 1000,
+          "seconds": 3.007451999990735
+        },
+        {
+          "first_row": 4001,
+          "last_row": 5000,
+          "rows": 1000,
+          "seconds": 2.4853825999889523
+        },
+        {
+          "first_row": 5001,
+          "last_row": 6000,
+          "rows": 1000,
+          "seconds": 2.7020093000028282
+        },
+        {
+          "first_row": 6001,
+          "last_row": 7000,
+          "rows": 1000,
+          "seconds": 2.442221699981019
+        },
+        {
+          "first_row": 7001,
+          "last_row": 8000,
+          "rows": 1000,
+          "seconds": 3.034717299975455
+        },
+        {
+          "first_row": 8001,
+          "last_row": 9000,
+          "rows": 1000,
+          "seconds": 3.056478300015442
+        },
+        {
+          "first_row": 9001,
+          "last_row": 10000,
+          "rows": 1000,
+          "seconds": 2.7268203000421636
+        },
+        {
+          "first_row": 10001,
+          "last_row": 11000,
+          "rows": 1000,
+          "seconds": 2.719124399998691
+        },
+        {
+          "first_row": 11001,
+          "last_row": 12000,
+          "rows": 1000,
+          "seconds": 2.4358218999695964
+        },
+        {
+          "first_row": 12001,
+          "last_row": 13000,
+          "rows": 1000,
+          "seconds": 2.474398599995766
+        },
+        {
+          "first_row": 13001,
+          "last_row": 14000,
+          "rows": 1000,
+          "seconds": 2.564099700015504
+        },
+        {
+          "first_row": 14001,
+          "last_row": 15000,
+          "rows": 1000,
+          "seconds": 2.4844342000433244
+        },
+        {
+          "first_row": 15001,
+          "last_row": 16000,
+          "rows": 1000,
+          "seconds": 2.568950799992308
+        },
+        {
+          "first_row": 16001,
+          "last_row": 17000,
+          "rows": 1000,
+          "seconds": 2.5470982000115328
+        },
+        {
+          "first_row": 17001,
+          "last_row": 18000,
+          "rows": 1000,
+          "seconds": 2.5532864999840967
+        },
+        {
+          "first_row": 18001,
+          "last_row": 19000,
+          "rows": 1000,
+          "seconds": 2.3301498999935575
+        },
+        {
+          "first_row": 19001,
+          "last_row": 20000,
+          "rows": 1000,
+          "seconds": 2.766522299963981
+        }
+      ],
+      "wall_seconds": 53.134829199989326,
+      "records_per_second": 376.4009464436938,
+      "final_full_audit_seconds": 12.131864399998449,
+      "database_bytes": 220549120
+    },
+    {
+      "trial": 2,
+      "rows": 20000,
+      "batches": [
+        {
+          "first_row": 1,
+          "last_row": 1000,
+          "rows": 1000,
+          "seconds": 2.376057200017385
+        },
+        {
+          "first_row": 1001,
+          "last_row": 2000,
+          "rows": 1000,
+          "seconds": 2.3734534999821335
+        },
+        {
+          "first_row": 2001,
+          "last_row": 3000,
+          "rows": 1000,
+          "seconds": 3.0298836000147276
+        },
+        {
+          "first_row": 3001,
+          "last_row": 4000,
+          "rows": 1000,
+          "seconds": 2.7129655000171624
+        },
+        {
+          "first_row": 4001,
+          "last_row": 5000,
+          "rows": 1000,
+          "seconds": 2.212240999971982
+        },
+        {
+          "first_row": 5001,
+          "last_row": 6000,
+          "rows": 1000,
+          "seconds": 2.2981323999702
+        },
+        {
+          "first_row": 6001,
+          "last_row": 7000,
+          "rows": 1000,
+          "seconds": 3.0743692999822088
+        },
+        {
+          "first_row": 7001,
+          "last_row": 8000,
+          "rows": 1000,
+          "seconds": 2.281824699952267
+        },
+        {
+          "first_row": 8001,
+          "last_row": 9000,
+          "rows": 1000,
+          "seconds": 2.2732142999884672
+        },
+        {
+          "first_row": 9001,
+          "last_row": 10000,
+          "rows": 1000,
+          "seconds": 2.9595486999605782
+        },
+        {
+          "first_row": 10001,
+          "last_row": 11000,
+          "rows": 1000,
+          "seconds": 2.323644599993713
+        },
+        {
+          "first_row": 11001,
+          "last_row": 12000,
+          "rows": 1000,
+          "seconds": 3.04748720000498
+        },
+        {
+          "first_row": 12001,
+          "last_row": 13000,
+          "rows": 1000,
+          "seconds": 2.551620299986098
+        },
+        {
+          "first_row": 13001,
+          "last_row": 14000,
+          "rows": 1000,
+          "seconds": 2.956916800001636
+        },
+        {
+          "first_row": 14001,
+          "last_row": 15000,
+          "rows": 1000,
+          "seconds": 2.780581900035031
+        },
+        {
+          "first_row": 15001,
+          "last_row": 16000,
+          "rows": 1000,
+          "seconds": 3.3686099000042304
+        },
+        {
+          "first_row": 16001,
+          "last_row": 17000,
+          "rows": 1000,
+          "seconds": 2.7318497000378557
+        },
+        {
+          "first_row": 17001,
+          "last_row": 18000,
+          "rows": 1000,
+          "seconds": 2.523174299974926
+        },
+        {
+          "first_row": 18001,
+          "last_row": 19000,
+          "rows": 1000,
+          "seconds": 3.289489099988714
+        },
+        {
+          "first_row": 19001,
+          "last_row": 20000,
+          "rows": 1000,
+          "seconds": 2.5373782999813557
+        }
+      ],
+      "wall_seconds": 53.71000079996884,
+      "records_per_second": 372.370130368935,
+      "final_full_audit_seconds": 14.283321399998385,
+      "database_bytes": 220598272
+    },
+    {
+      "trial": 3,
+      "rows": 20000,
+      "batches": [
+        {
+          "first_row": 1,
+          "last_row": 1000,
+          "rows": 1000,
+          "seconds": 2.914509000023827
+        },
+        {
+          "first_row": 1001,
+          "last_row": 2000,
+          "rows": 1000,
+          "seconds": 2.422091400017962
+        },
+        {
+          "first_row": 2001,
+          "last_row": 3000,
+          "rows": 1000,
+          "seconds": 3.396412300004158
+        },
+        {
+          "first_row": 3001,
+          "last_row": 4000,
+          "rows": 1000,
+          "seconds": 2.7192752999835648
+        },
+        {
+          "first_row": 4001,
+          "last_row": 5000,
+          "rows": 1000,
+          "seconds": 2.891811500012409
+        },
+        {
+          "first_row": 5001,
+          "last_row": 6000,
+          "rows": 1000,
+          "seconds": 2.5400722000049427
+        },
+        {
+          "first_row": 6001,
+          "last_row": 7000,
+          "rows": 1000,
+          "seconds": 3.0223713000304997
+        },
+        {
+          "first_row": 7001,
+          "last_row": 8000,
+          "rows": 1000,
+          "seconds": 2.253304500016384
+        },
+        {
+          "first_row": 8001,
+          "last_row": 9000,
+          "rows": 1000,
+          "seconds": 2.3688159000012092
+        },
+        {
+          "first_row": 9001,
+          "last_row": 10000,
+          "rows": 1000,
+          "seconds": 2.9909155999775976
+        },
+        {
+          "first_row": 10001,
+          "last_row": 11000,
+          "rows": 1000,
+          "seconds": 2.275654199998826
+        },
+        {
+          "first_row": 11001,
+          "last_row": 12000,
+          "rows": 1000,
+          "seconds": 3.153039800003171
+        },
+        {
+          "first_row": 12001,
+          "last_row": 13000,
+          "rows": 1000,
+          "seconds": 2.5867583999643102
+        },
+        {
+          "first_row": 13001,
+          "last_row": 14000,
+          "rows": 1000,
+          "seconds": 2.312546500004828
+        },
+        {
+          "first_row": 14001,
+          "last_row": 15000,
+          "rows": 1000,
+          "seconds": 2.352501499990467
+        },
+        {
+          "first_row": 15001,
+          "last_row": 16000,
+          "rows": 1000,
+          "seconds": 3.0447689999709837
+        },
+        {
+          "first_row": 16001,
+          "last_row": 17000,
+          "rows": 1000,
+          "seconds": 2.3646277000079863
+        },
+        {
+          "first_row": 17001,
+          "last_row": 18000,
+          "rows": 1000,
+          "seconds": 2.2418688999605365
+        },
+        {
+          "first_row": 18001,
+          "last_row": 19000,
+          "rows": 1000,
+          "seconds": 2.9936040000175126
+        },
+        {
+          "first_row": 19001,
+          "last_row": 20000,
+          "rows": 1000,
+          "seconds": 2.3211538000032306
+        }
+      ],
+      "wall_seconds": 53.17335980001371,
+      "records_per_second": 376.1281979401054,
+      "final_full_audit_seconds": 12.839727799990214,
+      "database_bytes": 220573696
+    }
+  ],
+  "runs": 3,
+  "batch_size": 1000,
+  "total_measured_rows": 60000,
+  "model_called": false,
+  "model_version": "surface-v1",
+  "prompt_version": "surface-v1",
+  "evaluator_version": "evaluator-v1",
+  "first_response_bytes": 4255,
+  "environment": {
+    "python": "3.13.4",
+    "os": "Windows-11-10.0.26200-SP0",
+    "sqlite": "3.49.1",
+    "cryptography": "46.0.7",
+    "processor": "AMD64 Family 23 Model 96 Stepping 1, AuthenticAMD"
+  },
+  "source_sha256": {
+    "receipts/store.py": "8576d94824d6f94e2308555ea84d9f9cec54254e620ad485345a221f751bde85",
+    "receipts/chain.py": "f644746e647bb004e11edf46d380593f46930edb5a67475349d596256737af09",
+    "receipts/migrations.py": "1677c88674d9d9df4c2801596f75fe2c28da75f13e4575244a7af4274d94c9fe",
+    "ops/benchmark_store.py": "768ab1d25c290f5753cf36fb6ec4fdd6a1e0e15f1282d069d79cf15961b0a3ce",
+    "types/core.py": "6c054087dbfe92b10fd86fd7b7aa0a0d17c4f2a0ee611daee1405cc670900098",
+    "surface/verification.py": "53fd3448b24d81a7e387d8af619b51478483db661f226b2c1abc97480bca83d1"
+  },
+  "storage": "local SQLite WAL, synchronous=FULL; two local Ed25519 signatures verified per new row",
+  "timing": "writer connection, validation, history audits, signing, inserts and commits; fixture construction, database creation and final export audit excluded",
+  "median_records_per_second": 376.1281979401054,
+  "observed_total_seconds_range": [
+    53.134829199989326,
+    53.71000079996884
+  ],
+  "interval_kind": "observed min/max across runs, not a statistical confidence interval",
+  "p50_batch_seconds": 2.564099700015504,
+  "p95_batch_seconds": 3.153039800003171
+}
