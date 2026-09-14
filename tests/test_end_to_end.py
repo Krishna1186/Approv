@@ -576,13 +576,6 @@ def test_the_surface_hands_the_ledger_an_unsealed_record(tmp_path):
     assert len(store.export()["records"]) == 3
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "SEAM 3: ReceiptStore.append returns the existing receipt when the same unsigned "
-    "record is appended twice, but build_record stamps timestamp=now() and neither "
-    "VerificationRequest nor verify_order accepts a timestamp. A merchant retrying a "
-    "timed-out verification produces different content under the same correlation id and "
-    "gets ReplayError instead of the receipt they already have -- which the store has no "
-    "read path to return."))
 def test_a_retried_verification_returns_the_receipt_it_already_wrote(tmp_path):
     """Idempotent retry is built, and unreachable from the only public entry point.
 
@@ -680,7 +673,6 @@ def test_a_filter_and_a_query_that_agree_are_corroboration_not_a_conflict():
 # single legible edit by whoever fixed it, instead of a hardcoded number that blocks the
 # fix it was meant to protect. Removing a name here is as loud as changing a count was.
 OPEN_SEAMS = {
-    "test_a_retried_verification_returns_the_receipt_it_already_wrote",   # seam 3, codex1
     "test_a_filter_and_a_query_that_agree_are_corroboration_not_a_conflict",  # seam 5, claude1
 }
 

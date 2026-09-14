@@ -1,6 +1,6 @@
 """Cryptographic and persistence counterexamples, not product-accuracy evidence."""
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 from pathlib import Path
@@ -12,12 +12,12 @@ import sys
 import pytest
 
 from approv.receipts.chain import (
-    SIGNATURE_VERSION, _UNSEALED, canonical_json, generate_key, key_id_for,
+    SIGNATURE_VERSION, SandboxReceipt, _UNSEALED, canonical_json, generate_key, key_id_for,
     public_key_hex, record_hash, record_json, seal, verify, verify_chain,
 )
 from approv.receipts.keys import KeyStore
-from approv.receipts.store import ChainConflict, ReceiptStore, ReplayError
-from approv.types.core import Attestation, ComparisonRecord, Decision, Money, OrderLine
+from approv.receipts.store import ReceiptStore, ReplayError
+from approv.types.core import Attestation, ComparisonRecord, Decision, Mode, Money, OrderLine
 
 
 def draft(correlation="request-1"):
@@ -56,10 +56,11 @@ def stranger(tmp_path, payload, *, keys=None, key=None, checkpoint=None):
     return subprocess.run(command, cwd=directory, capture_output=True, text=True, timeout=30)
 
 
-def test_a_stranger_verifies_before_and_after_rotation_from_the_reopened_store(tmp_path):
+@pytest.mark.parametrize("namespace", ["production", "sandbox"])
+def test_a_stranger_verifies_before_and_after_rotation_from_the_reopened_store(tmp_path, namespace):
     keyring = KeyStore(tmp_path / "keys", password=b"fixture password")
     first_id = keyring.rotate()
-    ledger = ReceiptStore(tmp_path / "receipts.sqlite")
+    ledger = ReceiptStore(tmp_path / "receipts.sqlite", namespace=namespace)
     first = ledger.append(draft("before-rotation"), keyring.load_private())
     original = record_json(first)
     keyring.rotate()
@@ -69,7 +70,7 @@ def test_a_stranger_verifies_before_and_after_rotation_from_the_reopened_store(t
     assert first_id in published["keys"] and len(published["keys"]) == 2
     assert first.key_id != second.key_id and second.prev_hash == first.hash
     # A new process/instance needs only the database, never an in-memory head or receipt cache.
-    exported = ReceiptStore(ledger.path).export()
+    exported = ReceiptStore(ledger.path, namespace=namespace).export()
     assert exported["records"][0] == original
     result = stranger(tmp_path, exported, keys=published, checkpoint=exported["checkpoint"])
     assert result.returncode == 0, result.stdout + result.stderr
@@ -78,6 +79,160 @@ def test_a_stranger_verifies_before_and_after_rotation_from_the_reopened_store(t
         result = stranger(tmp_path, receipt, key=published["keys"][receipt["key_id"]])
         assert result.returncode == 0, result.stdout + result.stderr
     verify_chain(exported["records"], published["keys"])
+
+
+@pytest.mark.parametrize("field", ["hash", "signature", "prev_hash", "key_id"])
+@pytest.mark.parametrize("value", ["", "caller-supplied"])
+def test_even_empty_partial_seals_fail_before_touching_the_store(tmp_path, field, value):
+    ledger = ReceiptStore(tmp_path / "receipts.sqlite")
+    with pytest.raises(ValueError, match="unsealed"):
+        ledger.append(draft().model_copy(update={field: value}), generate_key())
+    assert ledger.export()["records"] == []
+    assert ledger.public_keys()["keys"] == {}
+
+
+def test_retry_and_read_need_neither_new_signature_nor_caller_timestamp(tmp_path):
+    class UnavailableSigner:
+        def public_key(self):
+            pytest.fail("retry tried to access the signing key")
+        def sign(self, message):
+            pytest.fail("retry tried to sign")
+    ledger = ReceiptStore(tmp_path / "receipts.sqlite")
+    first = ledger.append(draft(), generate_key())
+    retry = draft().model_copy(update={"timestamp": first.timestamp + timedelta(days=365)})
+    assert ledger.append(retry, UnavailableSigner()) == first
+    assert ledger.get(first.correlation_id) == first
+    assert ledger.get("missing") is None
+    assert len(ledger.export()["records"]) == 1
+
+
+@pytest.mark.parametrize("change", [
+    {"mode": Mode.ENFORCE}, {"decision": Decision.REFUSE}, {"request_text": "different"},
+    {"product_snapshot": {"size": "10"}}, {"model_version": "different"},
+])
+def test_timestamp_normalization_does_not_hide_changed_decision_content(tmp_path, change):
+    ledger = ReceiptStore(tmp_path / "receipts.sqlite")
+    key = generate_key()
+    original = ledger.append(draft(), key)
+    with pytest.raises(ReplayError):
+        ledger.append(draft().model_copy(update=change), key)
+    assert ledger.get(original.correlation_id) == original
+
+
+@pytest.mark.parametrize("mode", list(Mode))
+def test_sandbox_is_orthogonal_to_mode_and_never_shares_a_chain(tmp_path, mode):
+    key = generate_key()
+    production = ReceiptStore(tmp_path / "production.sqlite")
+    sandbox = ReceiptStore(tmp_path / "sandbox.sqlite", namespace="sandbox")
+    record = draft().model_copy(update={"mode": mode})
+    real = production.append(record, key)
+    test = sandbox.append(record, key)
+    assert test.mode == real.mode == mode
+    assert isinstance(test, SandboxReceipt)
+    assert test.store_namespace == "sandbox" and test.store_id
+    assert test.hash != real.hash and test.prev_hash is real.prev_hash is None
+    for ledger, first in ((production, real), (sandbox, test)):
+        second = ledger.append(draft("second").model_copy(update={"mode": mode}), key)
+        assert second.prev_hash == first.hash
+        assert ledger.get(record.correlation_id) == first
+        assert ledger.export()["checkpoint"]["store_namespace"] == ledger.namespace
+    with pytest.raises(ValueError, match="namespace"):
+        ReceiptStore(production.path, namespace="sandbox")
+    with pytest.raises(ValueError, match="namespace"):
+        ReceiptStore(sandbox.path)
+    with pytest.raises(AttributeError):
+        sandbox.namespace = "production"
+    # Even a stripped seal cannot turn an explicitly sandbox-labelled record into production.
+    unsigned_test = test.model_copy(update={field: None for field in (*_UNSEALED, "key_id")})
+    with pytest.raises(ValueError, match="sandbox"):
+        production.append(unsigned_test, key)
+
+
+@pytest.mark.parametrize("tamper", ["relabel", "remove_label", "change_store"])
+def test_sandbox_label_cannot_be_removed_or_relabelled_without_breaking_signature(tmp_path, tamper):
+    ledger = ReceiptStore(tmp_path / "sandbox.sqlite", namespace="sandbox")
+    key = generate_key()
+    payload = record_json(ledger.append(draft(), key))
+    assert payload["store_namespace"] == "sandbox"
+    if tamper == "relabel":
+        payload["store_namespace"] = "production"
+    elif tamper == "remove_label":
+        payload.pop("store_namespace")
+    else:
+        payload["store_id"] = "another-store"
+    result = stranger(tmp_path, payload, key=public_key_hex(key))
+    assert result.returncode == 1 and "does not match its hash" in result.stdout
+
+
+@pytest.mark.parametrize("destination", ["production", "sandbox"])
+def test_sql_cannot_insert_a_receipt_from_the_other_namespace(tmp_path, destination):
+    source_ns = "sandbox" if destination == "production" else "production"
+    source = ReceiptStore(tmp_path / "source.sqlite", namespace=source_ns)
+    target = ReceiptStore(tmp_path / "target.sqlite", namespace=destination)
+    source.append(draft(), generate_key())
+    with source._connection() as db:
+        row = tuple(db.execute("SELECT * FROM receipts").fetchone())
+    with target._connection() as db:
+        with pytest.raises(sqlite3.IntegrityError, match="namespace"):
+            db.execute("INSERT INTO receipts VALUES (?, ?, ?, ?, ?, ?)", row)
+    assert target.export()["records"] == []
+
+
+def test_batch_audits_history_once_and_retries_preserve_all_receipts(tmp_path, monkeypatch):
+    ledger = ReceiptStore(tmp_path / "sandbox.sqlite", namespace="sandbox")
+    key = generate_key()
+    ledger.append(draft("existing"), key)
+    audits = []
+    read = ledger._read
+    def counted(db):
+        result = read(db)
+        audits.append(len(result[0]))
+        return result
+    monkeypatch.setattr(ledger, "_read", counted)
+    records = [draft(str(i)) for i in range(1000)]
+    first = ledger.append_many(records + records[:2], key)
+    assert audits == [1], "one full audit per batch, not per row"
+    assert first[-2:] == first[:2]
+    assert len({r.hash for r in first}) == 1000
+    retries = [r.model_copy(update={"timestamp": datetime.now(timezone.utc)}) for r in records]
+    assert ledger.append_many(retries, generate_key()) == first[:1000]
+    assert audits == [1, 1001]
+    exported = ledger.export()
+    assert len(exported["records"]) == 1001
+    verify_chain(exported["records"], ledger.public_keys()["keys"])
+
+
+def test_conflict_in_batch_rolls_back_all_new_receipts_and_key_registration(tmp_path):
+    ledger = ReceiptStore(tmp_path / "receipts.sqlite")
+    ledger.append(draft(), generate_key())
+    before = ledger.export(), ledger.public_keys()
+    with pytest.raises(ReplayError):
+        ledger.append_many([draft("new"), draft().model_copy(update={"request_text": "changed"})], generate_key())
+    assert (ledger.export(), ledger.public_keys()) == before
+
+
+def test_concurrent_batches_cannot_fork_or_duplicate_changed_timestamp_retries(tmp_path):
+    ledger = ReceiptStore(tmp_path / "receipts.sqlite")
+    key = generate_key()
+    records = [draft(str(i)) for i in range(20)]
+    def write(n):
+        independent = ReceiptStore(ledger.path, create=False, migrate=False)
+        return independent.append_many(
+            [r.model_copy(update={"timestamp": r.timestamp + timedelta(days=n)}) for r in records], key)
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        batches = list(pool.map(write, range(4)))
+    assert all(batch == batches[0] for batch in batches)
+    assert len(ledger.export()["records"]) == 20
+
+
+def test_get_detects_corruption_instead_of_returning_an_unverified_receipt(tmp_path):
+    ledger = ReceiptStore(tmp_path / "receipts.sqlite")
+    ledger.append(draft(), generate_key())
+    with ledger._connection() as db:
+        db.execute("DROP TRIGGER receipts_no_update")
+        db.execute("UPDATE receipts SET body=json_set(body, '$.request_text', 'tampered')")
+    with pytest.raises(ValueError):
+        ledger.get("request-1")
 
 
 def test_legacy_signed_json_remains_verifiable_after_schema_defaults_change(tmp_path):
@@ -174,34 +329,39 @@ def test_retries_survive_rotation_restart_and_later_appends_without_rewriting(tm
     before = ledger.export()
     restarted = ReceiptStore(ledger.path)
     assert restarted.append(request, rotated) == original
-    assert restarted.append(original, rotated) == original
+    assert restarted.append(request.model_copy(update={"timestamp": datetime.now(timezone.utc)}), rotated) == original
+    assert restarted.get(request.correlation_id) == original
+    with pytest.raises(ValueError, match="unsealed"):
+        restarted.append(original, rotated)
     assert restarted.export() == before
-    assert record_json(original)["timestamp"] == record_json(request)["timestamp"]
+    assert original.timestamp != request.timestamp
 
 
-def test_conflicting_replay_and_stale_signed_head_are_rejected(tmp_path):
+def test_conflicting_replay_and_caller_supplied_seals_or_links_are_rejected(tmp_path):
     key = generate_key()
     ledger = ReceiptStore(tmp_path / "receipts.sqlite")
     ledger.append(draft(), key)
     with pytest.raises(ReplayError):
         ledger.append(draft().model_copy(update={"request_text": "changed intent"}), key)
-    with pytest.raises(ChainConflict):
+    with pytest.raises(ValueError, match="unsealed"):
         ledger.append(seal(draft("new-id"), key), key)
-    with pytest.raises(ChainConflict):
+    with pytest.raises(ValueError, match="unsealed"):
         ledger.append(draft("new-id").model_copy(update={"prev_hash": "stale"}), key)
     assert len(ledger.export()["records"]) == 1
 
 
-def test_presealed_receipt_is_retained_exactly_and_must_be_authentic(tmp_path):
+def test_presealed_receipt_is_rejected_even_if_authentic(tmp_path):
     key = generate_key()
     ledger = ReceiptStore(tmp_path / "receipts.sqlite")
     signed = seal(draft(), key)
-    assert ledger.append(signed, key) == signed
-    with pytest.raises(ValueError, match="does not match its hash"):
+    with pytest.raises(ValueError, match="unsealed"):
+        ledger.append(signed, key)
+    with pytest.raises(ValueError, match="unsealed"):
         ledger.append(signed.model_copy(update={"request_text": "tampered"}), key)
+    assert ledger.export()["records"] == [] and ledger.public_keys()["keys"] == {}
 
 
-@pytest.mark.parametrize("table", ["receipts", "checkpoints", "public_keys", "metadata"])
+@pytest.mark.parametrize("table", ["receipts", "checkpoints", "public_keys", "metadata", "ledger_namespace"])
 @pytest.mark.parametrize("operation", ["UPDATE", "DELETE", "REPLACE"])
 def test_append_only_is_enforced_for_sql_not_just_python_calls(tmp_path, table, operation):
     ledger = ReceiptStore(tmp_path / "receipts.sqlite")
@@ -260,14 +420,17 @@ def test_retained_checkpoint_exposes_valid_prefix_rollback(tmp_path):
 def test_export_keeps_the_order_and_source_snapshot_seen_at_signing(tmp_path):
     ledger = ReceiptStore(tmp_path / "receipts.sqlite")
     request = draft()
+    before = datetime.now(timezone.utc)
     receipt = ledger.append(request, generate_key())
+    after = datetime.now(timezone.utc)
     request.product_snapshot["size"] = "10"
     receipt.product_snapshot["size"] = "11"
     exported = ledger.export()["records"][0]
     assert exported["product_snapshot"]["size"] == "9"
     assert exported["order"]["sku"] == "shoe-9"
     assert exported["order"]["unit_price"] == {"kind": "money", "amount": "24.50", "currency": "USD"}
-    assert exported["timestamp"] == "2026-09-12T00:00:00Z"
+    assert before <= receipt.timestamp <= after
+    assert exported["timestamp"] == record_json(receipt)["timestamp"]
 
 
 def test_standalone_rejects_duplicate_json_keys(tmp_path):

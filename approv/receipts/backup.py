@@ -52,7 +52,7 @@ def backup(store: ReceiptStore, destination: str | Path, trusted_keys: dict[str,
             source.backup(db, pages=256, sleep=0.01)
         finally:
             db.close()
-    copied = ReceiptStore(target, create=False, migrate=False)
+    copied = ReceiptStore(target, namespace=store.namespace, create=False, migrate=False)
     bundle = audit(copied, trusted_keys)
     for name, body in (("receipts.json", bundle), ("checkpoint.json", bundle["checkpoint"]),
                        ("public-keys.json", {"format": "approv-public-keys-v1", "keys": trusted_keys})):
@@ -64,12 +64,12 @@ def backup(store: ReceiptStore, destination: str | Path, trusted_keys: dict[str,
 
 
 def restore(source: str | Path, destination: str | Path, trusted_keys: dict[str, str],
-            checkpoint: dict | None) -> ReceiptStore:
+            checkpoint: dict | None, *, namespace: str = "production") -> ReceiptStore:
     source, destination = Path(source).resolve(), Path(destination).resolve()
     complete = json.loads((source / "COMPLETE.json").read_text(encoding="utf-8"))
     if complete.get("format") != "approv-backup-v1":
         raise ValueError("incomplete backup")
-    candidate = ReceiptStore(source / "receipts.sqlite3", create=False, migrate=False)
+    candidate = ReceiptStore(source / "receipts.sqlite3", namespace=namespace, create=False, migrate=False)
     bundle = audit(candidate, trusted_keys, checkpoint, exact=True)
     if complete.get("checkpoint") != bundle["checkpoint"] or complete.get("count") != len(bundle["records"]):
         raise ValueError("backup completion marker does not match store")
@@ -84,7 +84,7 @@ def restore(source: str | Path, destination: str | Path, trusted_keys: dict[str,
             db.backup(target)
         finally:
             target.close()
-    restored = ReceiptStore(destination, create=False, migrate=False)
+    restored = ReceiptStore(destination, namespace=namespace, create=False, migrate=False)
     audit(restored, trusted_keys, checkpoint, exact=True)
     with destination.open("rb+") as handle:
         os.fsync(handle.fileno())

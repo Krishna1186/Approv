@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+import hashlib
 import json
 from pathlib import Path
 import shutil
@@ -73,12 +74,12 @@ def test_v1_migration_preserves_signed_bytes_and_is_forward_only(deployment, bod
     assert migrated.export()["records"] == [original]
     assert migrated.export()["checkpoint"] == checkpoint
     with migrated._connection() as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 2
-        assert [r[0] for r in db.execute("SELECT version FROM schema_migrations")] == [1, 2]
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert [r[0] for r in db.execute("SELECT version FROM schema_migrations")] == [1, 2, 3]
     stranger(tmp_path, migrated.export(), deployment.public_keys, checkpoint)
     ReceiptStore(path)
     with sqlite3.connect(path) as db:
-        db.execute("PRAGMA user_version=3")
+        db.execute("PRAGMA user_version=4")
     with pytest.raises(ValueError, match="newer"):
         ReceiptStore(path)
 
@@ -182,3 +183,117 @@ def test_corrupt_manifest_and_missing_submission_are_detected(runtime, body):
         db.execute("DELETE FROM submissions")
     with pytest.raises(ValueError, match="context"):
         runtime.store.export()
+
+
+def v2_store(path, deployment, body):
+    original, checkpoint = legacy_store(path, deployment, body)
+    with sqlite3.connect(path) as db:
+        for statement in migrations.statements(migrations.V2):
+            db.execute(statement)
+        migrations._immutable(db, ("deployments", "submissions", "schema_migrations"))
+        db.execute("PRAGMA user_version=2")
+    return original, checkpoint
+
+
+def test_v2_migration_preserves_history_and_rotation(deployment, body, tmp_path):
+    path = tmp_path / "v2.sqlite3"
+    original, checkpoint = v2_store(path, deployment, body)
+    store = ReceiptStore(path)
+    assert store.get(original["correlation_id"]).model_dump(mode="json") == original
+    assert store.export()["checkpoint"] == checkpoint
+    ring = KeyStore(deployment.base / "keys", password=b"secret-key-password")
+    ring.rotate()
+    request = VerificationRequest.model_validate({**body, "correlation_id": "after-migration"})
+    newer = store.append(verify_order(request, schemas=deployment.schemas).record, ring.load_private())
+    assert newer.prev_hash == original["hash"] and newer.key_id != original["key_id"]
+    assert store.export()["records"][0] == original
+    stranger(tmp_path, store.export(), ring.public_keys(), store.export()["checkpoint"])
+
+
+def test_namespace_migration_cannot_relabel_existing_history(deployment, body, tmp_path):
+    path = tmp_path / "v2.sqlite3"
+    original, _ = v2_store(path, deployment, body)
+    with pytest.raises(ValueError, match="cannot become sandbox"):
+        ReceiptStore(path, namespace="sandbox")
+    with sqlite3.connect(path) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert not db.execute("SELECT 1 FROM sqlite_master WHERE name='ledger_namespace'").fetchone()
+        assert json.loads(db.execute("SELECT body FROM receipts").fetchone()[0]) == original
+
+
+def test_failed_v3_migration_preserves_v2_database(deployment, body, tmp_path, monkeypatch):
+    path = tmp_path / "v2.sqlite3"
+    original, _ = v2_store(path, deployment, body)
+    monkeypatch.setattr(migrations, "V3", migrations.V3 + "\nCREATE TABLE receipts (bad TEXT);\n")
+    with pytest.raises(sqlite3.OperationalError):
+        ReceiptStore(path)
+    with sqlite3.connect(path) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert [r[0] for r in db.execute("SELECT version FROM schema_migrations")] == [1, 2]
+        assert not db.execute("SELECT 1 FROM sqlite_master WHERE name='ledger_namespace'").fetchone()
+        assert json.loads(db.execute("SELECT body FROM receipts").fetchone()[0]) == original
+
+
+def test_batch_verifications_retain_bindings_and_retry_after_rotation(deployment, body, tmp_path, monkeypatch):
+    store = ReceiptStore(tmp_path / "sandbox.sqlite3", namespace="sandbox")
+    ring = KeyStore(deployment.base / "keys", password=b"secret-key-password")
+    submissions = []
+    for i in range(25):
+        request = VerificationRequest.model_validate({**body, "correlation_id": str(i)})
+        response = verify_order(request, schemas=deployment.schemas).model_dump(mode="json")
+        request_hash = hashlib.sha256(canonical_json(request.model_dump(mode="json")).encode()).hexdigest()
+        submissions.append((response, request_hash))
+    audits = []
+    read = store._read
+    def counted(db):
+        audits.append(True)
+        return read(db)
+    monkeypatch.setattr(store, "_read", counted)
+    first = store.commit_verifications(submissions, deployment.manifest, ring.load_private())
+    assert len(audits) == 1
+    assert all(r["record"]["store_namespace"] == "sandbox" for r in first)
+    ring.rotate()
+    assert store.commit_verifications(submissions, deployment.manifest, ring.load_private()) == first
+    assert len(audits) == 2
+    # An individual lookup is the exact response from the batch, with no extraction/signing.
+    assert store.lookup_verification("0", submissions[0][1]) == first[0]
+    exported = store.export()
+    assert len(exported["submissions"]) == 25 and len(exported["deployments"]) == 1
+    stranger(tmp_path, exported, ring.public_keys(), exported["checkpoint"])
+
+
+def test_sandbox_restore_keeps_namespace_and_old_signatures(deployment, body, tmp_path):
+    store = ReceiptStore(tmp_path / "sandbox.sqlite3", namespace="sandbox")
+    ring = KeyStore(deployment.base / "keys", password=b"secret-key-password")
+    first = verify_order(VerificationRequest.model_validate(body), schemas=deployment.schemas)
+    store.append(first.record, ring.load_private())
+    ring.rotate()
+    second = verify_order(VerificationRequest.model_validate({**body, "correlation_id": "rotated"}),
+                          schemas=deployment.schemas)
+    store.append(second.record, ring.load_private())
+    saved = backup(store, tmp_path / "sandbox-backup", ring.public_keys())
+    anchor = store.export()["checkpoint"]
+    with pytest.raises(ValueError, match="namespace"):
+        restore(saved, tmp_path / "wrong.sqlite3", ring.public_keys(), anchor)
+    assert not (tmp_path / "wrong.sqlite3").exists()
+    restored = restore(saved, tmp_path / "restored.sqlite3", ring.public_keys(), anchor, namespace="sandbox")
+    assert restored.namespace == "sandbox" and restored.export() == store.export()
+    stranger(tmp_path, restored.export(), ring.public_keys(), anchor)
+
+
+def test_batch_submission_checkpoint_failure_rolls_back_every_row(deployment, body, tmp_path):
+    store = ReceiptStore(tmp_path / "sandbox.sqlite3", namespace="sandbox")
+    ring = KeyStore(deployment.base / "keys", password=b"secret-key-password")
+    submissions = []
+    for i in range(3):
+        request = VerificationRequest.model_validate({**body, "correlation_id": str(i)})
+        response = verify_order(request, schemas=deployment.schemas).model_dump(mode="json")
+        submissions.append((response, str(i)))
+    with store._connection() as db:
+        db.execute("""CREATE TRIGGER fail_last_checkpoint BEFORE INSERT ON checkpoints
+                      WHEN NEW.sequence=3 BEGIN SELECT RAISE(ABORT, 'disk failure'); END""")
+    with pytest.raises(sqlite3.IntegrityError, match="disk failure"):
+        store.commit_verifications(submissions, deployment.manifest, ring.load_private())
+    exported = store.export()
+    assert exported["records"] == exported["submissions"] == []
+    assert exported["deployments"] == store.public_keys()["keys"] == {}
