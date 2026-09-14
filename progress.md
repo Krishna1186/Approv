@@ -609,6 +609,61 @@ wrong items right. Their code is evidence because they chose it, before knowing 
 would do with it. All four optional, because partners arrive at different tiers and a
 required field turns "cannot answer that yet" into "cannot be onboarded".
 
+## The three blockers: a request nobody read, cart-only traffic, form submissions (14 September)
+
+**An unprocessed search query permitted a guarantee.** Measured on the shape that shows it
+worst — filters `{size: M, color: Frost}`, query *"actually make it the Ash one, and it
+must be organic"*, no extractor configured:
+
+```
+decision=allow  covered=True  coverage=[guaranteed, guaranteed]
+notes: ["search query was not read: no extractor was supplied"]
+```
+
+The request contradicted the filters in its first four words and we guaranteed both
+attributes. The note was there; nothing acted on it.
+
+`REQUEST_UNPROCESSED` joins DR 0004's `Completion` axis rather than becoming a fifth
+coverage flag, because it is the same fact those codes record and that axis already does
+both things this needs: the floor is not met so `allow` is unreachable, and `coverage_of`
+withdraws every guarantee. A refusal still refuses. It is the first completion that keeps
+its findings — the comparison really did run, against a request we had half of, and
+discarding them would hand the merchant a record saying less than we know. DR 0026.
+
+Two shapes, treated alike: nothing was available to read the prose, or something ran and
+returned an entirely empty reading from non-empty text. An extractor that read something
+and could not encode part of it is DR 0022's case and stays there — it told us what it
+missed.
+
+**The same hole, one door along.** A protocol field this category has no attribute for was
+noted, allowed and guaranteed. That is a requirement we can *name* and did not check,
+which is DR 0022's definition of unread, so it now uses the `"Unsupported requirement: "`
+prefix that already existed and takes DR 0022's answer: withdraw, do not block. The line
+between the two is what we know — unread prose can contradict everything we did read, and
+in the measurement above it did.
+
+**Cart-only traffic is a different product.** An adapter receiving only a final cart knows
+what was bought and nothing about what was asked for, and it used to issue the usual
+record anyway: headed like a verification, holding a decision, findings about a request
+nobody made, and `covered: false` some distance below. A returns desk reads the heading and
+a billing system reads the kind.
+
+`OrderEvidenceRecord` is a separate object and the product is chosen **before** the
+comparison rather than described after one. No `decision`, because nothing was authorised
+on the strength of a request we never received; no `findings` and no `coverage`, because
+there is nothing to have found. `eligible` is hard-wired false and is a field anyway, so a
+reader does not have to know that a missing coverage block means what it means. `kind` is
+on both records and inside both digests.
+
+**A protocol name can withdraw the agent inference and never grant one.**
+`Structured(protocol="form")` is a checkout POST wearing the shape of a protocol call. We
+will not read a name as proof of an agent — that is the fabricated basis intake refuses
+everywhere else — and we will take one as a disclaimer, because a merchant who calls it a
+form has told us it is one. `agent` remains the only mechanism that grants.
+
+All three verified against the v3 pack: 1,244 rows byte-identical. That corpus reaches
+`check_constraints` directly and never enters intake, so it cannot show these either way.
+
 ## Parked
 
 **`approv/challenge.py` — built, tested, unwired, and staying that way for now.** One
@@ -639,10 +694,18 @@ Do not wire it. Its tests keep passing, which is the whole cost of keeping it.
   onboarding. Deliberate — it is what makes producer and consumer agree by construction —
   but it is a coupling that did not exist before, and an onboarding change can now move a
   production read.
-- `report.outcomes` probes two further fields with `getattr` that ingestion does not carry:
-  `attribute` (which attribute the customer complained about) and `merchant_fault` (the
-  desk's own assessment). Neither was in the brief; both would raise the report a rung for
-  partners who code them. Awaiting a ruling rather than added.
+- **The store cannot seal an `OrderEvidenceRecord`.** `receipts/chain.py` tests
+  `isinstance(record, ComparisonRecord)` in both `require_unsealed` and `record_json`, so
+  cart-only traffic produces a record nothing can append. Two lines, codex1's fence, and
+  it blocks the offline backtest which routes cart-only rows straight into
+  `store.append_many`.
+- A deployment with no extractor now confirms every search order that carried a query,
+  because it cannot read one (DR 0026). Correct, and expensive: the repair is on our side
+  and it is to read the query.
+- The protocol-name disclaimer matches whole words — `form`, `checkout`, `cart`,
+  `browser`, `manual`, `human`, `storefront`, `page`. A merchant whose human channel is
+  named something else is still inferred as an agent unless they pass `agent`, which is
+  the mechanism that was always right and is now the only one that grants.
 - Coverage is bounded by schema expressiveness: 43% of held-out requests still carry an
   unread note after the marker fix, and most of those name something this category has no
   attribute for. Selling a guarantee on under half of traffic is a product limit, not a
