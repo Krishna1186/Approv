@@ -66,6 +66,10 @@ schema and recalculates the report against the explicitly selected floor.
   `/`, `~2` for literal `*`, and `~3` for literal `#`. Control characters in keys are
   rejected. A dynamic selector adds `#name=` plus a percent-encoded
   option label. These are source locators, not executable expressions.
+  Numbered slots additionally carry `&table=` plus the percent-encoded pointer to
+  their option-name table in the same snapshot. For example,
+  `/variants/*/option1#name=Size&table=%2Foptions`. New proposals use
+  `schema-onboarding-v2`; historical proposals retain their original versions.
 
 Structured fields default to the existing `MERCHANT_GUARANTEED` attribution label and
 `EXACT` reading certainty. This assumes the input is the merchant's own catalogue;
@@ -158,8 +162,10 @@ See [LOCATOR_CONTRACT.md](LOCATOR_CONTRACT.md) for the exact grammar, selected-S
 snapshot boundary, selector guards and typed evidence requirements. `locators.py`
 owns the shared codec; surface owns resolution. The default suite calls the real
 surface reader against derived schemas and explicit JSON fixtures. The base reader
-at `9484f81` fails that seam; those failures are visible and must be fixed in surface
-before this integration can be claimed. The report below audits onboarding's reader,
+at `9484f81` failed that seam. At `10cd413`, remaining consumer gaps have individually
+pinned strict xfails; surface must clear them before this integration can be claimed.
+The explicit option-table contract covers flat SKU exports as well as nested variants.
+The report below audits onboarding's reader,
 not a completed production verification or signed coverage event.
 
 ## Partner-facing catalogue report

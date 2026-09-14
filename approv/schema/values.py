@@ -12,7 +12,7 @@ from pydantic import ValidationError
 
 from approv.types.core import Count, Dimension, Money, Quantity, Term
 
-VERSION = "schema-onboarding-v1"
+VERSION = "schema-onboarding-v2"
 NUMBER = r"(?:0|[1-9]\d*)(?:\.\d+)?"
 _NUMBER = re.compile(NUMBER)
 _MONEY = re.compile(rf"(?:(?P<before>[A-Z]{{3}})\s+(?P<a>{NUMBER})|(?P<b>{NUMBER})\s+(?P<after>[A-Z]{{3}}))")

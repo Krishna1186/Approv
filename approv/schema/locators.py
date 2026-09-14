@@ -19,9 +19,11 @@ _ESCAPES = {"0": "~", "1": "/", "2": "*", "3": "#"}
 class Locator:
     segments: tuple[str | None, ...]
     selector: str | None = None
+    table: tuple[str | None, ...] | None = None
 
 
-def format_locator(segments: tuple[str | None, ...], *, selector: str | None = None) -> str:
+def format_locator(segments: tuple[str | None, ...], *, selector: str | None = None,
+                   table: tuple[str | None, ...] | None = None) -> str:
     if not segments:
         raise ValueError("a source locator must name a field")
     encoded = []
@@ -37,6 +39,10 @@ def format_locator(segments: tuple[str | None, ...], *, selector: str | None = N
         if not isinstance(selector, str) or not selector.strip():
             raise ValueError("a selector must contain an option name")
         path += "#name=" + quote(selector, safe="")
+    if table is not None:
+        if selector is None:
+            raise ValueError("an option table requires a name guard")
+        path += "&table=" + quote(format_locator(table), safe="")
     return path
 
 
@@ -46,11 +52,21 @@ def parse_locator(text: str) -> Locator:
         raise ValueError("a source locator must start with /")
     path, separator, suffix = text.partition("#")
     selector = None
+    table = None
     if separator:
-        if not suffix.startswith("name="):
+        parameters = suffix.split("&")
+        if len(parameters) > 2 or not parameters[0].startswith("name="):
             raise ValueError("unknown source selector")
+        if len(parameters) == 2 and not parameters[1].startswith("table="):
+            raise ValueError("unknown option-table parameter")
         try:
-            selector = unquote(suffix[5:], encoding="utf-8", errors="strict")
+            selector = unquote(parameters[0][5:], encoding="utf-8", errors="strict")
+            if len(parameters) == 2:
+                table_text = unquote(parameters[1][6:], encoding="utf-8", errors="strict")
+                # A table is a plain pointer, never another selector or a URL.
+                if "#" in table_text:
+                    raise ValueError("an option table must be a plain source pointer")
+                table = parse_locator(table_text).segments
         except UnicodeError as error:
             raise ValueError("invalid UTF-8 selector") from error
     parts = []
@@ -61,7 +77,7 @@ def parse_locator(text: str) -> Locator:
             if re.search(r"~(?![0-3])", part):
                 raise ValueError("invalid source-key escape")
             parts.append(re.sub(r"~([0-3])", lambda m: _ESCAPES[m[1]], part))
-    locator = Locator(tuple(parts), selector)
-    if format_locator(locator.segments, selector=locator.selector) != text:
+    locator = Locator(tuple(parts), selector, table)
+    if format_locator(locator.segments, selector=locator.selector, table=locator.table) != text:
         raise ValueError("noncanonical source locator")
     return locator

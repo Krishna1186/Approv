@@ -18,7 +18,7 @@
       "variant_path": ["variants"],
       "variant_index": 0,
       "expected": [
-        {"attribute": "size", "field_name": "/variants/*/option1#name=Size", "value": {"kind": "term", "surface": "13.5"}},
+        {"attribute": "size", "field_name": "/variants/*/option1#name=Size&table=%2Foptions", "value": {"kind": "term", "surface": "13.5"}},
         {"attribute": "grams", "field_name": "/variants/*/grams", "value": {"kind": "quantity", "magnitude": "960", "unit": "g", "dimension": "mass"}}
       ],
       "absent": ["color", "price"]
@@ -30,7 +30,7 @@
       "variant_path": ["variants"],
       "variant_index": 1,
       "expected": [
-        {"attribute": "size", "field_name": "/variants/*/option1#name=Size", "value": {"kind": "term", "surface": "8"}}
+        {"attribute": "size", "field_name": "/variants/*/option1#name=Size&table=%2Foptions", "value": {"kind": "term", "surface": "8"}}
       ],
       "absent": ["color", "price"]
     },
@@ -79,6 +79,9 @@
     {"id": "numbered-option-renamed", "base": "raw-numbered-option-selected-first-sku", "mutations": [{"path": ["options", 0, "name"], "value": "Material"}], "absent": ["size", "color"]},
     {"id": "numbered-option-wrong-case", "base": "raw-numbered-option-selected-first-sku", "mutations": [{"path": ["options", 0, "name"], "value": "size"}], "absent": ["size", "color"]},
     {"id": "numbered-option-metadata-absent", "base": "raw-numbered-option-selected-first-sku", "mutations": [{"path": ["options"], "value": []}], "absent": ["size", "color"]},
+    {"id": "numbered-option-duplicate-table-position", "base": "raw-numbered-option-selected-first-sku", "mutations": [{"path": ["options"], "value": [{"name": "Size", "position": 1, "values": ["13.5"]}, {"name": "Size", "position": 1, "values": ["13.5"]}]}], "absent": ["size", "color"]},
+    {"id": "numbered-option-bound-table-absent-with-decoy", "base": "raw-numbered-option-selected-first-sku", "mutations": [{"path": ["options"], "value": []}, {"path": ["decoy_names"], "value": [{"name": "Size", "position": 1, "values": ["13.5"]}]}], "absent": ["size", "color"]},
+    {"id": "numbered-option-wrong-slot-with-matching-name", "base": "raw-numbered-option-selected-first-sku", "mutations": [{"path": ["options"], "value": [{"name": "Size", "position": 2, "values": ["13.5"]}]}], "absent": ["size", "color"]},
     {"id": "unselected-multiple-skus", "base": "raw-numbered-option-selected-first-sku", "keep_all_variants": true, "absent": ["size", "color", "grams", "price"]},
     {"id": "pair-label-mismatch", "base": "nested-pairs-units-money-and-parent", "mutations": [{"path": ["stock", "editions", 0, "selections", 0, "label"], "value": "Material"}], "absent": ["finish"]},
     {"id": "duplicate-pair-selector", "base": "nested-pairs-units-money-and-parent", "mutations": [{"path": ["stock", "editions", 0, "selections"], "value": [{"label": "Finish", "selection": "matte"}, {"label": "Finish", "selection": "gloss"}]}], "absent": ["finish"]},

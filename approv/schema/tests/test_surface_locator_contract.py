@@ -1,7 +1,7 @@
 """Shared producer/consumer contract. These tests run in the DEFAULT suite.
 
-The consumer is surface's production reader, not a test resolver. An unimplemented
-seam must fail visibly; it is neither xfailed nor hidden behind an exhaustive flag.
+The consumer is surface's production reader, not a test resolver. The founder pinned
+known gaps individually as strict xfails at 10cd413; passing clauses stay unmarked.
 """
 from copy import deepcopy
 from datetime import datetime, timezone

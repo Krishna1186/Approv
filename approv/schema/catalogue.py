@@ -32,8 +32,9 @@ def path_text(path: tuple[str, ...]) -> str:
     return format_locator(tuple(None if p == "\0" else p for p in path))
 
 
-def selector_path(path: tuple[str, ...], label: str) -> str:
-    return format_locator(tuple(None if p == "\0" else p for p in path), selector=label)
+def selector_path(path: tuple[str, ...], label: str, *, table: tuple[str, ...] | None = None) -> str:
+    return format_locator(tuple(None if p == "\0" else p for p in path), selector=label,
+                          table=tuple(None if p == "\0" else p for p in table) if table is not None else None)
 
 
 def is_identifier(key: str) -> bool:
@@ -57,15 +58,35 @@ def pair(obj: dict) -> tuple[str, str] | None:
     return (label, val) if label and val else None
 
 
-def option_definitions(obj: dict) -> dict[int, str]:
+@dataclass(frozen=True)
+class OptionDefinition:
+    name: str
+    table: tuple[str, ...]
+
+
+def option_definitions(obj: dict, path: tuple[str, ...] = ()) -> dict[int, OptionDefinition] | None:
+    """Keep the table that established each slot; never last-write ambiguous names.
+
+    None means no local definitions. A local definition set replaces inherited
+    definitions as a whole, matching the documented nearest-object rule.
+    """
     result = {}
-    for value in obj.values():
+    found = False
+    for key, value in obj.items():
+        if semantic_key(key) in _META:
+            continue
         if isinstance(value, list) and value and all(isinstance(v, dict) and "name" in v and "values" in v for v in value):
+            found = True
             for i, option in enumerate(value, 1):
                 position = option.get("position", i)
-                if isinstance(position, int) and not isinstance(position, bool) and isinstance(option["name"], str):
-                    result[position] = option["name"]
-    return result
+                if (not isinstance(position, int) or isinstance(position, bool) or position < 1
+                        or not isinstance(option["name"], str) or not option["name"].strip()
+                        or not isinstance(option["values"], list)):
+                    raise ValueError(f"invalid option definition in {path_text(path + (key,))}")
+                if position in result:
+                    raise ValueError(f"ambiguous option position {position} in {path_text(path + (key,))}")
+                result[position] = OptionDefinition(option["name"], path + (key,))
+    return result if found else None
 
 
 def variant_collections(obj: dict, path: tuple[str, ...] = ()) -> list[tuple[tuple[str, ...], list]]:
@@ -124,13 +145,14 @@ def _prose_pairs(raw: str):
 
 
 def flatten(obj: dict, *, path: tuple[str, ...] = (), skip: frozenset[tuple[str, ...]] = frozenset(),
-            options: dict[int, str] | None = None, currency: str | None = None,
+            options: dict[int, OptionDefinition] | None = None, currency: str | None = None,
             policies: dict | None = None, depth: int = 0) -> list[Cell]:
     if depth > 32:
         raise ValueError("catalogue nesting exceeds 32 levels")
     cells: list[Cell] = []
     policies = policies or {}
-    options = option_definitions(obj) or options or {}
+    local_options = option_definitions(obj, path)
+    options = local_options if local_options is not None else options or {}
     local_currencies = {str(v).strip() for k, v in obj.items()
                         if semantic_key(k) in {"currency", "currency_code"} and occupied(v)}
     # A contradictory local declaration must not fall back to deployment currency.
@@ -168,9 +190,11 @@ def flatten(obj: dict, *, path: tuple[str, ...] = (), skip: frozenset[tuple[str,
             continue
         match = re.fullmatch(r"option_?(\d+)", name)
         if match:
-            label = options.get(int(match[1]))
-            if label:
-                add(label, value, selector_path(current, label), option=True)
+            definition = options.get(int(match[1]))
+            if definition:
+                if selector_path(current, definition.name) in policies:
+                    raise ValueError("source policy uses a legacy numbered-option locator; review and add its &table= binding")
+                add(definition.name, value, selector_path(current, definition.name, table=definition.table), option=True)
             # Unnamed numbered selectors have no recoverable attribute name.
             continue
         if isinstance(value, dict):
@@ -233,13 +257,17 @@ def discover(records: list[dict], *, currency: str | None = None, policies: dict
         definitions = {}
         parent_currency = currency
         ancestor = record
+        ancestor_path = ()
         for segment in (*path[:-1], None):
-            definitions.update(option_definitions(ancestor))
+            local_definitions = option_definitions(ancestor, ancestor_path)
+            if local_definitions is not None:
+                definitions = local_definitions
             codes = {v for k, v in ancestor.items() if semantic_key(k) in {"currency", "currency_code"} and isinstance(v, str)}
             if codes:
                 parent_currency = next(iter(codes)) if len(codes) == 1 else "CONFLICT"
             if segment is not None:
                 ancestor = ancestor[segment]
+                ancestor_path += (segment,)
         for variant in variants:
             if not identity(variant):
                 warnings.add("variant_identity_missing: axis evidence requires distinct identifiers")
