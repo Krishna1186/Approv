@@ -32,6 +32,7 @@ coverage language, or a number that will be published. Nothing else does.
 | [0022](0022-what-an-unread-request-does.md) | What an unread request does to the answer | closed |
 | [0023](0023-coverage-belongs-on-the-record.md) | Coverage belongs on the record | closed |
 | [0024](0024-evidence-is-scoped-to-the-ordered-line.md) | Evidence is scoped to the ordered line | closed |
+| [0025](0025-agreement-is-corroboration.md) | Two statements of one attribute that agree are corroboration | closed |
 
 ## The open ones, and whether they still matter
 

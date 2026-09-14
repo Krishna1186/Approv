@@ -636,14 +636,6 @@ def test_an_order_whose_channel_earns_no_coverage_guarantees_nothing():
         "the document promises %s on an order intake ruled out of coverage" % guaranteed)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "SEAM 5: on-site search states the same attribute twice -- once as a filter "
-    "(search.filters.size, TOOL_ARGUMENT) and once inside the query text (search.query, "
-    "AGENT_MESSAGE) -- and algebra.runner raises DUPLICATE_CLAIM for any two claims on one "
-    "attribute without comparing their values. Two claims that AGREE are corroboration, "
-    "not a disambiguation problem, and treating them as unresolved escalates the order. "
-    "Measured on a synthetic week: 20 of 24 on-site-search orders confirmed for this "
-    "reason alone. Found by reading the weekly partner report, not by any module's tests."))
 def test_a_filter_and_a_query_that_agree_are_corroboration_not_a_conflict():
     """The second fidelity tier of DR 0020, made unusable by a rule written for the first.
 
@@ -681,7 +673,6 @@ def test_a_filter_and_a_query_that_agree_are_corroboration_not_a_conflict():
 # fix it was meant to protect. Removing a name here is as loud as changing a count was.
 OPEN_SEAMS = {
     "test_a_retried_verification_returns_the_receipt_it_already_wrote",   # seam 3, codex1
-    "test_a_filter_and_a_query_that_agree_are_corroboration_not_a_conflict",  # seam 5, claude1
 }
 
 

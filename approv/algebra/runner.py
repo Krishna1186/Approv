@@ -22,6 +22,7 @@ from approv.types.core import (
     AttributeSpec,
     CategorySchema,
     Certainty,
+    Channel,
     CheckKind,
     Claim,
     Count,
@@ -32,6 +33,7 @@ from approv.types.core import (
     Dimension,
     Evidence,
     Finding,
+    Liability,
     Quantity,
     ReasonCode,
     Repair,
@@ -56,6 +58,60 @@ def _operator_for(value: object):
     if isinstance(value, Count):
         return compare_count
     return None
+
+
+# Channel strength, strongest first. DR 0008's tiers: a structured filter and a
+# paraphrase of the same request are not equally disputable.
+_CHANNEL_RANK = {channel: rank for rank, channel in enumerate(Channel)}
+
+
+def _corroborated(claims: list[Claim], spec: AttributeSpec) -> Claim | None:
+    """Several statements of one attribute as a single claim, when they agree (DR 0025).
+
+    On-site search states an attribute twice by design: a shopper who filters to Size King
+    and types "king duvet" has said the same thing through two channels. Treating that as
+    an unresolved disambiguation problem escalated 20 of 24 on-site-search orders, which
+    is not a rare shape — it is what a search box is.
+
+    *Which one they meant* is only a question when the two answers differ. So the values
+    are compared with the attribute's own operator, which is the same treatment two fields
+    of evidence have always had, and it is run **both directions**: half a comparison is
+    containment rather than agreement, and a $150 ceiling "satisfied" by a $120 claim one
+    way round would silently drop the tighter limit the shopper actually set. Two values
+    of different types and two bounds never compare SATISFIED, so they take the existing
+    conflict path without needing a case of their own.
+
+    The survivor is the strongest channel's, so the record attributes the constraint to
+    the half that needs no extraction step to defend. Both statements stay in
+    `request_constraints`; only the comparison collapses, because the shopper having said
+    it twice is the strongest thing about this class of order.
+    """
+    ranked = sorted(claims, key=lambda c: (_CHANNEL_RANK[c.channel], c.model_dump_json()))
+    first = ranked[0]
+    operator = _operator_for(first.value)
+    if operator is None:
+        return None
+    for other in ranked[1:]:
+        if type(other.value) is not type(first.value):
+            return None
+        if not (_agrees(operator, first, other, spec)
+                and _agrees(operator, other, first, spec)):
+            return None
+    return first
+
+
+def _agrees(operator, claim: Claim, other: Claim, spec: AttributeSpec) -> bool:
+    """One claim read as though it were the evidence the other is checked against.
+
+    The mirror of the peer loop below, which reads one piece of evidence as a claim. The
+    wrapper never leaves this function: `certainty` sets a confidence ceiling we do not
+    read, and `liability` is about who owes a remedy for a *catalogue* statement, which is
+    not what this is.
+    """
+    stated = Evidence(attribute=spec.name, value=other.value,
+                      field_name=other.channel.value, certainty=Certainty.EXACT,
+                      liability=Liability.UNATTRIBUTED)
+    return operator(claim, stated, spec).support is Support.SATISFIED
 
 
 def _bare(
@@ -176,10 +232,13 @@ def run_checks(
             continue
 
         if len(attribute_claims) > 1:
-            for duplicate in attribute_claims:
-                findings.append(_bare(spec, Support.UNSTATED, Resolution.RESTATE_CLAIM,
-                                      ReasonCode.DUPLICATE_CLAIM, claim=duplicate))
-            continue
+            corroborated = _corroborated(attribute_claims, spec)
+            if corroborated is None:
+                for duplicate in attribute_claims:
+                    findings.append(_bare(spec, Support.UNSTATED, Resolution.RESTATE_CLAIM,
+                                          ReasonCode.DUPLICATE_CLAIM, claim=duplicate))
+                continue
+            attribute_claims = [corroborated]
         claim = attribute_claims[0]
         if spec.name in untrusted:
             findings.append(_bare(spec, Support.UNSTATED, Resolution.FIND_BETTER_SOURCE,
@@ -272,6 +331,23 @@ def check_constraints(constraints: tuple[Constraint, ...], evidence: tuple[Evide
     claims = tuple(Claim(attribute=c.attribute, value=c.value, channel=c.channel,
                          raw_text=c.raw_text) for c in constraints)
     findings = run_checks(claims, evidence, schema, specs)
-    by_name = {c.attribute: c for c in constraints}
     return tuple(f.model_copy(update={"check": CheckKind.SATISFACTION,
-                 "constraint": by_name.get(f.attribute)}) for f in findings)
+                 "constraint": _constraint_for(f, constraints)}) for f in findings)
+
+
+def _constraint_for(finding: Finding, constraints: tuple[Constraint, ...]) -> Constraint | None:
+    """The constraint this finding is about, when one attribute was stated more than once.
+
+    Matched through the finding's own claim rather than by attribute alone, so a collapsed
+    corroboration (DR 0025) names the statement it was decided from and a disagreement
+    names each of its own. Falling back to the last is the behaviour every single-statement
+    attribute has always had.
+    """
+    same = [c for c in constraints if c.attribute == finding.attribute]
+    if not same:
+        return None
+    if finding.claim is not None:
+        for constraint in same:
+            if constraint.channel is finding.claim.channel                     and constraint.value == finding.claim.value:
+                return constraint
+    return same[-1]
