@@ -213,6 +213,12 @@ class Completion(str, Enum):
     UNREADABLE_RESPONSE = "unreadable_response"
     BUDGET_EXCEEDED = "budget_exceeded"
     CATALOGUE_UNREADABLE = "catalogue_unreadable"
+    # The stated request carried text and nothing read it -- no extractor, or one that
+    # returned nothing at all from non-empty prose (DR 0026). An empty reading of a
+    # non-empty request is unknown, and invariant 4 says unknown never authorises. It is
+    # the one completion that still carries a full finding set: the comparison really did
+    # run, against a request we had only half of.
+    REQUEST_UNPROCESSED = "request_unprocessed"
     INTERNAL_ERROR = "internal_error"
 
 
@@ -733,8 +739,13 @@ DESCRIPTOR_PREFIX = "Descriptive property, not a named value, left unverified: "
 COVERAGE_GAP_PREFIX = "Text not explicitly accounted for: "
 DUPLICATE_PREFIX = "Duplicate requirement for a stated attribute, second value discarded: "
 
+# A requirement stated by name that nothing checked -- a protocol field this category
+# has no attribute for, or a requirement extraction could not encode. Named because both
+# intake and extraction write it and a second spelling is a second definition.
+UNSUPPORTED_REQUIREMENT_PREFIX = "Unsupported requirement: "
+
 DROPPED_REQUIREMENT_PREFIXES = (
-    "Unsupported requirement: ",
+    UNSUPPORTED_REQUIREMENT_PREFIX,
     "Value outside the published vocabulary, left unverified: ",
     "Ungrounded interpretation discarded: ",
     "Malformed requirement value discarded: ",

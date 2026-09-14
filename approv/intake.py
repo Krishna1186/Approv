@@ -42,12 +42,15 @@ the import boundary above while still serving path (c).
 
 from __future__ import annotations
 
+import re
 from enum import Enum
 from typing import Callable, Literal, Mapping, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from approv.types.core import CategorySchema, Channel, Constraint, Term, Value
+from approv.types.core import (
+    UNSUPPORTED_REQUIREMENT_PREFIX, CategorySchema, Channel, Constraint, Term, Value,
+)
 
 VERSION = "intake-v1"
 
@@ -201,8 +204,18 @@ class Intake(BaseModel):
     notes: tuple[str, ...] = ()
     unread: tuple[str, ...] = ()
     superseded: tuple[str, ...] = ()
-    # Fields the artifact carried that this schema has no attribute for.
+    # Fields the artifact carried that this schema has no attribute for. Also reported as
+    # unread requirements, because a field we can name and did not check is exactly what
+    # DR 0022 defines as unread.
     unmapped: tuple[str, ...] = ()
+    # Request fields that carried text and that nothing read (DR 0026). Locators, not the
+    # text: `request_text` already carries the words, and a returns desk wants to know
+    # which half of the artifact went unexamined.
+    #
+    # Distinct from `unread`, and the distinction is what we know. An unread requirement
+    # was read and could not be encoded -- we can name it. This is prose nobody looked at,
+    # so we cannot say what it asked for, and it can contradict everything we did read.
+    unprocessed: tuple[str, ...] = ()
 
 
 # --------------------------------------------------------------------------------------
@@ -256,6 +269,7 @@ def intake(
     notes: list[str] = []
     unread: tuple[str, ...] = ()
     superseded: tuple[str, ...] = ()
+    unprocessed: tuple[str, ...] = ()
     constraints: tuple[Constraint, ...] = ()
     unmapped: tuple[str, ...] = ()
 
@@ -272,30 +286,43 @@ def intake(
             artifact.filters, schema, channel=Channel.TOOL_ARGUMENT,
             prefix="search.filters", adapter=adapter)
         if artifact.query:
-            if extract is None:
+            reading = extract(artifact.query, schema) if extract else None
+            if reading is None:
                 notes.append("search query was not read: no extractor was supplied")
             else:
-                reading = extract(artifact.query, schema)
                 constraints += _sourced(reading.constraints, "search.query")
                 unread += reading.unread
                 superseded += reading.superseded
+            if _read_nothing(reading):
+                unprocessed += ("search.query",)
 
     elif isinstance(artifact, FreeText):
         if not artifact.text.strip():
             notes.append("the declared-intent field was present and empty")
-        elif extract is None:
-            notes.append("declared intent was not read: no extractor was supplied")
         else:
-            reading = extract(artifact.text, schema)
-            constraints = _sourced(reading.constraints, artifact.field_name)
-            unread = reading.unread
-            superseded = reading.superseded
+            reading = extract(artifact.text, schema) if extract else None
+            if reading is None:
+                notes.append("declared intent was not read: no extractor was supplied")
+            else:
+                constraints = _sourced(reading.constraints, artifact.field_name)
+                unread = reading.unread
+                superseded = reading.superseded
+            if _read_nothing(reading):
+                unprocessed += (artifact.field_name,)
 
     else:
         notes.append(artifact.why)
 
     if unmapped:
         notes.append("fields this category cannot express: " + ", ".join(sorted(unmapped)))
+        # A field we can name and did not check is DR 0022's unread requirement, and the
+        # prefix for it already exists. Without this the guarantee stood on an order whose
+        # protocol call had asked for something we never looked at.
+        unread += tuple(UNSUPPORTED_REQUIREMENT_PREFIX + field
+                        for field in sorted(unmapped))
+    if unprocessed:
+        notes.append("request text nothing read, so nothing is guaranteed about it: "
+                     + ", ".join(unprocessed))
     if not constraints:
         notes.append("no stated request was recovered, so this order is out of coverage")
     if presence is AgentPresence.UNKNOWN:
@@ -305,14 +332,40 @@ def intake(
     return Intake(
         surface=surface, shape=artifact.shape, agent=presence, merchant_id=merchant_id,
         constraints=constraints, unread=unread, superseded=superseded,
+        unprocessed=unprocessed,
         covered=bool(constraints) and presence is not AgentPresence.UNKNOWN,
         notes=tuple(notes), unmapped=unmapped)
+
+
+def _read_nothing(reading: Reading | None) -> bool:
+    """Whether a piece of request text ended up examined by nothing at all (DR 0026).
+
+    Both shapes of it land here. No extractor was configured, so the prose was never
+    looked at; or one ran and returned an entirely empty reading — no constraints, no
+    unread notes, no supersessions — from text that was not empty. From where the record
+    sits those are the same fact, and neither is the shopper agreeing with the filters.
+
+    An extractor that read *something* and could not encode part of it is the other case
+    and is not this one: it told us what it missed, which is DR 0022's unread requirement.
+    """
+    return reading is None or not (reading.constraints or reading.unread
+                                   or reading.superseded)
 
 
 def _sourced(constraints: tuple[Constraint, ...], source: str) -> tuple[Constraint, ...]:
     """Stamp the locator on what an extractor read, without it having to know about us."""
     return tuple(c.model_copy(update={"source": source}) if c.source is None else c
                  for c in constraints)
+
+
+# Words that name a channel a person submits through. A protocol called `checkout_form`
+# is a form POST whatever the shape it arrives in, and `webhook` is not a form.
+_HUMAN_CHANNEL = frozenset({"form", "forms", "checkout", "cart", "browser", "manual",
+                            "human", "storefront", "page"})
+
+
+def _submitted_by_hand(protocol: str) -> bool:
+    return bool(_HUMAN_CHANNEL & set(re.split(r"[^a-z0-9]+", protocol.casefold())))
 
 
 def _implied_presence(artifact: Artifact) -> AgentPresence:
@@ -322,9 +375,21 @@ def _implied_presence(artifact: Artifact) -> AgentPresence:
     addressed to the agent that came back filled in was filled in by one. A search query
     is just a search query: humans use those too, so the shape establishes nothing and the
     merchant has to say.
+
+    **A protocol name can withdraw that inference and can never grant one.** `protocol` is
+    a free string we do not control, and `Structured(protocol="form")` is a checkout form
+    POST wearing the shape of a protocol call — a person filling slots, not an agent. We
+    will not read a name as proof of an agent, because that is the fabricated basis this
+    module refuses elsewhere; we will take one as a disclaimer, because a merchant who
+    calls it a form has told us it is one. The asymmetry is the point: believing a name
+    that costs coverage is safe, believing one that earns it is not.
+
+    A merchant whose channel is not named in any recognisable way says so with `agent`,
+    which is the mechanism that was always right and is now the only one that grants.
     """
     if isinstance(artifact, Structured):
-        return AgentPresence.DECLARED
+        return (AgentPresence.UNKNOWN if _submitted_by_hand(artifact.protocol)
+                else AgentPresence.DECLARED)
     if isinstance(artifact, FreeText) and artifact.text.strip():
         return AgentPresence.DECLARED
     return AgentPresence.UNKNOWN

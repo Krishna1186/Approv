@@ -131,12 +131,89 @@ def test_a_field_this_category_cannot_express_is_reported_not_dropped():
     assert [c.attribute for c in result.constraints] == ["size"]
 
 
+def test_an_unmappable_field_is_a_requirement_nobody_checked():
+    """DR 0026's easier half. The agent asked for gift wrapping, this category has no
+    attribute for it, and nothing checked it — which is exactly DR 0022's unread
+    requirement, and the prefix for it already existed."""
+    result = intake(Structured(protocol="acp", fields={"size": "M", "gift_wrap": "yes"}),
+                    SCHEMA)
+
+    assert result.unread == ("Unsupported requirement: gift_wrap",)
+
+
+def test_a_protocol_name_can_withdraw_the_agent_inference():
+    """`protocol` is a free string we do not control, and `form` is a checkout POST
+    wearing the shape of a protocol call: a person filling slots."""
+    form = intake(Structured(protocol="form", fields={"size": "M"}), SCHEMA)
+    versioned = intake(Structured(protocol="checkout-form-v2", fields={"size": "M"}), SCHEMA)
+
+    assert form.agent is AgentPresence.UNKNOWN and not form.covered
+    assert versioned.agent is AgentPresence.UNKNOWN
+
+
+def test_a_protocol_name_can_never_grant_one():
+    """The asymmetry is the point. Believing a name that costs coverage is safe;
+    believing one that earns it puts a fabricated basis on a dispute record — so a name is
+    read as a disclaimer and never as proof, and `webhook` is not a form."""
+    assert intake(Structured(protocol="acp", fields={"size": "M"}), SCHEMA).agent \
+        is AgentPresence.DECLARED
+    assert intake(Structured(protocol="webhook", fields={"size": "M"}), SCHEMA).agent \
+        is AgentPresence.DECLARED
+    declared = intake(Structured(protocol="form", fields={"size": "M"}), SCHEMA,
+                      agent=AgentPresence.DECLARED)
+    assert declared.agent is AgentPresence.DECLARED and declared.covered
+
+
 def test_an_adapter_is_a_field_name_mapping_and_nothing_more():
     """Many adapters, each a few lines of data, none of them code the engine knows about."""
     result = intake(Structured(protocol="mcp", fields={"variant_size": "M"}), SCHEMA,
                     adapter={"variant_size": "size"})
     assert result.constraints[0].attribute == "size"
     assert result.constraints[0].source == "mcp.variant_size"
+
+
+# --- DR 0026: request text nothing read -------------------------------------------------
+
+def test_a_query_nobody_read_is_named_rather_than_passed_over():
+    """The filters were read and the prose was not. Recording only what we managed to read
+    is how a guarantee ends up standing on a request that contradicted it."""
+    result = intake(Search(query="actually make it the Ash one", filters={"size": "M"}),
+                    SCHEMA, agent=AgentPresence.DECLARED)
+
+    assert result.unprocessed == ("search.query",)
+    assert [c.attribute for c in result.constraints] == ["size"]
+
+
+def test_an_extractor_that_returned_nothing_at_all_read_nothing():
+    """Indistinguishable from having no extractor, from where the record sits. An empty
+    reading of a non-empty request is unknown, not agreement."""
+    result = intake(Search(query="something about it", filters={"size": "M"}), SCHEMA,
+                    extract=lambda text, schema: Reading())
+
+    assert result.unprocessed == ("search.query",)
+
+
+def test_an_extractor_that_read_something_is_dr_0022_and_not_this():
+    """It told us what it missed, which is the whole difference: we can name the gap."""
+    result = intake(Search(query="a frost duvet", filters={"size": "M"}), SCHEMA,
+                    extract=reader)
+
+    assert result.unprocessed == ()
+    assert result.unread == ("Text not explicitly accounted for: duvet",)
+
+
+def test_an_empty_query_is_not_unprocessed():
+    """Nothing to read is not a failure to read. Silence has always been out of coverage
+    on its own terms and does not need a second mechanism."""
+    assert intake(Search(filters={"size": "M"}), SCHEMA).unprocessed == ()
+    assert intake(FreeText(text="   "), SCHEMA).unprocessed == ()
+    assert intake(Undeclared(why="direct arrival"), SCHEMA).unprocessed == ()
+
+
+def test_declared_intent_nobody_read_is_named_by_its_own_field():
+    result = intake(FreeText(text="a king duvet in frost"), SCHEMA)
+
+    assert result.unprocessed == ("declared_intent",)
 
 
 # --- path (b): search query plus filters ----------------------------------------------

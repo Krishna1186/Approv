@@ -630,7 +630,7 @@ def test_evidence_is_scoped_to_the_variant_that_was_ordered():
     it is a WRONG one — stated as confidently as a right one and signed into the same
     record — and it fires on essentially every apparel catalogue."""
     result = verify_order(
-        request(artifact=Search(query="medium tee in ash", filters={"size": "M", "colour": "Ash"}),
+        request(artifact=Search(filters={"size": "M", "colour": "Ash"}),
                 snapshot=APPAREL[0], order=order(product_id="tee-loom", sku="LOOM-M-ASH",
                                                  variant_id="var-9")),
         schemas={SCHEMA.category_id: apparel_schema()})
@@ -645,7 +645,7 @@ def test_a_neighbouring_sku_never_answers_for_the_ordered_one():
     """The same catalogue, the same request, one SKU along. If scoping were cosmetic this
     would allow too, because some variant in the record does say Frost."""
     result = verify_order(
-        request(artifact=Search(query="medium tee in frost", filters={"size": "M", "colour": "Frost"}),
+        request(artifact=Search(filters={"size": "M", "colour": "Frost"}),
                 snapshot=APPAREL[0], order=order(product_id="tee-loom", sku="LOOM-M-ASH",
                                                  variant_id="var-9")),
         schemas={SCHEMA.category_id: apparel_schema()})
@@ -715,6 +715,85 @@ def test_a_single_variant_snapshot_is_left_alone():
 
     assert selected_listing(one, order(sku="LOOM-M-ASH")) is one
     assert selected_listing(SNAPSHOT, order()) is SNAPSHOT
+
+
+# --- DR 0026: a request nobody read never authorises ---------------------------------------
+
+def searched(query, **filters):
+    """A search artifact, and no extractor anywhere in the call."""
+    return request(artifact=Search(query=query, filters=filters or {"size": "M", "color": "Frost"}),
+                   agent=AgentPresence.DECLARED)
+
+
+def test_a_query_nobody_read_cannot_authorise_and_earns_no_coverage():
+    """The measured failure. Filters {size: M, color: Frost}, a query that contradicts
+    them in its first four words, and no extractor: this used to return allow, covered,
+    both findings guaranteed. Invariant 4 — unknown never authorises, and an empty reading
+    of a non-empty request is unknown."""
+    result = verify_order(searched("actually make it the Ash one, and it must be organic"),
+                          schemas=SCHEMAS)
+
+    assert result.record.decision is not Decision.ALLOW
+    assert not result.record.covered
+    assert set(result.record.coverage) == {"out_of_coverage"}
+    assert result.record.completion is Completion.REQUEST_UNPROCESSED
+    assert "search.query" in result.record.completion_detail
+
+
+def test_the_findings_survive_an_unprocessed_request():
+    """The one incomplete verification that keeps its findings: the comparison really did
+    run, against a request we had only half of. Discarding them would throw away the
+    filters we read and the catalogue we read correctly."""
+    result = verify_order(searched("something we could not read"), schemas=SCHEMAS)
+    read = {f.attribute: f.support for f in result.record.findings}
+
+    assert read["size"] is Support.SATISFIED and read["color"] is Support.SATISFIED
+
+
+def test_a_refusal_survives_an_unprocessed_request():
+    """Withdrawal takes GUARANTEED away and never REFUSED — the rule all the withdrawals
+    follow. An attribute the catalogue contradicts is contradicted whether or not we
+    finished reading the request."""
+    result = verify_order(searched("unreadable", size="XL", color="Frost"), schemas=SCHEMAS)
+
+    assert result.record.decision is Decision.REFUSE
+    assert "refused" in result.record.coverage
+
+
+def test_a_search_with_no_query_is_untouched():
+    """Scoped to a request that carried text. An order that stated nothing in prose has
+    nothing unread about it."""
+    result = verify_order(
+        request(artifact=Search(filters={"size": "M", "color": "Frost"}),
+                agent=AgentPresence.DECLARED), schemas=SCHEMAS)
+
+    assert result.record.completion is Completion.COMPLETED
+    assert "guaranteed" in result.record.coverage
+
+
+def test_a_named_field_we_did_not_check_withdraws_but_does_not_block():
+    """The other half, and the line between them is what we know. A protocol field this
+    category cannot express is a requirement we can name — DR 0022's answer applies, the
+    sale proceeds and the guarantee does not."""
+    result = verify_order(
+        request(artifact=Structured(protocol="acp", fields={
+            "size": "M", "color": "Frost", "gift_wrap": "yes"})), schemas=SCHEMAS)
+
+    assert result.record.decision is Decision.ALLOW
+    assert set(result.record.coverage) == {"out_of_coverage"}
+    assert result.record.completion is Completion.COMPLETED
+
+
+def test_a_form_submission_is_not_an_agent_by_itself():
+    """`protocol` is a free string we do not control, and a checkout form POST wearing the
+    shape of a protocol call is a person filling slots."""
+    result = verify_order(
+        request(artifact=Structured(protocol="checkout_form",
+                                    fields={"size": "M", "color": "Frost"})),
+        schemas=SCHEMAS)
+
+    assert not result.record.covered
+    assert any("agent-placed" in note for note in result.record.coverage_notes)
 
 
 # --- the entry point ----------------------------------------------------------------------

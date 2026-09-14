@@ -395,6 +395,16 @@ def verify_order(
         findings = check_constraints(
             taken.constraints, evidence, schema, returns=returns,
             superseded=frozenset(taken.superseded))
+        # DR 0026, and the one incomplete verification that keeps its findings. The
+        # comparison really did run — against a request we had only half of — so the
+        # filters we read and the catalogue we read correctly stay on the record. What
+        # cannot stand is a guarantee over prose nobody examined: it can contradict
+        # everything we did read, and in the case that found this, it did.
+        if taken.unprocessed:
+            completion = Completion.REQUEST_UNPROCESSED
+            detail = ("the stated request carried text nothing read: %s — an empty "
+                      "reading of a non-empty request is unknown, not agreement"
+                      % ", ".join(taken.unprocessed))
     else:
         completion, detail = failure
         taken = taken if taken is not None else _nothing_read(request, schema)
