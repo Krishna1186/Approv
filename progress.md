@@ -679,6 +679,63 @@ ask for. It waits for the agent-side product, which DR 0020 keeps and does not b
 
 Do not wire it. Its tests keep passing, which is the whole cost of keeping it.
 
+## Fifty real catalogues, and the two things they found (14 September)
+
+The first time onboarding met catalogues nobody here chose the shape of: a frozen
+purposive cohort of fifty D2C Shopify stores, ten each across apparel, footwear, grocery,
+homeware and cosmetics, fetched from the public `/products.json` endpoint that Shopify
+exposes by design. Purposive, not a random sample of merchants; failed endpoints stay in
+the denominator.
+
+**Retrieval is 38 of 50, not 32.** The first pass said 32, and six of the eighteen
+failures were ours: the fetcher records a TLS handshake error the same way it records a
+merchant's 403, and its no-retry rule then wrote six readable cosmetics feeds down as
+permanently unreachable. All six return 200 on a plain retry. A transport error is now
+retried once and an HTTP status still never is — a store that answers 403 or 404 has
+answered, and asking again is pressing a merchant who declined. The remaining twelve are
+real: four 404s with no feed at that path, three 403s, one 401, one robots denial, one
+challenge page, one endpoint that is not a product feed, and one host whose TLS fails
+twice.
+
+**The reader is right about what it reads.** Across 6,158 probed variants and 9,460
+selected slots in the audited stores: **98.50% of slots correct, 0.00% wrong, 1.14%
+missing.** Wrong is the number that matters — it is the confident-wrong class §7 ranks
+first — and the independent oracle, which imports no Approv code, found none of it. The
+probes were adversarially tested first: a deliberately sabotaged reader scores 2 of 2
+wrong, and a silent reader scores 2 of 2 missing, so a zero here is a measurement rather
+than a hole in the instrument.
+
+**What it was wrong about was what it chose to read.** Two defects, both pinned as strict
+xfails by the audit and both now ruled on:
+
+| | before | after |
+|---|---|---|
+| variants carrying image metadata as evidence (DR 0027) | 2,468 / 6,158 — **40.1%** | 0 |
+| stores with media attribute profiles | 24 / 32 — **75%** | 0 |
+| variants where derivation and the reader disagreed (DR 0028) | 34 / 6,158 — 0.55% | 0 |
+| slots correct | 9,318 / 9,460 — 98.50% | **unchanged** |
+| slots wrong | 0 | **unchanged** |
+
+Both fixes removed the defect and moved nothing else, which is the only shape that
+justifies a change to a shared walk.
+
+The locator shapes are unanimous and that is itself a finding: object pointers, variant
+array fields and option-table selected slots appear in **32 of 32** audited stores, named
+pair selectors and labelled prose selectors in **none**. The shapes we built for are the
+shapes that exist; the two we also built for are not in this cohort. Proposed floors are
+`size` (18 stores), `color` (9), `shade` (3), `quantity` (1), `grams` (1).
+
+`binding_unassessed_missing_sku` is 5.75% — variants the feed publishes with no SKU, where
+`OrderLine` cannot be constructed at all. That is the onboarding prerequisite already in
+the partner handoff, now with a rate against it.
+
+**Terms screening is a recorded flag, not legal clearance, and the ruling behind it is
+the founder's.** The retrieval above uses `--terms-policy record-only`: twenty-seven of
+the audited stores publish terms containing automation or scraping language, and
+`exclude` drops them, which takes the cohort to five stores. Internal reader testing on
+publicly served, robots-permitted endpoints is one question; naming those merchants in a
+merchant-facing asset is a different one, and it has not been decided.
+
 ## Open
 
 - Extraction is scored against the generator's spec, not against hand labels. That

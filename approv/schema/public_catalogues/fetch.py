@@ -1,7 +1,9 @@
 """Opt-in public GETs, globally paced, with immutable response provenance.
 
-No cookies, authentication, browser impersonation, alternate backend or retries.
-HTTP access failures stop a store. The default test suite never invokes this CLI.
+No cookies, authentication, browser impersonation or alternate backend. One retry on a
+transport error and never on an HTTP status: a store that answers 403 or 404 has answered,
+and asking again is pressing a merchant who declined. HTTP access failures stop a store.
+The default test suite never invokes this CLI.
 """
 from __future__ import annotations
 
@@ -67,21 +69,38 @@ def get(url, directory, name, interval=1.5):
         time.sleep(max(0, _LAST + interval - time.monotonic()))
         _LAST = time.monotonic()
     meta = {"requested_url": url, "started_at": now(), "user_agent": AGENT}
-    try:
+    # A *transport* error is retried once; an HTTP status never is. The distinction is the
+    # point of the no-retries rule, which exists so that a store saying no is recorded as
+    # having said no -- retrying a 403 is pressing a merchant who declined, and retrying a
+    # 404 invents a feed. A TLS handshake that failed says nothing about the merchant at
+    # all, and treating it as a closure is how the first cohort scored six readable
+    # cosmetics feeds as permanently unreachable: all six return 200 on a plain retry, and
+    # the headline retrieval rate was understated by a fifth as a result.
+    attempts = []
+    for attempt in range(2):
         try:
-            response = urlopen(Request(url, headers={"User-Agent": AGENT, "Accept": "application/json,text/html,text/plain"}), timeout=25)
-        except HTTPError as error:
-            response = error
-        with response:
-            body = response.read(24 * 1024 * 1024 + 1)
-            meta.update(status=response.status, final_url=response.url,
-                        content_type=response.headers.get("Content-Type"),
-                        etag=response.headers.get("ETag"), last_modified=response.headers.get("Last-Modified"))
-        if len(body) > 24 * 1024 * 1024:
-            meta["error"] = "response_exceeds_byte_limit"
-    except (URLError, TimeoutError, OSError) as error:
-        body = b""
-        meta.update(status=None, error=str(error))
+            try:
+                response = urlopen(Request(url, headers={"User-Agent": AGENT, "Accept": "application/json,text/html,text/plain"}), timeout=25)
+            except HTTPError as error:
+                response = error
+            with response:
+                body = response.read(24 * 1024 * 1024 + 1)
+                meta.update(status=response.status, final_url=response.url,
+                            content_type=response.headers.get("Content-Type"),
+                            etag=response.headers.get("ETag"), last_modified=response.headers.get("Last-Modified"))
+            if len(body) > 24 * 1024 * 1024:
+                meta["error"] = "response_exceeds_byte_limit"
+            break
+        except (URLError, TimeoutError, OSError) as error:
+            body = b""
+            attempts.append(str(error))
+            meta.update(status=None, error=str(error))
+            if attempt == 0:
+                with _LOCK:
+                    time.sleep(max(0, _LAST + interval * 4 - time.monotonic()))
+                    _LAST = time.monotonic()
+    if attempts:
+        meta["transport_attempts"] = attempts
     meta.update(finished_at=now(), bytes=len(body), sha256=hashlib.sha256(body).hexdigest(), body_file=name + ".body")
     (directory / meta["body_file"]).write_bytes(body)
     save(meta_path, meta)
